@@ -3,9 +3,69 @@ import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
 import '../widgets/sleep_button.dart';
+import '../models/sleep_record.dart';
+import '../repositories/sleep_repository.dart';
+import 'package:shiftsleep/models/sleep_record.dart';
+import 'package:shiftsleep/repositories/sleep_repository.dart';
+import 'sleep_records_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final SleepRepository _sleepRepository = SleepRepository();
+  final String _userId = 'test_user'; // 後で認証から取得
+
+  void _onSleepButtonPressed() async {
+    final DateTime now = DateTime.now();
+    final String recordId = 'sleep_${now.millisecondsSinceEpoch}';
+    
+    // 3日後が修正期限
+    final DateTime canEditUntil = now.add(const Duration(days: 3));
+
+    final SleepRecord newRecord = SleepRecord(
+      id: recordId,
+      userId: _userId,
+      sleepDate: DateTime(now.year, now.month, now.day),
+      sleepStartTime: now,
+      sleepStartAuto: true,
+      sleepEndTime: now,
+      sleepEndAuto: false,
+      wakeUpType: 'manual',
+      durationMinutes: 0, // 起床時に計算
+      modifiedCount: 0,
+      lastModifiedAt: now,
+      canEditUntil: canEditUntil,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    try {
+      await _sleepRepository.insertSleepRecord(newRecord);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('入眠時刻 ${now.hour}:${now.minute.toString().padLeft(2, '0')} を記録しました'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('保存に失敗しました: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,11 +104,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: AppDimensions.paddingMedium),
                   SleepButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('入眠時刻を記録しました')),
-                      );
-                    },
+                    onPressed: _onSleepButtonPressed,
                   ),
                 ],
               ),
@@ -340,9 +396,18 @@ class HomeScreen extends StatelessWidget {
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildFooterButton(
-                    icon: Icons.calendar_today,
-                    label: 'シフト管理',
-                    onPressed: () {},
+                    icon: Icons.bar_chart,
+                    label: '詳細',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SleepRecordsScreen(
+                            userId: _userId,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   _buildFooterButton(
                     icon: Icons.settings,
