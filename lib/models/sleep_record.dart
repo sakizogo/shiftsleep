@@ -105,4 +105,23 @@ class SleepRecord {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
-}
+   // ========================
+   // 互換性用 getter
+   // ========================
+  
+   /// bedtime の互換性 getter（sleepStartTime のエイリアス）
+   DateTime get bedtime => sleepStartTime;
+
+   /// wakeTime の互換性 getter（sleepEndTime のエイリアス）
+   DateTime get wakeTime => sleepEndTime;
+
+   /// fromMap メソッド（fromJson のエイリアス）
+   static SleepRecord fromMap(Map<String, dynamic> map) {
+     return SleepRecord.fromJson(map);
+   }
+
+   /// toMap メソッド（toJson のエイリアス）
+   Map<String, dynamic> toMap() {
+     return toJson();
+   }
+ }

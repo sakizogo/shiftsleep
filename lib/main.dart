@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shiftsleep/database/database_helper.dart';
+import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'screens/home_screen.dart';
 
 void main() {
@@ -10,14 +14,30 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'ShiftSleep',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        useMaterial3: true,
+    return MultiProvider(
+      providers: [
+        // SleepRepository を登録
+        Provider<SleepRepository>(
+          create: (_) => SleepRepository(),
+        ),
+        // SleepProvider を登録（SleepRepository に依存）
+        ChangeNotifierProxyProvider<SleepRepository, SleepProvider>(
+          create: (context) => SleepProvider(
+            context.read<SleepRepository>(),
+          ),
+          update: (context, sleepRepository, previous) =>
+              previous ?? SleepProvider(sleepRepository),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'ShiftSleep',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          useMaterial3: true,
+        ),
+        home: const HomeScreen(),
+        debugShowCheckedModeBanner: false,
       ),
-      home: const HomeScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }

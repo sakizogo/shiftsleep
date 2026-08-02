@@ -80,6 +80,19 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL
       )
     ''');
+
+    // alarm_configs テーブル
+    await db.execute('''
+      CREATE TABLE alarm_configs (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        alarmMode TEXT NOT NULL,
+        alarmSound TEXT NOT NULL,
+        volume INTEGER NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    ''');
   }
 
   // Close database
