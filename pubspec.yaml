@@ -16,9 +16,10 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.8.3
   table_calendar: ^3.0.9
-  flutter_local_notifications: ^17.1.0   # ← 追加
-  timezone: ^0.9.2                       # ← 追加
-  uuid: ^4.0.0                          # ← 追加
+  flutter_local_notifications: ^17.1.0   # ← アラーム通知
+  timezone: ^0.9.2                       # ← タイムゾーン
+  uuid: ^4.0.0                          # ← ID生成
+  audioplayers: ^6.8.1          # ✅ 最新バージョンに変更
 
 dev_dependencies:
   flutter_test:
@@ -28,3 +29,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  
+  assets:
+    - assets/raw/alarm_default.mp3
+    - assets/raw/alarm_gentle.mp3
+    - assets/raw/alarm_harsh.mp3

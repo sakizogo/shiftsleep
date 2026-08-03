@@ -3,9 +3,20 @@ import 'package:provider/provider.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
+import 'package:shiftsleep/services/alarm_service.dart';  // ✅ 追加
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {  // ✅ async に変更
+  WidgetsFlutterBinding.ensureInitialized();  // ✅ 追加
+  
+  // ✅ AlarmService を初期化
+  try {
+    await AlarmService().initialize();
+    print('[main] ✅ AlarmService initialized successfully');
+  } catch (e) {
+    print('[main] ❌ AlarmService initialization failed: $e');
+  }
+  
   runApp(const MyApp());
 }
 

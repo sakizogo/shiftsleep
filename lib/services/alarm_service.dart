@@ -144,37 +144,62 @@ class AlarmService {
     required String title,
     required String body,
     required tz.TZDateTime scheduledTime,
-    required AlarmConfig config,  // ← 追加
+    required AlarmConfig config,
   }) async {
     try {
-      // ✅ ここに追加
       final soundFileName = _getSoundFileName(config.alarmSound);
-      // ✅ ここまで
+      
+      // ✅ デバッグログ
+      print('[AlarmService] 🔧 DEBUG: Scheduling alarm...');
+      print('[AlarmService] 🔧 DEBUG: id=$id, sound=$soundFileName, time=${scheduledTime.toString()}');
+      print('[AlarmService] 🔧 DEBUG: AlarmSound=${config.alarmSound}');
+      
+      // ✅ 音ごとに異なるチャネル ID を使用（キャッシング対策）
+      final channelId = 'shiftsleep_alarm_${soundFileName}';
+      final channelName = 'ShiftSleep Alarm ($soundFileName)';
+      
       // 通知チャネルの設定
       final androidDetails = AndroidNotificationDetails(
-        'alarm_channel',
-        'Alarm Notifications',
+        channelId,
+        channelName,
         channelDescription: 'Notifications for ShiftSleep alarms',
         importance: Importance.max,
         priority: Priority.high,
         enableVibration: true,
-        sound: RawResourceAndroidNotificationSound(soundFileName),  // ✅ s をつける
+        sound: RawResourceAndroidNotificationSound(soundFileName),
       );
 
       final notificationDetails = NotificationDetails(
         android: androidDetails,
       );
 
-      await _notificationsPlugin.zonedSchedule(
-        id,
-        title,
-        body,
-        scheduledTime,
-        notificationDetails,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: DateTimeComponents.time, // 毎日この時刻に繰り返す
-      );
+      // ✅ zonedSchedule を試みる（exact alarmが必要）
+      try {
+        await _notificationsPlugin.zonedSchedule(
+          id,
+          title,
+          body,
+          scheduledTime,
+          notificationDetails,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          matchDateTimeComponents: DateTimeComponents.time, // 毎日この時刻に繰り返す
+        );
+        print('[AlarmService] ✅ zonedSchedule succeeded');
+      } catch (zoneError) {
+        print('[AlarmService] ⚠️ zonedSchedule failed: $zoneError');
+        print('[AlarmService] ℹ️ Fallback: Using periodicallyShow instead...');
+        
+        // ✅ フォールバック: periodicallyShow を使用（exact alarm不要）
+        await _notificationsPlugin.periodicallyShow(
+          id,
+          title,
+          body,
+          RepeatInterval.daily,
+          notificationDetails,
+        );
+        print('[AlarmService] ✅ periodicallyShow succeeded (fallback)');
+      }
     } catch (e) {
       print('[AlarmService] ❌ _scheduleNotification error: $e');
       rethrow;
@@ -206,16 +231,22 @@ class AlarmService {
   /// ユーザーが設定画面で音を選択した際に、プレビュー音を再生
   Future<void> playAlarmSoundPreview(AlarmSound sound) async {
     try {
-      // ここでは簡易的に、デフォルト音で通知を表示
-      // 実際の音声再生は audio_players パッケージなどを使用
-      final soundFileName = _getSoundFileName(sound);  // ← 追加
-      final notificationDetails = NotificationDetails(  // ← const を削除
+      final soundFileName = _getSoundFileName(sound);
+      
+      print('[AlarmService] 🔊 DEBUG: playAlarmSoundPreview called');
+      print('[AlarmService] 🔊 DEBUG: soundFileName = $soundFileName');
+      
+      // ✅ 音ごとに異なるチャネル ID を使用（キャッシング対策）
+      final channelId = 'shiftsleep_preview_${soundFileName}';
+      final channelName = 'ShiftSleep Preview ($soundFileName)';
+      
+      final notificationDetails = NotificationDetails(
         android: AndroidNotificationDetails(
-          'preview_channel',
-          'Preview Notifications',
-          sound: RawResourceAndroidNotificationSound(soundFileName),  // ← 動的に選択
-      ),
-    );
+          channelId,
+          channelName,
+          sound: RawResourceAndroidNotificationSound(soundFileName),
+        ),
+      );
 
       await _notificationsPlugin.show(
         999, // プレビュー用の ID
@@ -252,8 +283,6 @@ class AlarmService {
         return 'alarm_default';
     }
   }
-
-
 
   /// 初期化済みかどうかを確認
   bool get isInitialized => _isInitialized;

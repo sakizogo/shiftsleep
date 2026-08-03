@@ -99,6 +99,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await _alarmRepository.insertAlarmConfig(newConfig);
       }
 
+      // ✅ 重要！ここにアラームのスケジュール処理を追加
+      // DB に保存した設定で実際のアラームを再スケジュール
+      try {
+        await _alarmService.scheduleAlarm(
+          sleepTime: DateTime.now().toIso8601String(),
+          wakeupTime: '07:00',
+          config: newConfig,
+        );
+        print('[SettingsScreen] ✅ Alarm re-scheduled with new config');
+      } catch (e) {
+        print('[SettingsScreen] ⚠️ Failed to re-schedule alarm: $e');
+        // アラームスケジュール失敗しても DB 保存は成功しているので、続行
+      }
+
       print('[SettingsScreen] ✅ Alarm config saved');
 
       // スナックバー表示
@@ -238,27 +252,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 onChanged: (value) {
                                   setState(() {
                                     _selectedSound = value!;
-                                  });
+                                 });
                                 },
                                 items: AlarmSound.values.map((sound) {
                                   return DropdownMenuItem(
-                                    value: sound,
-                                    child: Row(
-                                      children: [
-                                        Text(_getAlarmSoundLabel(sound)),
-                                        const SizedBox(width: 12),
-                                        ElevatedButton.icon(
-                                          icon: const Icon(Icons.play_arrow, size: 16),
-                                          label: const Text('試聴'),
-                                          onPressed: () {
-                                            _alarmService.playAlarmSoundPreview(sound);
-                                          },
-                                        ),
-                                      ],
+                                  value: sound,
+                                  child: Row(
+                                    children: [
+                                      Text(_getAlarmSoundLabel(sound)),
+                                      const SizedBox(width: 12),
+                                      ElevatedButton.icon(
+                                        icon: const Icon(Icons.play_arrow, size: 16),
+                                        label: const Text('試聴'),
+                                        onPressed: () {
+                                          // ✅ 音量パラメータなし
+                                          _alarmService.playAlarmSoundPreview(sound);
+                                        },
+                                       ),
+                                     ],
                                     ),
-                                  );
-                                }).toList(),
-                              ),
+                                   );
+                                 }).toList(),
+                               ),
                             ],
                           ),
                         ),
