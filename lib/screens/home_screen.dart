@@ -7,7 +7,9 @@ import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/screens/settings_screen.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
-import 'sleep_records_screen.dart';
+import 'package:shiftsleep/screens/shift_management_screen.dart';
+import 'package:shiftsleep/screens/shift_pattern_screen.dart';
+import 'package:shiftsleep/screens/sleep_records_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -17,6 +19,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0; // ナビゲーション状態管理
+
   @override
   void initState() {
     super.initState();
@@ -46,441 +50,571 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      body: Consumer<SleepProvider>(
-        builder: (context, sleepProvider, _) {
-          if (sleepProvider.isLoading) {
-            return Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation(AppColors.primaryGradientStart),
+      body: _buildPage(_selectedIndex),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: AppColors.primaryGradientStart,
+        unselectedItemColor: AppColors.textMuted,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'ホーム',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_today),
+            label: 'シフト管理',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: '設定',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.list),
+            label: '詳細',
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// インデックスに応じてページを返す
+  Widget _buildPage(int index) {
+    switch (index) {
+      case 0:
+        return _buildHomeContent();
+      case 1:
+        return ShiftManagementScreen(patterns: []);
+      case 2:
+        return SettingsScreen(userId: 'test_user');
+      case 3:
+        return SleepRecordsScreen(userId: 'test_user');
+      default:
+        return _buildHomeContent();
+    }
+  }
+
+  /// ホーム画面コンテンツ
+  Widget _buildHomeContent() {
+    return Consumer<SleepProvider>(
+      builder: (context, sleepProvider, _) {
+        if (sleepProvider.isLoading) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor:
+                  AlwaysStoppedAnimation(AppColors.primaryGradientStart),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              // ========================
+              // Main Button Section with Gradient
+              // ========================
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.primaryGradientStart,
+                      AppColors.primaryGradientEnd,
+                    ],
+                  ),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.mainButtonSectionPaddingVertical,
+                  horizontal:
+                      AppDimensions.mainButtonSectionPaddingHorizontal,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      _getCurrentTime(),
+                      style: AppTextStyles.headerStyle.copyWith(
+                        fontSize: 32,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: AppDimensions.paddingSmall),
+                    Text(
+                      '現在時刻',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: AppDimensions.paddingLarge),
+                    SleepButton(
+                      onPressed: () async {
+                        // 新規睡眠記録を挿入後、最新データを再ロード
+                        await sleepProvider.loadLatestSleepData();
+                      },
+                    ),
+                  ],
+                ),
               ),
-            );
-          }
 
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                // ========================
-                // Main Button Section
-                // ========================
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppDimensions.mainButtonSectionPaddingVertical,
-                    horizontal: AppDimensions.mainButtonSectionPaddingHorizontal,
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        '現在時刻: ${_getCurrentTime()}',
-                        style: AppTextStyles.bodyTextStyle,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      SleepButton(
-                        onPressed: () async {
-                          // 新規睡眠記録を挿入後、最新データを再ロード
-                          await sleepProvider.loadLatestSleepData();
-                        },
-                      ),
-                    ],
-                  ),
+              // ========================
+              // Yesterday's Sleep Section - Card Style
+              // ========================
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
                 ),
-
-                // ========================
-                // Yesterday's Sleep Section
-                // ========================
-                Container(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppDimensions.sectionPaddingVertical,
-                    horizontal: AppDimensions.sectionPaddingHorizontal,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: AppColors.borderDefault,
-                        width: AppDimensions.borderWidthThin,
-                      ),
-                      bottom: BorderSide(
-                        color: AppColors.borderDefault,
-                        width: AppDimensions.borderWidthThin,
-                      ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '昨夜の睡眠',
-                        style: AppTextStyles.sectionTitleStyle,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingSmall),
-
-                      // 実データ表示
-                      if (sleepProvider.latestRecord != null)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 時刻表示
-                            Text(
-                              '${sleepProvider.lastBedtimeFormatted} ～ ${sleepProvider.lastWakeTimeFormatted}',
-                              style: AppTextStyles.bodyTextStyle,
-                            ),
-                            const SizedBox(height: AppDimensions.paddingSmall),
-                            // 睡眠時間
-                            Text(
-                              sleepProvider.lastSleepDurationFormatted,
-                              style: AppTextStyles.largeNumberStyle,
-                            ),
-                            const SizedBox(height: AppDimensions.paddingSmall),
-                            // 星評価（動的）
-                            Row(
-                              children: List.generate(
-                                5,
-                                (index) => Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: AppDimensions.paddingSmall,
-                                  ),
-                                  child: Icon(
-                                    Icons.star,
-                                    size: 20,
-                                    color: index < _getStarCount(sleepProvider)
-                                        ? AppColors.starYellow
-                                        : AppColors.borderDefault,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppDimensions.paddingSmall),
-                            // 修正ボタン
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        EditSleepRecordScreen(
-                                          record: sleepProvider.latestRecord!,
-                                        ),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                '修正する',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  color: AppColors.primaryGradientStart,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Section Title with Icon
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.nights_stay,
+                          size: 20,
+                          color: AppColors.primaryGradientStart,
+                        ),
+                        const SizedBox(width: AppDimensions.paddingSmall),
                         Text(
-                          'データなし',
-                          style: AppTextStyles.bodyTextStyle.copyWith(
-                            color: AppColors.textMuted,
-                          ),
+                          '昨夜の睡眠',
+                          style: AppTextStyles.sectionTitleStyle,
                         ),
-                    ],
-                  ),
-                ),
-
-                // ========================
-                // Circadian State Section
-                // ========================
-                Container(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppDimensions.sectionPaddingVertical,
-                    horizontal: AppDimensions.sectionPaddingHorizontal,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppColors.borderDefault,
-                        width: AppDimensions.borderWidthThin,
-                      ),
+                      ],
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '体内時計の状態',
-                        style: AppTextStyles.sectionTitleStyle,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      Row(
-                        children: [
-                          // SJL カード
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(
-                                AppDimensions.paddingSmall,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.cardBgWarning,
-                                border: Border.all(
-                                  color: AppColors.borderWarning,
-                                  width: AppDimensions.borderWidthThin,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  AppDimensions.borderRadiusSmall,
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'SJL',
-                                    style: AppTextStyles.labelStyle,
-                                  ),
-                                  const SizedBox(height: 4.0),
-                                  Text(
-                                    '${sleepProvider.sjl.toStringAsFixed(1)}h',
-                                    style: AppTextStyles.statNumberStyle,
-                                  ),
-                                  const SizedBox(height: 4.0),
-                                  Text(
-                                    sleepProvider.sjlEvaluation,
-                                    style: AppTextStyles.labelStyle.copyWith(
-                                      fontSize: 11,
-                                      color: AppColors.textMuted,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppDimensions.gapMedium),
-                          // SRI カード
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(
-                                AppDimensions.paddingSmall,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.cardBgGray,
-                                border: Border.all(
-                                  color: AppColors.borderDefault,
-                                  width: AppDimensions.borderWidthThin,
-                                ),
-                                borderRadius: BorderRadius.circular(
-                                  AppDimensions.borderRadiusSmall,
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    'SRI',
-                                    style: AppTextStyles.labelStyle,
-                                  ),
-                                  const SizedBox(height: 4.0),
-                                  Text(
-                                    '${sleepProvider.sri.toStringAsFixed(0)}',
-                                    style: AppTextStyles.statNumberStyle,
-                                  ),
-                                  const SizedBox(height: 4.0),
-                                  Text(
-                                    sleepProvider.sriEvaluation,
-                                    style: AppTextStyles.labelStyle.copyWith(
-                                      fontSize: 11,
-                                      color: AppColors.textMuted,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      // 警告ボックス
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    // Data Card
+                    if (sleepProvider.latestRecord != null)
                       Container(
                         padding: const EdgeInsets.all(
-                          AppDimensions.paddingSmall,
+                          AppDimensions.paddingMedium,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.cardBgAlert,
-                          border: Border(
-                            left: BorderSide(
-                              color: AppColors.warningRed,
-                              width: AppDimensions.borderWidthMedium,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          '評価: ${sleepProvider.sjlEvaluation}',
-                          style: AppTextStyles.captionStyle.copyWith(
-                            color: AppColors.darkWarning,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      // 説明ボックス
-                      Container(
-                        padding: const EdgeInsets.all(
-                          AppDimensions.paddingSmall,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.backgroundLight,
+                          color: Colors.white,
                           border: Border.all(
                             color: AppColors.borderDefault,
                             width: AppDimensions.borderWidthThin,
                           ),
                           borderRadius: BorderRadius.circular(
-                            AppDimensions.borderRadiusSmall,
+                            AppDimensions.borderRadiusMedium,
                           ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Time Display
                             Text(
-                              'SJL が大きい理由:',
-                              style: AppTextStyles.subtitleLabelStyle,
+                              '${sleepProvider.lastBedtimeFormatted} ～ ${sleepProvider.lastWakeTimeFormatted}',
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
-                            const SizedBox(height: 8.0),
+                            const SizedBox(
+                                height: AppDimensions.paddingMedium),
+
+                            // Sleep Duration - Large
                             Text(
-                              sleepProvider.sjl >= 2
-                                  ? 'SJLが2時間以上あるため、体内時計が大きく乱れています。'
-                                  : sleepProvider.sjl >= 1
-                                      ? 'SJLが1時間以上あるため、やや体内時計が乱れています。'
-                                      : 'あなたの体内時計は正常範囲です。',
-                              style: AppTextStyles.descriptionStyle,
+                              sleepProvider.lastSleepDurationFormatted,
+                              style: AppTextStyles.largeNumberStyle.copyWith(
+                                fontSize: 42,
+                              ),
+                            ),
+                            const SizedBox(
+                                height: AppDimensions.paddingMedium),
+
+                            // Star Rating + Edit Button
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                // Stars
+                                Row(
+                                  children: List.generate(
+                                    5,
+                                    (index) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        right: AppDimensions.gapSmall,
+                                      ),
+                                      child: Icon(
+                                        Icons.star,
+                                        size: 20,
+                                        color: index <
+                                                _getStarCount(sleepProvider)
+                                            ? AppColors.starYellow
+                                            : AppColors.borderDefault,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                // Edit Button
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            EditSleepRecordScreen(
+                                          record: sleepProvider.latestRecord!,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppDimensions.paddingSmall,
+                                      vertical: AppDimensions.paddingXSmall,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryGradientStart
+                                          .withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(
+                                        AppDimensions.borderRadiusSmall,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '修正',
+                                      style:
+                                          AppTextStyles.labelStyle.copyWith(
+                                        color: AppColors.primaryGradientStart,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(
+                          AppDimensions.paddingMedium,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardBgGray,
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusMedium,
+                          ),
+                        ),
+                        child: Text(
+                          'データなし',
+                          style: AppTextStyles.bodyTextStyle.copyWith(
+                            color: AppColors.textMuted,
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
+              ),
 
-                // ========================
-                // Sleep Debt Section
-                // ========================
-                Container(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: AppDimensions.sectionPaddingVertical,
-                    horizontal: AppDimensions.sectionPaddingHorizontal,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(
-                        color: AppColors.borderDefault,
-                        width: AppDimensions.borderWidthThin,
-                      ),
+              // ========================
+              // Circadian State Section - Compact
+              // ========================
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '睡眠負債',
-                        style: AppTextStyles.sectionTitleStyle,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingSmall),
-                      Text(
-                        sleepProvider.sleepDebtFormatted,
-                        style: AppTextStyles.debtNumberStyle,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '今月平均',
-                                style: AppTextStyles.bodyTextStyle,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Section Title with Icon
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.schedule,
+                          size: 20,
+                          color: AppColors.primaryGradientStart,
+                        ),
+                        const SizedBox(width: AppDimensions.paddingSmall),
+                        Text(
+                          '体内時計の状態',
+                          style: AppTextStyles.sectionTitleStyle,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    // SJL & SRI Cards
+                    Row(
+                      children: [
+                        // SJL カード
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardBgWarning,
+                              border: Border.all(
+                                color: AppColors.borderWarning,
+                                width: AppDimensions.borderWidthThin,
                               ),
-                              const SizedBox(height: 4.0),
-                              Text(
-                                _calculateMonthlyAverage(sleepProvider),
-                                style: AppTextStyles.statNumberStyle,
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
                               ),
-                            ],
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'SJL\n(体内時計負担数)',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '${sleepProvider.sjl.toStringAsFixed(1)}h',
+                                  style: AppTextStyles.statNumberStyle,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  sleepProvider.sjlEvaluation,
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '目標',
-                                style: AppTextStyles.bodyTextStyle,
+                        ),
+                        const SizedBox(width: AppDimensions.gapMedium),
+                        // SRI カード
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardBgGray,
+                              border: Border.all(
+                                color: AppColors.borderDefault,
+                                width: AppDimensions.borderWidthThin,
                               ),
-                              const SizedBox(height: 4.0),
-                              Text(
-                                '7h 00m',
-                                style: AppTextStyles.statNumberStyle,
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
                               ),
-                            ],
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'SRI\n(睡眠規則性指数)',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '${sleepProvider.sri.toStringAsFixed(0)}',
+                                  style: AppTextStyles.statNumberStyle,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  sleepProvider.sriEvaluation,
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    // Compact Description Box
+                    Container(
+                      padding: const EdgeInsets.all(
+                        AppDimensions.paddingSmall,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBgAlert,
+                        border: Border.all(
+                          color: AppColors.borderDefault,
+                          width: AppDimensions.borderWidthThin,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusSmall,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'あなたの体内時計:',
+                            style: AppTextStyles.subtitleLabelStyle.copyWith(
+                              color: AppColors.darkWarning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6.0),
+                          Text(
+                            sleepProvider.sjl >= 2
+                                ? 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。'
+                                : sleepProvider.sjl >= 1
+                                    ? 'SJLが1時間以上あるため、体内時計がやや乱れています。'
+                                    : '体内時計は正常範囲です。良好な睡眠リズムを維持してください。',
+                            style: AppTextStyles.descriptionStyle.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // ========================
+              // Sleep Debt Section - Highlighted
+              // ========================
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
+                    ),
                   ),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Section Title with Icon
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.trending_down,
+                          size: 20,
+                          color: AppColors.warningRed,
+                        ),
+                        const SizedBox(width: AppDimensions.paddingSmall),
+                        Text(
+                          '睡眠負債',
+                          style: AppTextStyles.sectionTitleStyle,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
 
-                // ========================
-                // Footer Buttons
-                // ========================
-                Padding(
-                  padding: const EdgeInsets.all(AppDimensions.footerPadding),
-                  child: GridView.count(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: AppDimensions.gapMedium,
-                    crossAxisSpacing: AppDimensions.gapMedium,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildFooterButton(
-                        icon: Icons.calendar_today,
-                        label: 'シフト管理',
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('シフト管理画面（未実装）'),
-                            ),
-                          );
-                        },
+                    // Debt Number Highlighted
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(
+                        AppDimensions.paddingMedium,
                       ),
-                      _buildFooterButton(
-                        icon: Icons.settings,
-                        label: '設定',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const SettingsScreen(userId: 'test_user'),
-                            ),
-                          );
-                        },
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBgAlert,
+                        border: Border.all(
+                          color: AppColors.warningRed.withOpacity(0.3),
+                          width: AppDimensions.borderWidthThin,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusMedium,
+                        ),
                       ),
-                      _buildFooterButton(
-                        icon: Icons.list,
-                        label: '詳細',
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => SleepRecordsScreen(
-                                userId: 'test_user',
+                      child: Center(
+                        child: Text(
+                          sleepProvider.sleepDebtFormatted,
+                          style: AppTextStyles.debtNumberStyle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    // Average & Target
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '今月平均',
+                              style: AppTextStyles.bodyTextStyle,
+                            ),
+                            const SizedBox(height: 4.0),
+                            Text(
+                              _calculateMonthlyAverage(sleepProvider),
+                              style: AppTextStyles.statNumberStyle,
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '目標',
+                              style: AppTextStyles.bodyTextStyle,
+                            ),
+                            const SizedBox(height: 4.0),
+                            Text(
+                              '7h 00m',
+                              style: AppTextStyles.statNumberStyle.copyWith(
+                                color: AppColors.primaryGradientStart,
                               ),
                             ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          );
-        },
-      ),
+              ),
+
+              // ========================
+              // 下部パディング（BottomNavBar用）
+              // ========================
+              const SizedBox(height: AppDimensions.paddingLarge),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -524,47 +658,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final averageMinutes = totalMinutes ~/ provider.last30DaysRecords.length;
     return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
-  }
-
-  Widget _buildFooterButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: AppColors.borderDefault,
-            width: AppDimensions.borderWidthThin,
-          ),
-          borderRadius: BorderRadius.circular(
-            AppDimensions.borderRadiusSmall,
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: AppColors.textPrimary,
-              size: 24.0,
-            ),
-            const SizedBox(height: 4.0),
-            Text(
-              label,
-              style: AppTextStyles.labelStyle.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   String _getCurrentTime() {

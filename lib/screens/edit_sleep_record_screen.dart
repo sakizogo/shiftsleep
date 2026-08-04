@@ -37,6 +37,13 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
         backgroundColor: AppColors.backgroundLight,
         elevation: 0,
         centerTitle: true,
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back,
+            color: AppColors.textPrimary,
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Text(
           '睡眠記録を修正',
           style: AppTextStyles.headerStyle,
@@ -53,17 +60,19 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
       backgroundColor: AppColors.backgroundLight,
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(AppDimensions.sectionPaddingHorizontal),
+          padding: const EdgeInsets.symmetric(
+            vertical: AppDimensions.sectionPaddingVertical,
+            horizontal: AppDimensions.sectionPaddingHorizontal,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: AppDimensions.paddingMedium),
-
               // ========================
               // 入眠時刻の編集
               // ========================
               _buildTimeEditSection(
                 title: '入眠時刻',
+                icon: Icons.bedtime,
                 currentTime: _editedBedtime,
                 onTimeChanged: (newTime) {
                   setState(() {
@@ -73,13 +82,14 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                 },
               ),
 
-              const SizedBox(height: AppDimensions.paddingLarge),
+              const SizedBox(height: AppDimensions.paddingXLarge),
 
               // ========================
               // 起床時刻の編集
               // ========================
               _buildTimeEditSection(
                 title: '起床時刻',
+                icon: Icons.alarm_on,
                 currentTime: _editedWakeTime,
                 onTimeChanged: (newTime) {
                   setState(() {
@@ -89,14 +99,14 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                 },
               ),
 
-              const SizedBox(height: AppDimensions.paddingLarge),
+              const SizedBox(height: AppDimensions.paddingXLarge),
 
               // ========================
               // 睡眠時間表示
               // ========================
               _buildSleepDurationDisplay(),
 
-              const SizedBox(height: AppDimensions.paddingLarge),
+              const SizedBox(height: AppDimensions.paddingXLarge),
 
               // ========================
               // ボタンエリア
@@ -107,13 +117,18 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.borderDefault,
+                        backgroundColor: AppColors.cardBgGray,
+                        elevation: 0,
                         padding: EdgeInsets.symmetric(
                           vertical: AppDimensions.paddingMedium,
                         ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(
-                            AppDimensions.borderRadiusSmall,
+                            AppDimensions.borderRadiusMedium,
+                          ),
+                          side: BorderSide(
+                            color: AppColors.borderDefault,
+                            width: AppDimensions.borderWidthThin,
                           ),
                         ),
                       ),
@@ -122,32 +137,52 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                         style: AppTextStyles.bodyTextStyle.copyWith(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w600,
+                          fontSize: 15,
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: AppDimensions.paddingMedium),
                   Expanded(
-                    child: ElevatedButton(
-                      onPressed: _hasChanges ? _saveChanges : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _hasChanges
-                            ? AppColors.primaryGradientStart
-                            : AppColors.borderDefault,
-                        padding: EdgeInsets.symmetric(
-                          vertical: AppDimensions.paddingMedium,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppDimensions.borderRadiusSmall,
-                          ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: _hasChanges
+                            ? LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.primaryGradientStart,
+                                  AppColors.primaryGradientEnd,
+                                ],
+                              )
+                            : null,
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusMedium,
                         ),
                       ),
-                      child: Text(
-                        '保存',
-                        style: AppTextStyles.bodyTextStyle.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
+                      child: ElevatedButton(
+                        onPressed: _hasChanges ? _saveChanges : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: !_hasChanges
+                              ? AppColors.borderDefault
+                              : Colors.transparent,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppDimensions.paddingMedium,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              AppDimensions.borderRadiusMedium,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          '保存',
+                          style: AppTextStyles.bodyTextStyle.copyWith(
+                            color: _hasChanges ? Colors.white : AppColors.textMuted,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
                         ),
                       ),
                     ),
@@ -155,7 +190,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                 ],
               ),
 
-              const SizedBox(height: AppDimensions.paddingLarge),
+              const SizedBox(height: AppDimensions.paddingXLarge),
             ],
           ),
         ),
@@ -166,35 +201,55 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   /// 時刻編集セクション（入眠・起床）
   Widget _buildTimeEditSection({
     required String title,
+    required IconData icon,
     required DateTime currentTime,
     required Function(DateTime) onTimeChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: AppTextStyles.sectionTitleStyle,
+        // Section Title with Icon
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: AppColors.primaryGradientStart,
+            ),
+            const SizedBox(width: AppDimensions.paddingSmall),
+            Text(
+              title,
+              style: AppTextStyles.sectionTitleStyle,
+            ),
+          ],
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
+
+        // Time Display Card
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.all(AppDimensions.paddingMedium),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.borderDefault),
+            color: Colors.white,
+            border: Border.all(
+              color: AppColors.borderDefault,
+              width: AppDimensions.borderWidthThin,
+            ),
             borderRadius: BorderRadius.circular(
-              AppDimensions.borderRadiusSmall,
+              AppDimensions.borderRadiusMedium,
             ),
           ),
           child: Column(
             children: [
-              // 時刻表示
+              // 時刻表示（大きく）
               Text(
                 '${currentTime.hour.toString().padLeft(2, '0')}:${currentTime.minute.toString().padLeft(2, '0')}',
                 style: AppTextStyles.largeNumberStyle.copyWith(
-                  fontSize: 36,
+                  fontSize: 48,
+                  color: AppColors.primaryGradientStart,
                 ),
               ),
-              const SizedBox(height: AppDimensions.paddingMedium),
+              const SizedBox(height: AppDimensions.paddingLarge),
 
               // 時間スライダー（0～23）
               _buildSlider(
@@ -242,7 +297,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     );
   }
 
-  /// スライダーウィジェット
+  /// スライダーウィジェット（改善版）
   Widget _buildSlider({
     required String label,
     required double value,
@@ -253,6 +308,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Label & Value
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -260,31 +316,61 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
               label,
               style: AppTextStyles.bodyTextStyle.copyWith(
                 fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: AppColors.textSecondary,
               ),
             ),
-            Text(
-              value.toInt().toString().padLeft(2, '0'),
-              style: AppTextStyles.sectionTitleStyle.copyWith(
-                fontSize: 16,
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.paddingSmall,
+                vertical: AppDimensions.paddingXSmall,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.primaryGradientStart.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(
+                  AppDimensions.borderRadiusSmall,
+                ),
+              ),
+              child: Text(
+                value.toInt().toString().padLeft(2, '0'),
+                style: AppTextStyles.sectionTitleStyle.copyWith(
+                  fontSize: 16,
+                  color: AppColors.primaryGradientStart,
+                ),
               ),
             ),
           ],
         ),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: (max - min).toInt(),
-          label: value.toInt().toString().padLeft(2, '0'),
-          onChanged: onChanged,
-          activeColor: AppColors.primaryGradientStart,
-          inactiveColor: AppColors.borderDefault,
+        const SizedBox(height: 8.0),
+
+        // Slider
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 6.0,
+            thumbShape: RoundSliderThumbShape(
+              enabledThumbRadius: 12.0,
+              elevation: 2.0,
+            ),
+            overlayShape: RoundSliderOverlayShape(
+              overlayRadius: 16.0,
+            ),
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: (max - min).toInt(),
+            label: value.toInt().toString().padLeft(2, '0'),
+            onChanged: onChanged,
+            activeColor: AppColors.primaryGradientStart,
+            inactiveColor: AppColors.borderDefault,
+          ),
         ),
       ],
     );
   }
 
-  /// 睡眠時間表示
+  /// 睡眠時間表示（改善版）
   Widget _buildSleepDurationDisplay() {
     final duration = _editedWakeTime.difference(_editedBedtime);
 
@@ -295,39 +381,108 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     final hours = adjustedDuration.inHours;
     final minutes = adjustedDuration.inMinutes % 60;
 
+    // 睡眠時間に基づく評価
+    final totalHours = hours + (minutes / 60);
+    final isGood = totalHours >= 6;
+
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(AppDimensions.paddingMedium),
       decoration: BoxDecoration(
-        color: AppColors.cardBgWarning,
-        border: Border.all(color: AppColors.borderWarning),
+        gradient: isGood
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.primaryGradientStart.withOpacity(0.1),
+                  AppColors.primaryGradientEnd.withOpacity(0.1),
+                ],
+              )
+            : null,
+        color: !isGood ? AppColors.cardBgAlert : null,
+        border: Border.all(
+          color: isGood
+              ? AppColors.primaryGradientStart.withOpacity(0.3)
+              : AppColors.warningRed.withOpacity(0.3),
+          width: AppDimensions.borderWidthThin,
+        ),
         borderRadius: BorderRadius.circular(
-          AppDimensions.borderRadiusSmall,
+          AppDimensions.borderRadiusMedium,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '睡眠時間',
-            style: AppTextStyles.bodyTextStyle.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '睡眠時間',
+                style: AppTextStyles.bodyTextStyle.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.paddingSmall,
+                  vertical: AppDimensions.paddingXSmall,
+                ),
+                decoration: BoxDecoration(
+                  color: isGood
+                      ? AppColors.primaryGradientStart.withOpacity(0.15)
+                      : AppColors.warningRed.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(
+                    AppDimensions.borderRadiusSmall,
+                  ),
+                ),
+                child: Text(
+                  isGood ? '良好' : '不足',
+                  style: AppTextStyles.captionStyle.copyWith(
+                    color: isGood
+                        ? AppColors.primaryGradientStart
+                        : AppColors.warningRed,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: AppDimensions.paddingSmall),
+          const SizedBox(height: AppDimensions.paddingMedium),
+
+          // Sleep Duration Number
           Text(
             '${hours}h ${minutes}m',
             style: AppTextStyles.largeNumberStyle.copyWith(
-              fontSize: 32,
+              fontSize: 40,
+              color: isGood
+                  ? AppColors.primaryGradientStart
+                  : AppColors.warningRed,
             ),
           ),
           const SizedBox(height: AppDimensions.paddingSmall),
-          Text(
-            '入眠: ${_editedBedtime.hour.toString().padLeft(2, '0')}:${_editedBedtime.minute.toString().padLeft(2, '0')} '
-            '→ '
-            '起床: ${_editedWakeTime.hour.toString().padLeft(2, '0')}:${_editedWakeTime.minute.toString().padLeft(2, '0')}',
-            style: AppTextStyles.bodyTextStyle.copyWith(
-              fontSize: 12,
-              color: AppColors.textMuted,
+
+          // Time Range Details
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppDimensions.paddingSmall,
+              vertical: AppDimensions.paddingXSmall,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(
+                AppDimensions.borderRadiusSmall,
+              ),
+            ),
+            child: Text(
+              '入眠: ${_editedBedtime.hour.toString().padLeft(2, '0')}:${_editedBedtime.minute.toString().padLeft(2, '0')} '
+              '→ '
+              '起床: ${_editedWakeTime.hour.toString().padLeft(2, '0')}:${_editedWakeTime.minute.toString().padLeft(2, '0')}',
+              style: AppTextStyles.bodyTextStyle.copyWith(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
         ],
@@ -355,8 +510,14 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
         // 成功メッセージ
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('睡眠記録を更新しました'),
+            content: const Text('睡眠記録を更新しました'),
             backgroundColor: AppColors.primaryGradientStart,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(
+                AppDimensions.borderRadiusSmall,
+              ),
+            ),
           ),
         );
       }
@@ -367,6 +528,12 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
           SnackBar(
             content: Text('更新に失敗しました: $e'),
             backgroundColor: AppColors.warningRed,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(
+                AppDimensions.borderRadiusSmall,
+              ),
+            ),
           ),
         );
       }
