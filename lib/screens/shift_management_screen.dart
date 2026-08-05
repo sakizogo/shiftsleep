@@ -54,13 +54,13 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
     _selectedDay = now;
 
     // デフォルト休日パターンを作成
-    // ShiftPatternModelが自動的に赤色を割り当てる
     _defaultDayOffPattern = ShiftPatternModel(
       id: 'default_dayoff',
       patternName: '休日',
       patternType: ShiftType.dayOff,
       startTime: null,
       endTime: null,
+      colorIndex: 0,
     );
   }
 
@@ -292,7 +292,6 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Widget _buildPatternButton(ShiftPatternModel pattern) {
     final isSelected = _selectedPattern?.id == pattern.id;
     
-    // テキスト色を背景色の明度に応じて決定
     final textColor = _isLightColor(pattern.color) ? Colors.black87 : Colors.white;
     
     return Material(
@@ -340,7 +339,7 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
     return (color.red * 0.299 + color.green * 0.587 + color.blue * 0.114) > 128;
   }
 
-  /// 方式①：カレンダータップ入力（修正版：登録済みシフトを表示・マーカー色連動）
+  /// 方式①：カレンダータップ入力
   Widget _buildCalendarInputMethod() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -368,7 +367,6 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
               return isSameDay(_selectedDay, day);
             },
             eventLoader: (day) {
-              // 登録済みシフトをイベントとして返す
               final normalized = DateTime(day.year, day.month, day.day);
               return _shiftMap.containsKey(normalized)
                   ? [_shiftMap[normalized]!.pattern?.patternName ?? '']
@@ -379,16 +377,23 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
 
-                // パターンが選択されていたら登録
-                if (_selectedPattern != null) {
-                  final normalized =
-                      DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+                final normalized = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+
+                if (_shiftMap.containsKey(normalized)) {
+                  _shiftMap.remove(normalized);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${selectedDay.month}/${selectedDay.day}の登録を削除しました'),
+                      backgroundColor: AppColors.warningRed,
+                      duration: const Duration(seconds: 1),
+                    ),
+                  );
+                } else if (_selectedPattern != null) {
                   _shiftMap[normalized] = ShiftData(
                     date: normalized,
                     pattern: _selectedPattern,
                   );
 
-                  // フィードバック表示
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
@@ -440,9 +445,8 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 borderRadius:
                     BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
-              // マーカーをパターン色に連動
               markerDecoration: BoxDecoration(
-                color: _selectedPattern?.color ?? AppColors.starYellow,
+                color: AppColors.starYellow,
                 shape: BoxShape.circle,
               ),
               defaultTextStyle: AppTextStyles.bodyTextStyle.copyWith(
@@ -456,6 +460,55 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+            calendarBuilders: CalendarBuilders(
+              defaultBuilder: (context, date, focusedDay) {
+                final normalized = DateTime(date.year, date.month, date.day);
+                if (_shiftMap.containsKey(normalized)) {
+                  final pattern = _shiftMap[normalized]?.pattern;
+                  final patternColor = pattern?.color ?? Colors.grey;
+                  final patternName = pattern?.patternName ?? '';
+                  
+                  // パターン名を短縮（2文字目まで）
+                  final shortName = patternName.length > 2 
+                    ? patternName.substring(0, 2) 
+                    : patternName;
+                  
+                  // テキスト色：休日は赤、その他は黒
+                  final textColor = pattern?.patternType == ShiftType.dayOff 
+                    ? Colors.red 
+                    : Colors.black87;
+                  
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: patternColor.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          shortName,
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return null;
+              },
             ),
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
@@ -489,7 +542,6 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
 
-        // 登録済みシフト一覧（カラーコード表示付き）
         if (_shiftMap.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(AppDimensions.paddingSmall),
@@ -520,7 +572,6 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                       children: [
                         Row(
                           children: [
-                            // パターン色を示す□
                             Container(
                               width: 16,
                               height: 16,

@@ -5,7 +5,6 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
-import 'package:shiftsleep/models/shift_pattern_model.dart';
 
 
 class ShiftPatternScreen extends StatefulWidget {
@@ -578,12 +577,30 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  pattern.patternName,
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+                Row(
+                  children: [
+                    // パターン色を示す□
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: pattern.color,
+                        border: Border.all(
+                          color: pattern.color.withOpacity(0.5),
+                          width: 1,
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 8.0),
+                    Text(
+                      pattern.patternName,
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 2.0),
                 if (pattern.patternType == ShiftType.work)
@@ -686,6 +703,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       patternType: _selectedType,
       startTime: _selectedType == ShiftType.work ? _startTime : null,
       endTime: _selectedType == ShiftType.work ? _endTime : null,
+      colorIndex: _patterns.length,  // ← 新規追加：既存パターン数をインデックスとする
     );
 
     setState(() {
@@ -723,12 +741,14 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     );
 
     if (index != -1) {
+      final originalColorIndex = _patterns[index].colorIndex;  // ← 元の色インデックスを保持
       _patterns[index] = ShiftPatternModel(
         id: widget.editingPattern!.id,
         patternName: _patternNameController.text.trim(),
         patternType: _selectedType,
         startTime: _selectedType == ShiftType.work ? _startTime : null,
         endTime: _selectedType == ShiftType.work ? _endTime : null,
+        colorIndex: originalColorIndex,  // ← 色は変わらない
       );
 
       // コールバック実行
