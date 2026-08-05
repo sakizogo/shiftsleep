@@ -3,6 +3,7 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'shift_management_screen.dart';
 import 'shift_pattern_screen.dart';
 

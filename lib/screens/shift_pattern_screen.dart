@@ -3,23 +3,10 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 
-class ShiftPatternModel {
-  final String id;
-  final String patternName;
-  final ShiftType patternType;
-  final TimeOfDay? startTime;
-  final TimeOfDay? endTime;
-
-  ShiftPatternModel({
-    required this.id,
-    required this.patternName,
-    required this.patternType,
-    this.startTime,
-    this.endTime,
-  });
-}
 
 class ShiftPatternScreen extends StatefulWidget {
   final ShiftPatternMode mode;

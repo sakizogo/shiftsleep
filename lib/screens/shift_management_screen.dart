@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'shift_pattern_screen.dart';
 import 'shift_detail_screen.dart';
 
@@ -53,6 +54,7 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
     _selectedDay = now;
 
     // デフォルト休日パターンを作成
+    // ShiftPatternModelが自動的に赤色を割り当てる
     _defaultDayOffPattern = ShiftPatternModel(
       id: 'default_dayoff',
       patternName: '休日',
@@ -286,9 +288,13 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// パターン選択ボタン（修正版：複数選択可能）
+  /// パターン選択ボタン（色分け版）
   Widget _buildPatternButton(ShiftPatternModel pattern) {
     final isSelected = _selectedPattern?.id == pattern.id;
+    
+    // テキスト色を背景色の明度に応じて決定
+    final textColor = _isLightColor(pattern.color) ? Colors.black87 : Colors.white;
+    
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -306,12 +312,10 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
           ),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.primaryGradientStart.withOpacity(0.15)
-                : AppColors.cardBgGray,
+                ? pattern.color.withOpacity(0.2)
+                : pattern.color.withOpacity(0.1),
             border: Border.all(
-              color: isSelected
-                  ? AppColors.primaryGradientStart
-                  : AppColors.borderDefault,
+              color: isSelected ? pattern.color : pattern.color.withOpacity(0.5),
               width: isSelected ? 2.0 : 1.0,
             ),
             borderRadius: BorderRadius.circular(
@@ -323,9 +327,7 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
             style: AppTextStyles.bodyTextStyle.copyWith(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: isSelected
-                  ? AppColors.primaryGradientStart
-                  : AppColors.textSecondary,
+              color: isSelected ? pattern.color : pattern.color.withOpacity(0.7),
             ),
           ),
         ),
@@ -333,7 +335,12 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// 方式①：カレンダータップ入力（修正版：登録済みシフトを表示）
+  /// 色が明るいか暗いかを判定（テキスト色決定用）
+  bool _isLightColor(Color color) {
+    return (color.red * 0.299 + color.green * 0.587 + color.blue * 0.114) > 128;
+  }
+
+  /// 方式①：カレンダータップ入力（修正版：登録済みシフトを表示・マーカー色連動）
   Widget _buildCalendarInputMethod() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,8 +440,9 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 borderRadius:
                     BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
+              // マーカーをパターン色に連動
               markerDecoration: BoxDecoration(
-                color: AppColors.starYellow,
+                color: _selectedPattern?.color ?? AppColors.starYellow,
                 shape: BoxShape.circle,
               ),
               defaultTextStyle: AppTextStyles.bodyTextStyle.copyWith(
@@ -481,7 +489,7 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
 
-        // 登録済みシフト一覧
+        // 登録済みシフト一覧（カラーコード表示付き）
         if (_shiftMap.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(AppDimensions.paddingSmall),
@@ -502,6 +510,7 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 ),
                 const SizedBox(height: 6.0),
                 ..._shiftMap.entries.map((entry) {
+                  final patternColor = entry.value.pattern?.color ?? Colors.grey;
                   return Padding(
                     padding: const EdgeInsets.only(
                       top: 4.0,
@@ -509,12 +518,30 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          '${entry.key.month}/${entry.key.day}: ${entry.value.pattern?.patternName ?? ''}',
-                          style: AppTextStyles.bodyTextStyle.copyWith(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
-                          ),
+                        Row(
+                          children: [
+                            // パターン色を示す□
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: patternColor,
+                                border: Border.all(
+                                  color: patternColor.withOpacity(0.5),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 8.0),
+                            Text(
+                              '${entry.key.month}/${entry.key.day}: ${entry.value.pattern?.patternName ?? ''}',
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                         GestureDetector(
                           onTap: () {
@@ -704,20 +731,42 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
           ),
           decoration: BoxDecoration(
             color: _selectedPattern != null
-                ? AppColors.primaryGradientStart.withOpacity(0.1)
+                ? _selectedPattern!.color.withOpacity(0.1)
                 : AppColors.cardBgGray,
             borderRadius:
                 BorderRadius.circular(AppDimensions.borderRadiusSmall),
           ),
-          child: Text(
-            _selectedPattern?.patternName ?? 'パターンを選択してください',
-            style: AppTextStyles.bodyTextStyle.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: _selectedPattern != null
-                  ? AppColors.primaryGradientStart
-                  : AppColors.textMuted,
-            ),
+          child: Row(
+            children: [
+              if (_selectedPattern != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: _selectedPattern!.color,
+                      border: Border.all(
+                        color: _selectedPattern!.color.withOpacity(0.5),
+                        width: 1,
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  _selectedPattern?.patternName ?? 'パターンを選択してください',
+                  style: AppTextStyles.bodyTextStyle.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _selectedPattern != null
+                        ? _selectedPattern!.color
+                        : AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
