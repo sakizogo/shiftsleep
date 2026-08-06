@@ -5,16 +5,20 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'shift_management_screen.dart';
-import 'shift_pattern_screen.dart';
 
 class ShiftDetailScreen extends StatefulWidget {
   final Map<DateTime, ShiftData> shiftDataMap;
   final List<ShiftPatternModel> patterns;
+  
+  // ========== Week 3 Day 5 追加: 戻るコールバック ==========
+  final VoidCallback? onBack;
+  // ======================================================
 
   const ShiftDetailScreen({
     Key? key,
     required this.shiftDataMap,
     required this.patterns,
+    this.onBack,  // ← 追加
   }) : super(key: key);
 
   @override
@@ -43,13 +47,9 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
         backgroundColor: AppColors.backgroundLight,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: AppColors.textPrimary,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        // ========== Week 3 Day 5 削除: 戻る矢印ボタン（タブ切り替えで戻るため） ==========
+        // leading: IconButton(...) を削除
+        // ================================================================
         title: Text(
           'シフト詳細確認',
           style: AppTextStyles.headerStyle,
@@ -436,9 +436,10 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
       ),
     );
 
-    // ホーム画面に戻る
-    Navigator.of(context).popUntil((route) {
-      return route.settings.name == null; // ホーム画面まで戻る
-    });
+    // ========== Week 3 Day 5 修正: onBack コールバック経由で戻す ==========
+    if (widget.onBack != null) {
+      widget.onBack!();
+    }
+    // ===================================================================
   }
 }

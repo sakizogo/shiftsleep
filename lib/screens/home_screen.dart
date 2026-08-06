@@ -10,6 +10,13 @@ import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
 import 'package:shiftsleep/screens/shift_pattern_screen.dart';
 import 'package:shiftsleep/screens/sleep_records_screen.dart';
+import 'package:shiftsleep/screens/shift_detail_screen.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/constants/shift_enums.dart';
+
+// Week 3 Day 5: シフト管理画面内の詳細状態管理
+enum ShiftManagementView { calendar, details }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -19,15 +26,44 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0; // ナビゲーション状態管理
+  int _selectedIndex = 0;
+
+  ShiftManagementView _shiftManagementView = ShiftManagementView.calendar;
+  Map<DateTime, ShiftData>? _shiftDataMapForDetails;
+  List<ShiftPatternModel>? _patternsForDetails;
+
+  final ShiftRepository _shiftRepository = ShiftRepository();
+  List<ShiftPatternModel> _patterns = [];
+  bool _isLoadingPatterns = false;
 
   @override
   void initState() {
     super.initState();
-    // 画面読み込み時にデータを取得
     Future.microtask(
       () => context.read<SleepProvider>().loadAllSleepData(),
     );
+    
+    _loadPatterns();
+  }
+
+  Future<void> _loadPatterns() async {
+    setState(() {
+      _isLoadingPatterns = true;
+    });
+
+    try {
+      final patterns = await _shiftRepository.getAllPatterns();
+      setState(() {
+        _patterns = patterns;
+        _isLoadingPatterns = false;
+      });
+      print('Loaded ${patterns.length} patterns from DB');
+    } catch (e) {
+      print('Error loading patterns: $e');
+      setState(() {
+        _isLoadingPatterns = false;
+      });
+    }
   }
 
   @override
@@ -56,7 +92,14 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: (index) {
           setState(() {
             _selectedIndex = index;
+            if (index != 1) {
+              _shiftManagementView = ShiftManagementView.calendar;
+            }
           });
+          
+          if (index == 1) {
+            _loadPatterns();
+          }
         },
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
@@ -84,13 +127,38 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// インデックスに応じてページを返す
   Widget _buildPage(int index) {
     switch (index) {
       case 0:
         return _buildHomeContent();
       case 1:
-        return ShiftManagementScreen(patterns: []);
+        if (_shiftManagementView == ShiftManagementView.details &&
+            _shiftDataMapForDetails != null &&
+            _patternsForDetails != null) {
+          return ShiftDetailScreen(
+            shiftDataMap: _shiftDataMapForDetails!,
+            patterns: _patternsForDetails!,
+            onBack: () {
+              setState(() {
+                _shiftManagementView = ShiftManagementView.calendar;
+                _shiftDataMapForDetails = null;
+                _patternsForDetails = null;
+              });
+              _loadPatterns();
+            },
+          );
+        } else {
+          return ShiftManagementScreen(
+            patterns: _patterns,
+            onNavigateToDetails: (shiftDataMap, patterns) {
+              setState(() {
+                _shiftDataMapForDetails = shiftDataMap as Map<DateTime, ShiftData>;
+                _patternsForDetails = patterns as List<ShiftPatternModel>;
+                _shiftManagementView = ShiftManagementView.details;
+              });
+            },
+          );
+        }
       case 2:
         return SettingsScreen(userId: 'test_user');
       case 3:
@@ -100,7 +168,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// ホーム画面コンテンツ
   Widget _buildHomeContent() {
     return Consumer<SleepProvider>(
       builder: (context, sleepProvider, _) {
@@ -157,7 +224,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: AppDimensions.paddingLarge),
                     SleepButton(
                       onPressed: () async {
-                        // 新規睡眠記録を挿入後、最新データを再ロード
                         await sleepProvider.loadLatestSleepData();
                       },
                     ),
@@ -185,7 +251,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Section Title with Icon
                     Row(
                       children: [
                         Icon(
@@ -202,7 +267,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // Data Card
                     if (sleepProvider.latestRecord != null)
                       Container(
                         padding: const EdgeInsets.all(
@@ -221,7 +285,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Time Display
                             Text(
                               '${sleepProvider.lastBedtimeFormatted} ～ ${sleepProvider.lastWakeTimeFormatted}',
                               style: AppTextStyles.bodyTextStyle.copyWith(
@@ -232,7 +295,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(
                                 height: AppDimensions.paddingMedium),
 
-                            // Sleep Duration - Large
                             Text(
                               sleepProvider.lastSleepDurationFormatted,
                               style: AppTextStyles.largeNumberStyle.copyWith(
@@ -242,12 +304,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(
                                 height: AppDimensions.paddingMedium),
 
-                            // Star Rating + Edit Button
                             Row(
                               mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
                               children: [
-                                // Stars
                                 Row(
                                   children: List.generate(
                                     5,
@@ -266,7 +326,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 ),
-                                // Edit Button
                                 GestureDetector(
                                   onTap: () {
                                     Navigator.push(
@@ -329,6 +388,71 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
+              // ========== Week 3 Day 5 修正: シフト体系登録ボタン（移動・スタイル改善） ==========
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
+                    ),
+                  ),
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ShiftPatternScreen(
+                            mode: ShiftPatternMode.register,
+                            existingPatterns: _patterns,
+                          ),
+                        ),
+                      );
+                      
+                      if (result == 1) {
+                        setState(() {
+                          _selectedIndex = 1;
+                        });
+                        await _loadPatterns();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      elevation: 0,
+                      side: BorderSide(
+                        color: AppColors.primaryGradientStart,
+                        width: 2,
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        vertical: AppDimensions.paddingMedium,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusMedium,
+                        ),
+                      ),
+                    ),
+                    child: Text(
+                      'シフト体系登録',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        color: AppColors.primaryGradientStart,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // ====================================================================================
+
               // ========================
               // Circadian State Section - Compact
               // ========================
@@ -349,7 +473,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Section Title with Icon
                     Row(
                       children: [
                         Icon(
@@ -366,10 +489,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // SJL & SRI Cards
                     Row(
                       children: [
-                        // SJL カード
                         Expanded(
                           child: Container(
                             padding: const EdgeInsets.all(
@@ -414,7 +535,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(width: AppDimensions.gapMedium),
-                        // SRI カード
                         Expanded(
                           child: Container(
                             padding: const EdgeInsets.all(
@@ -462,7 +582,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // Compact Description Box
                     Container(
                       padding: const EdgeInsets.all(
                         AppDimensions.paddingSmall,
@@ -525,7 +644,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Section Title with Icon
                     Row(
                       children: [
                         Icon(
@@ -542,7 +660,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // Debt Number Highlighted
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(
@@ -567,7 +684,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // Average & Target
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -607,9 +723,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // ========================
-              // 下部パディング（BottomNavBar用）
-              // ========================
               const SizedBox(height: AppDimensions.paddingLarge),
             ],
           ),
@@ -617,10 +730,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
-  // ========================
-  // Helper Methods
-  // ========================
 
   int _getStarCount(SleepProvider provider) {
     if (provider.latestRecord == null) return 0;

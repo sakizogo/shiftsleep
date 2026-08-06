@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
 
 
@@ -686,7 +687,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
   }
 
   /// シフト体系を追加
-  void _addPattern() {
+  void _addPattern() async {
     if (_patternNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -697,14 +698,19 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       return;
     }
 
+    // ========== Week 3 Day 5 追加: DB保存機能 ==========
     final newPattern = ShiftPatternModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       patternName: _patternNameController.text.trim(),
       patternType: _selectedType,
       startTime: _selectedType == ShiftType.work ? _startTime : null,
       endTime: _selectedType == ShiftType.work ? _endTime : null,
-      colorIndex: _patterns.length,  // ← 新規追加：既存パターン数をインデックスとする
+      colorIndex: _patterns.length,
     );
+
+    // DB に保存
+    final shiftRepository = ShiftRepository();
+    await shiftRepository.createPattern(newPattern);
 
     setState(() {
       _patterns.add(newPattern);
@@ -721,6 +727,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+    // ====================================================
   }
 
   /// シフト体系を更新
@@ -768,16 +775,9 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
   }
 
-  /// 次画面へ遷移
   void _proceedToNextScreen() {
-    // ShiftManagementScreen に直接遷移
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ShiftManagementScreen(
-          patterns: _patterns,
-        ),
-      ),
-    );
+    // ========== Week 3 Day 5 修正: pop(1) を返して、home_screen に指示 ==========
+    Navigator.pop(context, 1);  // 1 = シフト管理タブを選択
+    // ========================================================================
   }
 }

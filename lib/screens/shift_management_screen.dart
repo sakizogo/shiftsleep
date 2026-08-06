@@ -5,8 +5,6 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
-import 'shift_pattern_screen.dart';
-import 'shift_detail_screen.dart';
 
 class ShiftData {
   final DateTime date;
@@ -24,10 +22,15 @@ class ShiftData {
 
 class ShiftManagementScreen extends StatefulWidget {
   final List<ShiftPatternModel> patterns;
+  
+  // ========== Week 3 Day 5 追加: 詳細画面へ遷移するコールバック ==========
+  final Function(Map<DateTime, ShiftData>, List<ShiftPatternModel>)? onNavigateToDetails;
+  // ================================================================
 
   const ShiftManagementScreen({
     Key? key,
     required this.patterns,
+    this.onNavigateToDetails,
   }) : super(key: key);
 
   @override
@@ -66,145 +69,116 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: AppColors.backgroundLight,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: AppColors.textPrimary,
-          ),
-          onPressed: () => Navigator.pop(context),
+    // ========== Week 3 Day 5 修正: Scaffold を削除し、コンテンツのみを返す ==========
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          vertical: AppDimensions.sectionPaddingVertical,
+          horizontal: AppDimensions.sectionPaddingHorizontal,
         ),
-        title: Text(
-          'シフト入力',
-          style: AppTextStyles.headerStyle,
-        ),
-        foregroundColor: AppColors.textPrimary,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(
-            color: AppColors.borderDefault,
-            height: 1.0,
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: AppDimensions.sectionPaddingVertical,
-            horizontal: AppDimensions.sectionPaddingHorizontal,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ========================
-              // 入力方式タブ
-              // ========================
-              _buildInputMethodTabs(),
-              const SizedBox(height: AppDimensions.paddingLarge),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ========================
+            // 入力方式タブ
+            // ========================
+            _buildInputMethodTabs(),
+            const SizedBox(height: AppDimensions.paddingLarge),
 
-              // ========================
-              // パターンクイック選択（追加：デフォルト休日を含む）
-              // ========================
-              Text(
-                'パターンを選択',
-                style: AppTextStyles.bodyTextStyle.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
+            // ========================
+            // パターンクイック選択（追加：デフォルト休日を含む）
+            // ========================
+            Text(
+              'パターンを選択',
+              style: AppTextStyles.bodyTextStyle.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
-              const SizedBox(height: AppDimensions.paddingSmall),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    // デフォルト休日パターン
-                    Padding(
+            ),
+            const SizedBox(height: AppDimensions.paddingSmall),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // デフォルト休日パターン
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      right: AppDimensions.paddingSmall,
+                    ),
+                    child: _buildPatternButton(_defaultDayOffPattern),
+                  ),
+                  // ユーザーが登録したパターン
+                  ...widget.patterns.map((pattern) {
+                    return Padding(
                       padding: const EdgeInsets.only(
                         right: AppDimensions.paddingSmall,
                       ),
-                      child: _buildPatternButton(_defaultDayOffPattern),
-                    ),
-                    // ユーザーが登録したパターン
-                    ...widget.patterns.map((pattern) {
-                      return Padding(
-                        padding: const EdgeInsets.only(
-                          right: AppDimensions.paddingSmall,
-                        ),
-                        child: _buildPatternButton(pattern),
-                      );
-                    }).toList(),
-                  ],
-                ),
+                      child: _buildPatternButton(pattern),
+                    );
+                  }).toList(),
+                ],
               ),
-              const SizedBox(height: AppDimensions.paddingLarge),
+            ),
+            const SizedBox(height: AppDimensions.paddingLarge),
 
-              // ========================
-              // 入力方式別コンテンツ
-              // ========================
-              if (_selectedInputMethod == 0)
-                _buildCalendarInputMethod()
-              else if (_selectedInputMethod == 1)
-                _buildRangeInputMethod()
-              else
-                _buildManualInputMethod(),
+            // ========================
+            // 入力方式別コンテンツ
+            // ========================
+            if (_selectedInputMethod == 0)
+              _buildCalendarInputMethod()
+            else if (_selectedInputMethod == 1)
+              _buildRangeInputMethod()
+            else
+              _buildManualInputMethod(),
 
-              const SizedBox(height: AppDimensions.paddingXLarge),
+            const SizedBox(height: AppDimensions.paddingXLarge),
 
-              // ========================
-              // 完了ボタン
-              // ========================
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _shiftMap.isNotEmpty
-                      ? () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ShiftDetailScreen(
-                                shiftDataMap: _shiftMap,
-                                patterns: widget.patterns,
-                              ),
-                            ),
-                          );
+            // ========================
+            // 完了ボタン
+            // ========================
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _shiftMap.isNotEmpty
+                    ? () {
+                        // ========== Week 3 Day 5 修正: Navigator.push を削除、コールバック導入 ==========
+                        if (widget.onNavigateToDetails != null) {
+                          widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                         }
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _shiftMap.isNotEmpty
-                        ? AppColors.primaryGradientStart
-                        : AppColors.borderDefault,
-                    padding: EdgeInsets.symmetric(
-                      vertical: AppDimensions.paddingMedium,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        AppDimensions.borderRadiusMedium,
-                      ),
-                    ),
+                        // ================================================================
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _shiftMap.isNotEmpty
+                      ? AppColors.primaryGradientStart
+                      : AppColors.borderDefault,
+                  padding: EdgeInsets.symmetric(
+                    vertical: AppDimensions.paddingMedium,
                   ),
-                  child: Text(
-                    'シフト入力完了',
-                    style: AppTextStyles.bodyTextStyle.copyWith(
-                      color: _shiftMap.isNotEmpty
-                          ? Colors.white
-                          : AppColors.textMuted,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(
+                      AppDimensions.borderRadiusMedium,
                     ),
                   ),
                 ),
+                child: Text(
+                  'シフト入力完了',
+                  style: AppTextStyles.bodyTextStyle.copyWith(
+                    color: _shiftMap.isNotEmpty
+                        ? Colors.white
+                        : AppColors.textMuted,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
               ),
-              const SizedBox(height: AppDimensions.paddingLarge),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppDimensions.paddingLarge),
+          ],
         ),
       ),
     );
+    // ================================================================
   }
 
   /// 入力方式タブ
