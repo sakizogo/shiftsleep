@@ -26,8 +26,28 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,  // ========== Week 3 Day 6-1 修正: version を 2 に上げる ==========
       onCreate: _createTables,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // ========== Week 3 Day 6-1 追加: shift_patterns テーブルが無い場合は作成 ==========
+        // バージョンアップ時に新しいテーブルを作成
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS shift_patterns (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              pattern_name TEXT NOT NULL,
+              pattern_type TEXT NOT NULL,
+              start_time TEXT,
+              end_time TEXT,
+              color_index INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          ''');
+        }
+        // ========================================================================
+      },
     );
   }
 
@@ -93,6 +113,23 @@ class DatabaseHelper {
         updatedAt TEXT NOT NULL
       )
     ''');
+
+    // ========== Week 3 Day 6-1 修正: shift_patterns テーブル定義追加 ==========
+    // シフト体系パターンを管理するテーブル（不足していた）
+    await db.execute('''
+      CREATE TABLE shift_patterns (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        pattern_name TEXT NOT NULL,
+        pattern_type TEXT NOT NULL,
+        start_time TEXT,
+        end_time TEXT,
+        color_index INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    // ========================================================================
   }
 
   // Close database

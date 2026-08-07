@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'shift_management_screen.dart';
 
 class ShiftDetailScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class ShiftDetailScreen extends StatefulWidget {
 class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
   late TimeOfDay _customStartTime;
   late TimeOfDay _customEndTime;
+  final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 6-2 追加 ==========
 
   @override
   void initState() {
@@ -425,21 +427,46 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
     return days[date.weekday - 1];
   }
 
+  /// ========== Week 3 Day 6-2 修正: シフトを DB に保存 ==========
   /// シフトを保存
-  void _saveShifts() {
-    // TODO: DB に保存する処理（Week 3 で実装）
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('シフトを保存しました'),
-        backgroundColor: AppColors.primaryGradientStart,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _saveShifts() async {
+    try {
+      // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
+      final Map<DateTime, ShiftPatternModel?> patternMap = {};
+      for (final entry in widget.shiftDataMap.entries) {
+        patternMap[entry.key] = entry.value.pattern;
+      }
+      
+      // DB に保存
+      await _shiftRepository.createShifts(patternMap);
+      
+      // 成功メッセージ
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${widget.shiftDataMap.length}日間のシフトを保存しました'),
+            backgroundColor: AppColors.primaryGradientStart,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
 
-    // ========== Week 3 Day 5 修正: onBack コールバック経由で戻す ==========
-    if (widget.onBack != null) {
-      widget.onBack!();
+      // onBack コールバック経由で戻す
+      if (widget.onBack != null) {
+        widget.onBack!();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('シフト保存に失敗しました: $e'),
+            backgroundColor: AppColors.warningRed,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      print('Error saving shifts: $e');
     }
-    // ===================================================================
   }
+  // ==============================================================================
 }

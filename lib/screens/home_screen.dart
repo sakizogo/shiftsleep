@@ -35,10 +35,17 @@ class _HomeScreenState extends State<HomeScreen> {
   final ShiftRepository _shiftRepository = ShiftRepository();
   List<ShiftPatternModel> _patterns = [];
   bool _isLoadingPatterns = false;
+  
+  // ========== Week 3 Day 6-2 追加: シフト管理画面の state にアクセス ==========
+  late GlobalKey<ShiftManagementScreenState> _shiftManagementKey;
+  // ========================================================================
 
   @override
   void initState() {
     super.initState();
+    // ========== Week 3 Day 6-2 追加: GlobalKey を初期化 ==========
+    _shiftManagementKey = GlobalKey<ShiftManagementScreenState>();
+    // ===========================================================
     Future.microtask(
       () => context.read<SleepProvider>().loadAllSleepData(),
     );
@@ -92,14 +99,22 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: (index) {
           setState(() {
             _selectedIndex = index;
-            if (index != 1) {
-              _shiftManagementView = ShiftManagementView.calendar;
-            }
+            // ========== Week 3 Day 6-2 修正: シフト管理タブ切り替え時にリセット ==========
+            // タブを切り替える際、常に ShiftManagementView をリセット
+            _shiftManagementView = ShiftManagementView.calendar;
+            // ========================================================================
           });
-          
+  
+          // ========== Week 3 Day 6-2 修正: タブ切り替え時に loadShifts() を呼び出し ==========
           if (index == 1) {
+            // パターンをリロード
             _loadPatterns();
+            // シフト管理画面から DB にシフトを再ロード
+            Future.delayed(const Duration(milliseconds: 100), () {
+              _shiftManagementKey.currentState?.loadShifts();
+            });
           }
+          // ============================================================================
         },
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
@@ -144,11 +159,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 _shiftDataMapForDetails = null;
                 _patternsForDetails = null;
               });
+              // ========== Week 3 Day 6-2 追加: 入力フォームをリセット＆シフトを再ロード ==========
               _loadPatterns();
+              _shiftManagementKey.currentState?.clearShiftMap();
+              _shiftManagementKey.currentState?.loadShifts();
+              // ==============================================================
             },
           );
         } else {
           return ShiftManagementScreen(
+            key: _shiftManagementKey,  // ========== Week 3 Day 6-2 修正: GlobalKey に変更 ==========
             patterns: _patterns,
             onNavigateToDetails: (shiftDataMap, patterns) {
               setState(() {

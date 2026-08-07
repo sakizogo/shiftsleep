@@ -28,7 +28,9 @@ class ShiftPatternScreen extends StatefulWidget {
 
 class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
   final TextEditingController _patternNameController = TextEditingController();
-  ShiftType _selectedType = ShiftType.work;
+  // ========== Week 3 Day 6-1 修正: ShiftType.work のみに固定 ==========
+  // ShiftType.dayOff は削除（デフォルト休日があるため不要）
+  // =================================================================
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 30);
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
   late List<ShiftPatternModel> _patterns;
@@ -42,7 +44,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     if (widget.mode == ShiftPatternMode.edit &&
         widget.editingPattern != null) {
       _patternNameController.text = widget.editingPattern!.patternName;
-      _selectedType = widget.editingPattern!.patternType;
       if (widget.editingPattern!.startTime != null) {
         _startTime = widget.editingPattern!.startTime!;
       }
@@ -82,7 +83,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
             Icons.arrow_back,
             color: AppColors.textPrimary,
           ),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(context, 1),  // ========== Week 3 Day 6-1 修正: pop(1) に統一 ==========
         ),
         title: Text(
           appBarTitle,
@@ -119,9 +120,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
               ),
               const SizedBox(height: AppDimensions.paddingSmall),
               Text(
-                isEditMode
-                    ? '例：日勤、夜勤、準夜勤、休日など'
-                    : '例：日勤、夜勤、準夜勤、休日など',
+                '例：日勤、夜勤、準夜勤など（出勤パターンのみ登録）',
                 style: AppTextStyles.bodyTextStyle.copyWith(
                   fontSize: 13,
                   color: AppColors.textMuted,
@@ -229,208 +228,184 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // シフト体系タイプ選択
+                    // ========== Week 3 Day 6-1 修正: シフト体系タイプ選択を削除 ==========
+                    // ShiftType.work のみになるため、タイプ選択行は不要
+                    // ====================================================================
+
+                    // 出勤時刻選択
                     Text(
-                      'シフト体系タイプ',
+                      '出勤時刻',
                       style: AppTextStyles.bodyTextStyle.copyWith(
                         fontWeight: FontWeight.w500,
                         fontSize: 13,
                       ),
                     ),
-                    const SizedBox(height: 8.0),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildTypeButton(
-                            type: ShiftType.work,
-                            isSelected: _selectedType == ShiftType.work,
-                            onTap: () {
-                              setState(() {
-                                _selectedType = ShiftType.work;
-                              });
-                            },
+                    const SizedBox(height: 6.0),
+                    GestureDetector(
+                      onTap: () => _selectStartTime(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDimensions.paddingSmall,
+                          vertical: 10.0,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: AppColors.borderDefault,
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusSmall,
                           ),
                         ),
-                        const SizedBox(width: AppDimensions.paddingSmall),
-                        Expanded(
-                          child: _buildTypeButton(
-                            type: ShiftType.dayOff,
-                            isSelected: _selectedType == ShiftType.dayOff,
-                            onTap: () {
-                              setState(() {
-                                _selectedType = ShiftType.dayOff;
-                              });
-                            },
-                          ),
+                        child: Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Icon(
+                              Icons.access_time,
+                              color: AppColors.textMuted,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    // 出勤パターンの場合：時刻入力
-                    if (_selectedType == ShiftType.work) ...[
-                      Text(
-                        '出勤時刻',
-                        style: AppTextStyles.bodyTextStyle.copyWith(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
+                    // 退勤時刻選択
+                    Text(
+                      '退勤時刻',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6.0),
+                    GestureDetector(
+                      onTap: () => _selectEndTime(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDimensions.paddingSmall,
+                          vertical: 10.0,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: AppColors.borderDefault,
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusSmall,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Icon(
+                              Icons.access_time,
+                              color: AppColors.textMuted,
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6.0),
-                      GestureDetector(
-                        onTap: () => _selectStartTime(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppDimensions.paddingSmall,
-                            vertical: 10.0,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: AppColors.borderDefault,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.borderRadiusSmall,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${_startTime.hour.toString().padLeft(2, '0')}:${_startTime.minute.toString().padLeft(2, '0')}',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                    ),
+                    const SizedBox(height: AppDimensions.paddingLarge),
+
+                    // ========================
+                    // ボタン
+                    // ========================
+                    if (isEditMode)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () =>
+                                  _updatePattern(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    AppColors.primaryGradientStart,
+                                padding: EdgeInsets.symmetric(
+                                  vertical: AppDimensions.paddingMedium,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppDimensions.borderRadiusMedium,
+                                  ),
                                 ),
                               ),
-                              Icon(
-                                Icons.access_time,
-                                color: AppColors.primaryGradientStart,
-                                size: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-
-                      Text(
-                        '退勤時刻',
-                        style: AppTextStyles.bodyTextStyle.copyWith(
-                          fontWeight: FontWeight.w500,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 6.0),
-                      GestureDetector(
-                        onTap: () => _selectEndTime(context),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppDimensions.paddingSmall,
-                            vertical: 10.0,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: AppColors.borderDefault,
-                            ),
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.borderRadiusSmall,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${_endTime.hour.toString().padLeft(2, '0')}:${_endTime.minute.toString().padLeft(2, '0')}',
+                              child: Text(
+                                '更新',
                                 style: AppTextStyles.bodyTextStyle.copyWith(
+                                  color: Colors.white,
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                                  fontSize: 16,
                                 ),
                               ),
-                              Icon(
-                                Icons.access_time,
-                                color: AppColors.primaryGradientStart,
-                                size: 20,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                    ],
-
-                    // ボタン（新規登録 vs 更新）
-                    if (!isEditMode)
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed:
-                              _patternNameController.text.trim().isNotEmpty
-                                  ? _addPattern
-                                  : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _patternNameController.text
-                                    .trim()
-                                    .isNotEmpty
-                                ? AppColors.primaryGradientStart
-                                : AppColors.borderDefault,
-                            padding: EdgeInsets.symmetric(
-                              vertical: AppDimensions.paddingSmall,
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppDimensions.borderRadiusSmall,
+                          ),
+                          const SizedBox(
+                              width: AppDimensions.paddingSmall),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.pop(context, 1),  // ========== Week 3 Day 6-1 修正: pop(1) に統一 ==========
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                  color: AppColors.borderDefault,
+                                ),
+                                padding: EdgeInsets.symmetric(
+                                  vertical: AppDimensions.paddingMedium,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppDimensions.borderRadiusMedium,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                'キャンセル',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
                               ),
                             ),
                           ),
-                          child: Text(
-                            '+ シフト体系を登録',
-                            style: AppTextStyles.bodyTextStyle.copyWith(
-                              color: _patternNameController.text
-                                      .trim()
-                                      .isNotEmpty
-                                  ? Colors.white
-                                  : AppColors.textMuted,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
+                        ],
                       )
                     else
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed:
-                              _patternNameController.text.trim().isNotEmpty
-                                  ? _updatePattern
-                                  : null,
+                          onPressed: _addPattern,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _patternNameController.text
-                                    .trim()
-                                    .isNotEmpty
-                                ? AppColors.primaryGradientStart
-                                : AppColors.borderDefault,
+                            backgroundColor:
+                                AppColors.primaryGradientStart,
                             padding: EdgeInsets.symmetric(
-                              vertical: AppDimensions.paddingSmall,
+                              vertical: AppDimensions.paddingMedium,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
-                                AppDimensions.borderRadiusSmall,
+                                AppDimensions.borderRadiusMedium,
                               ),
                             ),
                           ),
                           child: Text(
-                            'シフト体系を更新',
+                            '追加',
                             style: AppTextStyles.bodyTextStyle.copyWith(
-                              color: _patternNameController.text
-                                      .trim()
-                                      .isNotEmpty
-                                  ? Colors.white
-                                  : AppColors.textMuted,
+                              color: Colors.white,
                               fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                              fontSize: 16,
                             ),
                           ),
                         ),
@@ -439,46 +414,70 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                 ),
               ),
 
-              const SizedBox(height: AppDimensions.paddingXLarge),
+              const SizedBox(height: AppDimensions.paddingLarge),
 
               // ========================
-              // 次へボタン（新規登録時のみ）
+              // シフト入力へ進むボタン
               // ========================
               if (!isEditMode)
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _canProceedToNextScreen() ? _proceedToNextScreen : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _canProceedToNextScreen()
-                          ? AppColors.primaryGradientStart
-                          : AppColors.borderDefault,
-                      padding: EdgeInsets.symmetric(
-                        vertical: AppDimensions.paddingMedium,
+                if (_canProceedToNextScreen())
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _proceedToNextScreen,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryGradientStart,
+                        padding: EdgeInsets.symmetric(
+                          vertical: AppDimensions.paddingMedium,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusMedium,
+                          ),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          AppDimensions.borderRadiusMedium,
+                      child: Text(
+                        'シフト入力へ進む',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
                         ),
                       ),
                     ),
-                    child: Text(
-                      'シフト入力へ進む',
-                      style: AppTextStyles.bodyTextStyle.copyWith(
-                        color: _canProceedToNextScreen()
-                            ? Colors.white
-                            : AppColors.textMuted,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.borderDefault,
+                        padding: EdgeInsets.symmetric(
+                          vertical: AppDimensions.paddingMedium,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusMedium,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        'シフト入力へ進む',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          color: AppColors.textMuted
+                              .withOpacity(0.5),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
-                  ),
-                )
+                  )
               else
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(context, 1),  // ========== Week 3 Day 6-1 修正: pop(1) に統一 ==========
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryGradientStart,
                       padding: EdgeInsets.symmetric(
@@ -503,52 +502,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
 
               const SizedBox(height: AppDimensions.paddingLarge),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// シフト体系タイプボタン
-  Widget _buildTypeButton({
-    required ShiftType type,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            vertical: 10.0,
-            horizontal: AppDimensions.paddingSmall,
-          ),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.primaryGradientStart.withOpacity(0.1)
-                : Colors.white,
-            border: Border.all(
-              color: isSelected
-                  ? AppColors.primaryGradientStart
-                  : AppColors.borderDefault,
-              width: isSelected ? 2.0 : 1.0,
-            ),
-            borderRadius: BorderRadius.circular(
-              AppDimensions.borderRadiusSmall,
-            ),
-          ),
-          child: Text(
-            type.displayName,
-            style: AppTextStyles.bodyTextStyle.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: isSelected
-                  ? AppColors.primaryGradientStart
-                  : AppColors.textSecondary,
-            ),
-            textAlign: TextAlign.center,
           ),
         ),
       ),
@@ -604,22 +557,13 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                   ],
                 ),
                 const SizedBox(height: 2.0),
-                if (pattern.patternType == ShiftType.work)
-                  Text(
-                    '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')} ～ ${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}',
-                    style: AppTextStyles.bodyTextStyle.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  )
-                else
-                  Text(
-                    '休日',
-                    style: AppTextStyles.bodyTextStyle.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
+                Text(
+                  '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')} ～ ${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}',
+                  style: AppTextStyles.bodyTextStyle.copyWith(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
                   ),
+                )
               ],
             ),
           ),
@@ -698,15 +642,16 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       return;
     }
 
-    // ========== Week 3 Day 5 追加: DB保存機能 ==========
+    // ========== Week 3 Day 6-1 修正: ShiftType.work 固定 ==========
     final newPattern = ShiftPatternModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       patternName: _patternNameController.text.trim(),
-      patternType: _selectedType,
-      startTime: _selectedType == ShiftType.work ? _startTime : null,
-      endTime: _selectedType == ShiftType.work ? _endTime : null,
+      patternType: ShiftType.work,  // work のみ
+      startTime: _startTime,
+      endTime: _endTime,
       colorIndex: _patterns.length,
     );
+    // ===========================================================
 
     // DB に保存
     final shiftRepository = ShiftRepository();
@@ -715,7 +660,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     setState(() {
       _patterns.add(newPattern);
       _patternNameController.clear();
-      _selectedType = ShiftType.work;
       _startTime = const TimeOfDay(hour: 8, minute: 30);
       _endTime = const TimeOfDay(hour: 17, minute: 0);
     });
@@ -727,7 +671,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
-    // ====================================================
   }
 
   /// シフト体系を更新
@@ -748,14 +691,14 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     );
 
     if (index != -1) {
-      final originalColorIndex = _patterns[index].colorIndex;  // ← 元の色インデックスを保持
+      final originalColorIndex = _patterns[index].colorIndex;
       _patterns[index] = ShiftPatternModel(
         id: widget.editingPattern!.id,
         patternName: _patternNameController.text.trim(),
-        patternType: _selectedType,
-        startTime: _selectedType == ShiftType.work ? _startTime : null,
-        endTime: _selectedType == ShiftType.work ? _endTime : null,
-        colorIndex: originalColorIndex,  // ← 色は変わらない
+        patternType: ShiftType.work,  // work のみ
+        startTime: _startTime,
+        endTime: _endTime,
+        colorIndex: originalColorIndex,
       );
 
       // コールバック実行
@@ -776,8 +719,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
   }
 
   void _proceedToNextScreen() {
-    // ========== Week 3 Day 5 修正: pop(1) を返して、home_screen に指示 ==========
     Navigator.pop(context, 1);  // 1 = シフト管理タブを選択
-    // ========================================================================
   }
 }

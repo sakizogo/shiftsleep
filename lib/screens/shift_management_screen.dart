@@ -5,6 +5,7 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 
 class ShiftData {
   final DateTime date;
@@ -34,10 +35,11 @@ class ShiftManagementScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<ShiftManagementScreen> createState() => _ShiftManagementScreenState();
+  State<ShiftManagementScreen> createState() => ShiftManagementScreenState();
 }
 
-class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
+class ShiftManagementScreenState extends State<ShiftManagementScreen> {
+  final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 6-2 追加 ==========
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   final Map<DateTime, ShiftData> _shiftMap = {};
@@ -65,6 +67,8 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
       endTime: null,
       colorIndex: 0,
     );
+    // DB からシフトデータを読み込む
+    loadShifts();  // ========== Week 3 Day 6-2 修正: public メソッドに変更 ==========
   }
 
   @override
@@ -884,4 +888,74 @@ class _ShiftManagementScreenState extends State<ShiftManagementScreen> {
       ),
     );
   }
+  
+  // ========== Week 3 Day 6-2 修正: public メソッドに変更、タブ切り替え時に呼び出し可能 ==========
+  /// DB からシフトデータをロード（public メソッド）
+  Future<void> loadShifts() async {
+    try {
+      print('🔄 loadShifts() 開始');
+      final now = DateTime.now();
+      // 前月・当月・来月の3ヶ月分を読み込む
+      final startDate = DateTime(now.year, now.month - 1, 1);
+      final endDate = DateTime(now.year, now.month + 2, 0);
+      
+      print('📅 読み込み範囲: ${startDate.toIso8601String()} ～ ${endDate.toIso8601String()}');
+      
+      final shiftRecords = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
+      
+      print('📝 取得したシフト数: ${shiftRecords.length}');
+      
+      setState(() {
+        _shiftMap.clear();
+        
+        for (final record in shiftRecords) {
+          final dateStr = record['shift_date'] as String;
+          final patternId = record['pattern_id'] as String?;
+          
+          final date = DateTime.parse(dateStr);
+          final normalized = DateTime(date.year, date.month, date.day);
+          
+          // patternId で正確にパターンを検索
+          ShiftPatternModel? matchingPattern;
+          if (patternId != null) {
+            matchingPattern = widget.patterns.firstWhere(
+              (p) => p.id == patternId,
+              orElse: () => _defaultDayOffPattern,
+            );
+          } else {
+            matchingPattern = _defaultDayOffPattern;
+          }
+          
+          _shiftMap[normalized] = ShiftData(
+            date: normalized,
+            pattern: matchingPattern,
+          );
+          
+          print('✅ シフト読込: ${normalized.toIso8601String()} → ${matchingPattern.patternName}');
+        }
+      });
+      
+      print('✨ loadShifts() 完了 - 合計: ${_shiftMap.length}日');
+    } catch (e) {
+      print('❌ Error loading shifts from DB: $e');
+    }
+  }
+  
+  // ========== Week 3 Day 6-2 追加: 入力データをリセット（戻る時に呼び出し） ==========
+  /// シフト入力フォームをリセット
+  void clearShiftMap() {
+    print('🔄 clearShiftMap() - 入力データをリセット');
+    setState(() {
+      _shiftMap.clear();
+      _selectedPattern = null;
+      _rangeStartDate = null;
+      _rangeEndDate = null;
+      _selectedInputMethod = 0;
+      final now = DateTime.now();
+      _focusedDay = DateTime(now.year, now.month, 1);
+      _selectedDay = now;
+    });
+    print('✨ clearShiftMap() 完了');
+  }
+  // ========================================================================
 }
