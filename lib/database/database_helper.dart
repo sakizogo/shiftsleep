@@ -26,12 +26,16 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,  // ========== Week 3 Day 6-1 修正: version を 2 に上げる ==========
+      version: 3,  // ========== Week 3 Day 6-2 修正: version を 3 に上げる ==========
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
-        // ========== Week 3 Day 6-1 追加: shift_patterns テーブルが無い場合は作成 ==========
-        // バージョンアップ時に新しいテーブルを作成
-        if (oldVersion < 2) {
+        // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
+        
+        // バージョン 2 → 3 への更新：shifts テーブルに pattern_id カラムを追加
+        if (oldVersion < 3) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+          
+          // shift_patterns テーブルの作成（v2で追加されていなかった場合）
           await db.execute('''
             CREATE TABLE IF NOT EXISTS shift_patterns (
               id TEXT PRIMARY KEY,
@@ -45,6 +49,24 @@ class DatabaseHelper {
               updated_at TEXT NOT NULL
             )
           ''');
+          
+          // shifts テーブルを新しいスキーマに移行
+          // 古いテーブルをリネーム
+          await db.execute('ALTER TABLE shifts RENAME TO shifts_old');
+          
+          // 新しいスキーマで shifts テーブルを再作成
+          await db.execute('''
+            CREATE TABLE shifts (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              shift_date TEXT NOT NULL,
+              pattern_id TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          ''');
+          
+          print('✅ Database upgrade complete: shifts table migrated to new schema');
         }
         // ========================================================================
       },
@@ -72,22 +94,19 @@ class DatabaseHelper {
       )
     ''');
 
-    // shifts テーブル（後で実装）
+    // shifts テーブル - Week 3 Day 6-2 版（pattern_id を使用）
     await db.execute('''
       CREATE TABLE shifts (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
         shift_date TEXT NOT NULL,
-        shift_type TEXT NOT NULL,
-        start_time TEXT NOT NULL,
-        end_time TEXT NOT NULL,
-        notes TEXT,
+        pattern_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
     ''');
 
-    // app_settings テーブル（後で実装）
+    // app_settings テーブル
     await db.execute('''
       CREATE TABLE app_settings (
         user_id TEXT PRIMARY KEY,
@@ -114,8 +133,8 @@ class DatabaseHelper {
       )
     ''');
 
-    // ========== Week 3 Day 6-1 修正: shift_patterns テーブル定義追加 ==========
-    // シフト体系パターンを管理するテーブル（不足していた）
+    // ========== Week 3 Day 5 追加: shift_patterns テーブル ==========
+    // シフトパターン定義を管理するテーブル
     await db.execute('''
       CREATE TABLE shift_patterns (
         id TEXT PRIMARY KEY,

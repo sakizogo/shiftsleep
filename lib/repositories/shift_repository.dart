@@ -1,8 +1,8 @@
-import 'package:sqflite/sqflite.dart';
 import 'package:flutter/material.dart';
+import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
-import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:sqflite/sqflite.dart';
 
 /// シフトパターンのRepository
 /// sqlfite を使用したパターン管理（CRUD操作）
@@ -42,38 +42,18 @@ class ShiftRepository {
     }
   }
 
-  /// パターンをIDで取得
-  Future<ShiftPatternModel?> getPatternById(String id) async {
+  /// パターンを作成（複数）
+  Future<void> createPatterns(List<ShiftPatternModel> patterns) async {
     try {
-      final db = await _databaseHelper.database;
-      final List<Map<String, dynamic>> maps = await db.query(
-        _tableName,
-        where: 'id = ? AND user_id = ?',
-        whereArgs: [id, _userId],
-      );
-
-      if (maps.isEmpty) return null;
-
-      final map = maps.first;
-      return ShiftPatternModel(
-        id: map['id'] as String,
-        patternName: map['pattern_name'] as String,
-        patternType: _stringToShiftType(map['pattern_type'] as String),
-        startTime: map['start_time'] != null
-            ? _parseTimeOfDay(map['start_time'] as String)
-            : null,
-        endTime: map['end_time'] != null
-            ? _parseTimeOfDay(map['end_time'] as String)
-            : null,
-        colorIndex: map['color_index'] as int,
-      );
+      for (final pattern in patterns) {
+        await createPattern(pattern);
+      }
     } catch (e) {
-      print('Error getting pattern: $e');
-      return null;
+      print('Error creating patterns: $e');
     }
   }
 
-  /// パターンを作成
+  /// パターンを作成（単数）
   Future<void> createPattern(ShiftPatternModel pattern) async {
     try {
       final db = await _databaseHelper.database;
@@ -85,7 +65,7 @@ class ShiftRepository {
           'id': pattern.id,
           'user_id': _userId,
           'pattern_name': pattern.patternName,
-          'pattern_type': pattern.patternType.toString().split('.').last,
+          'pattern_type': _shiftTypeToString(pattern.patternType),
           'start_time': pattern.startTime != null
               ? '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')}'
               : null,
@@ -105,95 +85,55 @@ class ShiftRepository {
     }
   }
 
-  /// パターンを更新
-  Future<void> updatePattern(ShiftPatternModel pattern) async {
-    try {
-      final db = await _databaseHelper.database;
-      final now = DateTime.now().toIso8601String();
-
-      await db.update(
-        _tableName,
-        {
-          'pattern_name': pattern.patternName,
-          'pattern_type': pattern.patternType.toString().split('.').last,
-          'start_time': pattern.startTime != null
-              ? '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')}'
-              : null,
-          'end_time': pattern.endTime != null
-              ? '${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}'
-              : null,
-          'color_index': pattern.colorIndex,
-          'updated_at': now,
-        },
-        where: 'id = ? AND user_id = ?',
-        whereArgs: [pattern.id, _userId],
-      );
-
-      print('Pattern updated: ${pattern.patternName}');
-    } catch (e) {
-      print('Error updating pattern: $e');
-    }
-  }
-
   /// パターンを削除
-  Future<void> deletePattern(String id) async {
+  Future<void> deletePattern(String patternId) async {
     try {
       final db = await _databaseHelper.database;
-
       await db.delete(
         _tableName,
-        where: 'id = ? AND user_id = ?',
-        whereArgs: [id, _userId],
+        where: 'id = ?',
+        whereArgs: [patternId],
       );
 
-      print('Pattern deleted: $id');
+      print('Pattern deleted: $patternId');
     } catch (e) {
       print('Error deleting pattern: $e');
     }
   }
 
-  /// 複数パターンを一括作成
-  Future<void> createPatterns(List<ShiftPatternModel> patterns) async {
-    try {
-      for (final pattern in patterns) {
-        await createPattern(pattern);
-      }
-    } catch (e) {
-      print('Error creating patterns: $e');
-    }
-  }
+  // ========== Week 3 Day 5 追加: Shifts テーブル操作メソッド ==========
 
-  /// ========== Week 3 Day 5 追加: Shifts テーブル操作メソッド ==========
-
-  /// シフトを作成
-  Future<void> createShift(DateTime shiftDate, ShiftPatternModel pattern) async {
+  /// シフトを作成（単数）
+  Future<void> createShift(DateTime date, ShiftPatternModel pattern) async {
     try {
       final db = await _databaseHelper.database;
-      final now = DateTime.now().toIso8601String();
-      final normalized = DateTime(shiftDate.year, shiftDate.month, shiftDate.day);
-      final dateStr = normalized.toIso8601String().split('T').first;
-
+      
+      // 日付を正規化（時刻なし）
+      final normalized = DateTime(date.year, date.month, date.day);
+      final dateStr = normalized.toIso8601String().split('T').first;  // 2026-08-06 形式
+      final now = DateTime.now().toIso8601String();  // ← 新規追加
+      
+      print('💾 createShift() - 保存: $dateStr / pattern_id=${pattern.id}');
+      
       await db.insert(
         'shifts',
         {
-          'id': '${_userId}_${dateStr}_${DateTime.now().millisecondsSinceEpoch}',
-          'user_id': _userId,
           'shift_date': dateStr,
           'pattern_id': pattern.id,
-          'notes': '',
-          'created_at': now,
-          'updated_at': now,
+          'user_id': _userId,
+          'created_at': now,  // ← 新規追加
+          'updated_at': now,  // ← 新規追加
         },
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.replace,  // 同じ日付なら上書き
       );
-
-      print('Shift created: $dateStr');
+      
+      print('✅ createShift() 完了: $dateStr');
     } catch (e) {
-      print('Error creating shift: $e');
+      print('❌ Error creating shift: $e');
     }
   }
 
-  /// 複数のシフトを一括作成
+  /// シフトを作成（複数）
   Future<void> createShifts(
       Map<DateTime, ShiftPatternModel?> shiftMap) async {
     try {
@@ -231,25 +171,36 @@ class ShiftRepository {
   Future<List<Map<String, dynamic>>> getShiftsForDateRange(
       DateTime startDate, DateTime endDate) async {
     try {
+      print('🔍 getShiftsForDateRange() - 検索範囲: ${startDate.toIso8601String()} ～ ${endDate.toIso8601String()}');
+    
       final db = await _databaseHelper.database;
-      final startStr = startDate.toIso8601String().split('T').first;
-      final endStr = endDate.toIso8601String().split('T').first;
-
-      final List<Map<String, dynamic>> shifts = await db.query(
+    
+      // 日付部分だけを取得（時刻なし）
+      final startDateStr = '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}';
+      final endDateStr = '${endDate.year}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}';
+    
+      print('📅 日付範囲（フォーマット後）: $startDateStr ～ $endDateStr');
+    
+      // SQL クエリで日付を比較（shifts テーブルから）
+      final results = await db.query(
         'shifts',
         where: 'user_id = ? AND shift_date >= ? AND shift_date <= ?',
-        whereArgs: [_userId, startStr, endStr],
-        orderBy: 'shift_date ASC',
+        whereArgs: [_userId, startDateStr, endDateStr],
       );
-
-      return shifts;
+    
+      print('📊 検索結果: ${results.length}件');
+      for (final result in results) {
+        print('  - ${result['shift_date']}: pattern_id=${result['pattern_id']}');
+      }
+    
+      return results;
     } catch (e) {
-      print('Error getting shifts: $e');
+      print('❌ Error getting shifts for date range: $e');
       return [];
     }
   }
 
-  /// ===================================================================
+  // ========================================================================
 
   /// ============ Helper Methods ============
 
@@ -261,6 +212,17 @@ class ShiftRepository {
       case 'work':
       default:
         return ShiftType.work;
+    }
+  }
+
+  /// ShiftType を文字列に変換
+  String _shiftTypeToString(ShiftType type) {
+    switch (type) {
+      case ShiftType.dayOff:
+        return 'dayOff';
+      case ShiftType.work:
+      default:
+        return 'work';
     }
   }
 

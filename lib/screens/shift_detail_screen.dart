@@ -10,7 +10,7 @@ import 'shift_management_screen.dart';
 class ShiftDetailScreen extends StatefulWidget {
   final Map<DateTime, ShiftData> shiftDataMap;
   final List<ShiftPatternModel> patterns;
-  
+
   // ========== Week 3 Day 5 追加: 戻るコールバック ==========
   final VoidCallback? onBack;
   // ======================================================
@@ -49,7 +49,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
         backgroundColor: AppColors.backgroundLight,
         elevation: 0,
         centerTitle: true,
-        // ========== Week 3 Day 5 削除: 戻る矢印ボタン（タブ切り替えで戻るため） ==========
+        // ========== Week 3 Day 5 削除: 戻るボタンを削除（タブ機能で戻る） ==========
         // leading: IconButton(...) を削除
         // ================================================================
         title: Text(
@@ -121,7 +121,35 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
               ),
 
               const SizedBox(height: AppDimensions.paddingLarge),
+              // ========== Week 3 Day 7: 上部シフト保存ボタン ==========
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _saveShifts,
+                  style: ElevatedButton.styleFrom(
+                     backgroundColor: AppColors.primaryGradientStart,
+                     padding: EdgeInsets.symmetric(
+                       vertical: AppDimensions.paddingMedium,
+                     ),
+                     shape: RoundedRectangleBorder(
+                       borderRadius: BorderRadius.circular(
+                         AppDimensions.borderRadiusMedium,
+                       ),
+                     ),
+                   ),
+                   child: Text(
+                     'シフトを保存',
+                     style: AppTextStyles.bodyTextStyle.copyWith(
+                       color: Colors.white,
+                       fontWeight: FontWeight.w600,
+                       fontSize: 16,
+                     ),
+                   ),
+                 ),
+               ),
 
+const SizedBox(height: AppDimensions.paddingLarge),
+// ================================================================
               // ========================
               // シフト一覧
               // ========================
@@ -156,11 +184,9 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                   );
                 }).toList(),
 
-              const SizedBox(height: AppDimensions.paddingXLarge),
+              const SizedBox(height: AppDimensions.paddingMedium),
 
-              // ========================
-              // 保存ボタン
-              // ========================
+              // ========== Week 3 Day 7: シフト一覧下の保存ボタン ==========
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -186,7 +212,9 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                   ),
                 ),
               ),
+              // ================================================================
 
+              
               const SizedBox(height: AppDimensions.paddingLarge),
             ],
           ),
@@ -260,7 +288,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
               ),
             ),
 
-          // 時刻情報
+          // 時間情報
           if (pattern?.patternType == ShiftType.work &&
               pattern?.startTime != null &&
               pattern?.endTime != null)
@@ -393,7 +421,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                       ),
                     ),
                     child: Text(
-                      'この日のシフトを削除',
+                      'このシフトを削除',
                       style: AppTextStyles.bodyTextStyle.copyWith(
                         fontSize: 13,
                         color: AppColors.warningRed,
@@ -427,19 +455,29 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
     return days[date.weekday - 1];
   }
 
-  /// ========== Week 3 Day 6-2 修正: シフトを DB に保存 ==========
+  /// ========== Week 3 Day 6-2 修正: シフトをDB に保存 ==========
   /// シフトを保存
   Future<void> _saveShifts() async {
     try {
-      // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
-      final Map<DateTime, ShiftPatternModel?> patternMap = {};
-      for (final entry in widget.shiftDataMap.entries) {
-        patternMap[entry.key] = entry.value.pattern;
-      }
-      
-      // DB に保存
-      await _shiftRepository.createShifts(patternMap);
-      
+       // ========== デバッグログ追加 ==========
+       print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
+       print('💾 保存データ:');
+       for (final entry in widget.shiftDataMap.entries) {
+         print('  - ${entry.key.toIso8601String()}: ${entry.value.pattern?.patternName}');
+       }
+       // ====================================
+
+       // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
+       final Map<DateTime, ShiftPatternModel?> patternMap = {};
+       for (final entry in widget.shiftDataMap.entries) {
+         patternMap[entry.key] = entry.value.pattern;
+       }
+
+       // DB に保存
+       await _shiftRepository.createShifts(patternMap);
+
+       print('✅ DB保存完了');
+
       // 成功メッセージ
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -451,7 +489,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
         );
       }
 
-      // onBack コールバック経由で戻す
+      // onBack コールバック実行で戻る
       if (widget.onBack != null) {
         widget.onBack!();
       }
