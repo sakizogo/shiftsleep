@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 /// シフトパターンのRepository
 /// sqlfite を使用したパターン管理（CRUD操作）
@@ -10,6 +12,7 @@ class ShiftRepository {
   final DatabaseHelper _databaseHelper = DatabaseHelper();
   static const String _tableName = 'shift_patterns';
   static const String _userId = 'test_user'; // 暫定：固定ユーザーID
+  static const uuid = Uuid();
 
   /// 全パターンを取得
   Future<List<ShiftPatternModel>> getAllPatterns() async {
@@ -196,6 +199,144 @@ class ShiftRepository {
       return results;
     } catch (e) {
       print('❌ Error getting shifts for date range: $e');
+      return [];
+    }
+  }
+
+  // ========================================================================
+
+  // ========== Week 3 Day 8 追加: CalendarEvents テーブル操作メソッド ==========
+
+  /// イベントを作成（単数）
+  Future<void> createCalendarEvent(
+    DateTime date,
+    String eventType,
+    String eventEmoji, {
+    String? eventName,
+    String? notes,
+  }) async {
+    try {
+      final db = await _databaseHelper.database;
+
+      // 日付を正規化（時刻なし）
+      final normalized = DateTime(date.year, date.month, date.day);
+      final dateStr = normalized.toIso8601String().split('T').first; // 2026-08-06 形式
+      final now = DateTime.now().toIso8601String();
+      final eventId = uuid.v4();
+
+      print('💾 createCalendarEvent() - 保存: $dateStr / type=$eventType / emoji=$eventEmoji');
+
+      await db.insert(
+        'calendar_events',
+        {
+          'id': eventId,
+          'user_id': _userId,
+          'event_date': dateStr,
+          'event_type': eventType,
+          'event_emoji': eventEmoji,
+          'event_name': eventName,
+          'notes': notes,
+          'created_at': now,
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      print('✅ createCalendarEvent() 完了: $dateStr');
+    } catch (e) {
+      print('❌ Error creating calendar event: $e');
+    }
+  }
+
+  /// イベントを削除
+  Future<void> deleteCalendarEvent(String eventId) async {
+    try {
+      final db = await _databaseHelper.database;
+
+      await db.delete(
+        'calendar_events',
+        where: 'id = ?',
+        whereArgs: [eventId],
+      );
+
+      print('✅ Calendar event deleted: $eventId');
+    } catch (e) {
+      print('❌ Error deleting calendar event: $e');
+    }
+  }
+
+  /// 特定の日付のイベントを削除
+  Future<void> deleteCalendarEventByDate(DateTime date) async {
+    try {
+      final db = await _databaseHelper.database;
+      final normalized = DateTime(date.year, date.month, date.day);
+      final dateStr = normalized.toIso8601String().split('T').first;
+
+      await db.delete(
+        'calendar_events',
+        where: 'user_id = ? AND event_date = ?',
+        whereArgs: [_userId, dateStr],
+      );
+
+      print('✅ Calendar events deleted for date: $dateStr');
+    } catch (e) {
+      print('❌ Error deleting calendar events for date: $e');
+    }
+  }
+
+  /// 期間内のイベントを取得
+  Future<List<CalendarEvent>> getCalendarEventsForDateRange(
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    try {
+      print('🔍 getCalendarEventsForDateRange() - 検索範囲: ${startDate.toIso8601String()} ～ ${endDate.toIso8601String()}');
+
+      final db = await _databaseHelper.database;
+
+      // 日付部分だけを取得（時刻なし）
+      final startDateStr =
+          '${startDate.year}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}';
+      final endDateStr =
+          '${endDate.year}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}';
+
+      print('📅 日付範囲（フォーマット後）: $startDateStr ～ $endDateStr');
+
+      // SQL クエリで日付を比較（calendar_events テーブルから）
+      final results = await db.query(
+        'calendar_events',
+        where: 'user_id = ? AND event_date >= ? AND event_date <= ?',
+        whereArgs: [_userId, startDateStr, endDateStr],
+        orderBy: 'event_date ASC',
+      );
+
+      print('📊 検索結果: ${results.length}件');
+      for (final result in results) {
+        print('  - ${result['event_date']}: ${result['event_emoji']} ${result['event_type']}');
+      }
+
+      return results.map((map) => CalendarEvent.fromMap(map)).toList();
+    } catch (e) {
+      print('❌ Error getting calendar events for date range: $e');
+      return [];
+    }
+  }
+
+  /// 全イベントを取得
+  Future<List<CalendarEvent>> getAllCalendarEvents() async {
+    try {
+      final db = await _databaseHelper.database;
+      final results = await db.query(
+        'calendar_events',
+        where: 'user_id = ?',
+        whereArgs: [_userId],
+        orderBy: 'event_date ASC',
+      );
+
+      print('📊 All calendar events: ${results.length}件');
+      return results.map((map) => CalendarEvent.fromMap(map)).toList();
+    } catch (e) {
+      print('❌ Error getting all calendar events: $e');
       return [];
     }
   }

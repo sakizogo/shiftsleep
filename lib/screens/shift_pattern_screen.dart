@@ -34,6 +34,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 30);
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
   late List<ShiftPatternModel> _patterns;
+  final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 8 追加 ==========
 
   @override
   void initState() {
@@ -113,7 +114,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
               Text(
                 isEditMode
                     ? 'シフト体系の情報を更新してください'
-                    : 'シフト体系を登録してください',
+                    : 'シフト体系を登録・管理してください',
                 style: AppTextStyles.sectionTitleStyle.copyWith(
                   fontSize: 16,
                 ),
@@ -129,9 +130,9 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
               const SizedBox(height: AppDimensions.paddingLarge),
 
               // ========================
-              // 登録済みシフト体系一覧（新規登録時のみ）
+              // 登録済みシフト体系一覧
               // ========================
-              if (!isEditMode && _patterns.isNotEmpty) ...[
+              if (_patterns.isNotEmpty) ...[
                 Text(
                   '登録済みシフト体系',
                   style: AppTextStyles.bodyTextStyle.copyWith(
@@ -401,7 +402,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                             ),
                           ),
                           child: Text(
-                            '追加',
+                            '登録/更新',  // ========== Week 3 Day 8 修正: 「追加」→「登録/更新」 ==========
                             style: AppTextStyles.bodyTextStyle.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
@@ -567,18 +568,31 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
               ],
             ),
           ),
+          // ========== Week 3 Day 8 修正: DB 削除を追加 ==========
           IconButton(
             icon: Icon(
               Icons.close,
               color: AppColors.textMuted,
               size: 20,
             ),
-            onPressed: () {
+            onPressed: () async {
+              // DB から削除
+              await _shiftRepository.deletePattern(pattern.id);
+              
               setState(() {
                 _patterns.removeWhere((p) => p.id == pattern.id);
               });
+              
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('「${pattern.patternName}」を削除しました'),
+                  backgroundColor: AppColors.warningRed,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
             },
           ),
+          // ========================================================================
         ],
       ),
     );
@@ -654,8 +668,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     // ===========================================================
 
     // DB に保存
-    final shiftRepository = ShiftRepository();
-    await shiftRepository.createPattern(newPattern);
+    await _shiftRepository.createPattern(newPattern);
 
     setState(() {
       _patterns.add(newPattern);

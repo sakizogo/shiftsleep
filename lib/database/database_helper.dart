@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,  // ========== Week 3 Day 6-2 修正: version を 3 に上げる ==========
+      version: 4,  // ========== Week 3 Day 8 追加: version を 4 に上げる ==========
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -69,6 +69,29 @@ class DatabaseHelper {
           print('✅ Database upgrade complete: shifts table migrated to new schema');
         }
         // ========================================================================
+        
+        // ========== Week 3 Day 8 追加: calendar_events テーブル ==========
+        // バージョン 3 → 4 への更新：calendar_events テーブルを追加
+        if (oldVersion < 4) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+          
+          await db.execute('''
+            CREATE TABLE calendar_events (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              event_date TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              event_emoji TEXT NOT NULL,
+              event_name TEXT,
+              notes TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+          ''');
+          
+          print('✅ Database upgrade complete: calendar_events table created');
+        }
+        // ================================================================
       },
     );
   }
@@ -149,6 +172,23 @@ class DatabaseHelper {
       )
     ''');
     // ========================================================================
+
+    // ========== Week 3 Day 8 追加: calendar_events テーブル ==========
+    // カレンダーイベント（給料日、ボーナス、慰安旅行など）
+    await db.execute('''
+      CREATE TABLE calendar_events (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_emoji TEXT NOT NULL,
+        event_name TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    // ================================================================
   }
 
   // Close database
