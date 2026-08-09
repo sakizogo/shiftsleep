@@ -4,9 +4,10 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
-import 'package:shiftsleep/models/calendar_event.dart';  // ← 追加
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/screens/calendar_event_screen.dart';
 
 class ShiftData {
   final DateTime date;
@@ -24,10 +25,7 @@ class ShiftData {
 
 class ShiftManagementScreen extends StatefulWidget {
   final List<ShiftPatternModel> patterns;
-  
-  // ========== Week 3 Day 5 追加: 詳細画面へ遷移するコールバック ==========
   final Function(Map<DateTime, ShiftData>, List<ShiftPatternModel>)? onNavigateToDetails;
-  // ================================================================
 
   const ShiftManagementScreen({
     Key? key,
@@ -40,17 +38,15 @@ class ShiftManagementScreen extends StatefulWidget {
 }
 
 class ShiftManagementScreenState extends State<ShiftManagementScreen> {
-  final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 6-2 追加 ==========
+  final ShiftRepository _shiftRepository = ShiftRepository();
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   final Map<DateTime, ShiftData> _shiftMap = {};
-  final List<CalendarEvent> _calendarEvents = [];  // ← 追加
+  final List<CalendarEvent> _calendarEvents = [];
   int _selectedInputMethod = 0;
   ShiftPatternModel? _selectedPattern;
   DateTime? _rangeStartDate;
   DateTime? _rangeEndDate;
-
-  // デフォルト休日パターン
   late ShiftPatternModel _defaultDayOffPattern;
 
   @override
@@ -59,7 +55,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     final now = DateTime.now();
     _focusedDay = DateTime(now.year, now.month, 1);
     _selectedDay = now;
-
     _defaultDayOffPattern = ShiftPatternModel(
       id: 'default_dayoff',
       patternName: '休日',
@@ -68,14 +63,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       endTime: null,
       colorIndex: 0,
     );
-  
     loadShifts();
-    loadCalendarEvents();  // Day 9 added
+    loadCalendarEvents();
   }
 
   @override
   Widget build(BuildContext context) {
-    // ========== Week 3 Day 5 修正: Scaffold を削除し、コンテンツのみを返す ==========
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -85,17 +78,51 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ========================
-            // 入力方式タブ
-            // ========================
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CalendarEventScreen(),
+                    ),
+                  ).then((result) {
+                    if (result == true) {
+                      loadCalendarEvents();
+                      setState(() {});
+                    }
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.add, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Text(
+                      'イベント追加',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppDimensions.paddingLarge),
             _buildInputMethodTabs(),
             const SizedBox(height: AppDimensions.paddingLarge),
-
-            // ========================
-            // パターンクイック選択（追加：デフォルト休日を含む）
-            // ========================
             Text(
-              'パターンを選択',
+              'パターン選択',
               style: AppTextStyles.bodyTextStyle.copyWith(
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
@@ -106,19 +133,13 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  // デフォルト休日パターン
                   Padding(
-                    padding: const EdgeInsets.only(
-                      right: AppDimensions.paddingSmall,
-                    ),
+                    padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
                     child: _buildPatternButton(_defaultDayOffPattern),
                   ),
-                  // ユーザーが登録したパターン
                   ...widget.patterns.map((pattern) {
                     return Padding(
-                      padding: const EdgeInsets.only(
-                        right: AppDimensions.paddingSmall,
-                      ),
+                      padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
                       child: _buildPatternButton(pattern),
                     );
                   }).toList(),
@@ -126,53 +147,36 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ),
             ),
             const SizedBox(height: AppDimensions.paddingLarge),
-
-            // ========================
-            // 入力方式別コンテンツ
-            // ========================
             if (_selectedInputMethod == 0)
               _buildCalendarInputMethod()
             else if (_selectedInputMethod == 1)
               _buildRangeInputMethod()
             else
               _buildManualInputMethod(),
-
             const SizedBox(height: AppDimensions.paddingXLarge),
-
-            // ========================
-            // 完了ボタン
-            // ========================
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _shiftMap.isNotEmpty
                     ? () {
-                        // ========== Week 3 Day 5 修正: Navigator.push を削除、コールバック導入 ==========
                         if (widget.onNavigateToDetails != null) {
                           widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                         }
-                        // ================================================================
                       }
                     : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _shiftMap.isNotEmpty
                       ? AppColors.primaryGradientStart
                       : AppColors.borderDefault,
-                  padding: EdgeInsets.symmetric(
-                    vertical: AppDimensions.paddingMedium,
-                  ),
+                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
+                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
                   ),
                 ),
                 child: Text(
-                  'シフト入力完了',
+                  'シフト保存',
                   style: AppTextStyles.bodyTextStyle.copyWith(
-                    color: _shiftMap.isNotEmpty
-                        ? Colors.white
-                        : AppColors.textMuted,
+                    color: _shiftMap.isNotEmpty ? Colors.white : AppColors.textMuted,
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
@@ -184,10 +188,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         ),
       ),
     );
-    // ================================================================
   }
 
-  /// 入力方式タブ
   Widget _buildInputMethodTabs() {
     return Container(
       decoration: BoxDecoration(
@@ -198,68 +200,35 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       child: Row(
         children: [
           Expanded(
-            child: _buildTabButton(
-              label: 'カレンダー',
-              index: 0,
-              isSelected: _selectedInputMethod == 0,
-            ),
+            child: _buildTabButton(label: 'カレンダー', index: 0, isSelected: _selectedInputMethod == 0),
           ),
-          Container(
-            width: 1,
-            height: 40,
-            color: AppColors.borderDefault,
-          ),
+          Container(width: 1, height: 40, color: AppColors.borderDefault),
           Expanded(
-            child: _buildTabButton(
-              label: '期間指定',
-              index: 1,
-              isSelected: _selectedInputMethod == 1,
-            ),
+            child: _buildTabButton(label: '範囲指定', index: 1, isSelected: _selectedInputMethod == 1),
           ),
-          Container(
-            width: 1,
-            height: 40,
-            color: AppColors.borderDefault,
-          ),
+          Container(width: 1, height: 40, color: AppColors.borderDefault),
           Expanded(
-            child: _buildTabButton(
-              label: '手入力',
-              index: 2,
-              isSelected: _selectedInputMethod == 2,
-            ),
+            child: _buildTabButton(label: '手入力', index: 2, isSelected: _selectedInputMethod == 2),
           ),
         ],
       ),
     );
   }
 
-  /// タブボタン
-  Widget _buildTabButton({
-    required String label,
-    required int index,
-    required bool isSelected,
-  }) {
+  Widget _buildTabButton({required String label, required int index, required bool isSelected}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedInputMethod = index;
-          });
-        },
+        onTap: () => setState(() => _selectedInputMethod = index),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10.0),
-          color: isSelected
-              ? AppColors.primaryGradientStart.withOpacity(0.1)
-              : Colors.transparent,
+          color: isSelected ? AppColors.primaryGradientStart.withOpacity(0.1) : Colors.transparent,
           child: Text(
             label,
             style: AppTextStyles.bodyTextStyle.copyWith(
               fontWeight: FontWeight.w600,
               fontSize: 12,
-              color: isSelected
-                  ? AppColors.primaryGradientStart
-                  : AppColors.textSecondary,
+              color: isSelected ? AppColors.primaryGradientStart : AppColors.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -268,38 +237,22 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// パターン選択ボタン（色分け版）
   Widget _buildPatternButton(ShiftPatternModel pattern) {
     final isSelected = _selectedPattern?.id == pattern.id;
-    
-    final textColor = _isLightColor(pattern.color) ? Colors.black87 : Colors.white;
-    
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedPattern = isSelected ? null : pattern;
-          });
-        },
-        borderRadius:
-            BorderRadius.circular(AppDimensions.borderRadiusSmall),
+        onTap: () => setState(() => _selectedPattern = isSelected ? null : pattern),
+        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
         child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.paddingSmall,
-            vertical: 6.0,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.paddingSmall, vertical: 6.0),
           decoration: BoxDecoration(
-            color: isSelected
-                ? pattern.color.withOpacity(0.2)
-                : pattern.color.withOpacity(0.1),
+            color: isSelected ? pattern.color.withOpacity(0.2) : pattern.color.withOpacity(0.1),
             border: Border.all(
               color: isSelected ? pattern.color : pattern.color.withOpacity(0.5),
               width: isSelected ? 2.0 : 1.0,
             ),
-            borderRadius: BorderRadius.circular(
-              AppDimensions.borderRadiusSmall,
-            ),
+            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
           ),
           child: Text(
             pattern.patternName,
@@ -314,38 +267,54 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// 色が明るいか暗いかを判定（テキスト色決定用）
-  bool _isLightColor(Color color) {
-    return (color.red * 0.299 + color.green * 0.587 + color.blue * 0.114) > 128;
-  }
-
-  /// 方式①：カレンダータップ入力
   Widget _buildCalendarInputMethod() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'パターンを選択してから日付をタップ',
-          style: AppTextStyles.bodyTextStyle.copyWith(
-            fontSize: 13,
-            color: AppColors.textMuted,
-          ),
+          'パターン選択後、日付をタップ',
+          style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 13, color: AppColors.textMuted),
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppDimensions.paddingSmall),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
+                  });
+                },
+                child: Icon(Icons.chevron_left, color: AppColors.primaryGradientStart, size: 24),
+              ),
+              Text(
+                '${_focusedDay.month}月 ${_focusedDay.year}',
+                style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+              ),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
+                  });
+                },
+                child: Icon(Icons.chevron_right, color: AppColors.primaryGradientStart, size: 24),
+              ),
+            ],
+          ),
+        ),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: AppColors.borderDefault),
-            borderRadius:
-                BorderRadius.circular(AppDimensions.borderRadiusMedium),
+            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
           ),
           child: TableCalendar(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2026, 12, 31),
             focusedDay: _focusedDay,
-            selectedDayPredicate: (day) {
-              return isSameDay(_selectedDay, day);
-            },
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             eventLoader: (day) {
               final normalized = DateTime(day.year, day.month, day.day);
               return _shiftMap.containsKey(normalized)
@@ -356,29 +325,22 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
-
                 final normalized = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
                 if (_shiftMap.containsKey(normalized)) {
                   _shiftMap.remove(normalized);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${selectedDay.month}/${selectedDay.day}の登録を削除しました'),
+                      content: Text('削除: ${selectedDay.month}/${selectedDay.day}'),
                       backgroundColor: AppColors.warningRed,
                       duration: const Duration(seconds: 1),
                     ),
                   );
                 } else if (_selectedPattern != null) {
-                  _shiftMap[normalized] = ShiftData(
-                    date: normalized,
-                    pattern: _selectedPattern,
-                  );
-
+                  _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(
-                        '${selectedDay.month}/${selectedDay.day}に「${_selectedPattern!.patternName}」を設定しました',
-                      ),
+                      content: Text('追加: ${selectedDay.month}/${selectedDay.day} - ${_selectedPattern!.patternName}'),
                       backgroundColor: AppColors.primaryGradientStart,
                       duration: const Duration(seconds: 1),
                     ),
@@ -386,7 +348,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('パターンを選択してください'),
+                      content: const Text('先にパターンを選択してください'),
                       backgroundColor: AppColors.warningRed,
                       duration: const Duration(seconds: 1),
                     ),
@@ -394,202 +356,139 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 }
               });
             },
-            onPageChanged: (focusedDay) {
-              _focusedDay = focusedDay;
-            },
+            onPageChanged: (focusedDay) => _focusedDay = focusedDay,
             calendarStyle: CalendarStyle(
               defaultDecoration: BoxDecoration(
+                color: Colors.white,
                 shape: BoxShape.rectangle,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
-              ),
-              weekendDecoration: BoxDecoration(
-                shape: BoxShape.rectangle,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
               selectedDecoration: BoxDecoration(
-                color: AppColors.primaryGradientStart,
+                color: Colors.white,
                 shape: BoxShape.rectangle,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                border: Border.all(
+                  color: AppColors.primaryGradientStart,
+                  width: 2.0,
+                ),
+                borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
               todayDecoration: BoxDecoration(
-                color: AppColors.primaryGradientStart.withOpacity(0.3),
+                color: Colors.white,
                 shape: BoxShape.rectangle,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
-              ),
-              outsideDecoration: BoxDecoration(
-                shape: BoxShape.rectangle,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                border: Border.all(
+                  color: AppColors.primaryGradientStart.withOpacity(0.5),
+                  width: 1.0,
+                ),
+                borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
               markerDecoration: BoxDecoration(
                 color: AppColors.starYellow,
                 shape: BoxShape.circle,
               ),
-              defaultTextStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 14,
-              ),
-              weekendTextStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 14,
-              ),
-              selectedTextStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 14,
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
+              outsideTextStyle: const TextStyle(color: Colors.grey),
+              defaultTextStyle: const TextStyle(color: Colors.transparent),
+              selectedTextStyle: const TextStyle(color: Colors.transparent),
+              todayTextStyle: const TextStyle(color: Colors.transparent),
             ),
-           
-           calendarBuilders: CalendarBuilders(
-             defaultBuilder: (context, date, focusedDay) {
-               final normalized = DateTime(date.year, date.month, date.day);
-    
-               // Week 3 Day 9: Get events for this date
-              final eventsForDate = _calendarEvents
-                  .where((event) => event.eventDate == 
-                      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}')
-                  .toList();
-    
-               if (_shiftMap.containsKey(normalized)) {
-                 final pattern = _shiftMap[normalized]?.pattern;
-                 final patternColor = pattern?.color ?? Colors.grey;
-                 final patternName = pattern?.patternName ?? '';
-      
-                 final shortName = patternName.length > 2 
-                   ? patternName.substring(0, 2) 
-                   : patternName;
-      
-                 final textColor = pattern?.patternType == ShiftType.dayOff 
-                   ? Colors.red 
-                   : Colors.black87;
-      
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: patternColor.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${date.day}',
-                          style: TextStyle(
-                            color: textColor,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+            calendarBuilders: CalendarBuilders(
+              defaultBuilder: (context, date, focusedDay) {
+                final normalized = DateTime(date.year, date.month, date.day);
+                final eventsForDate = _calendarEvents
+                    .where((event) => event.eventDate ==
+                        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}')
+                    .toList();
+
+                if (_shiftMap.containsKey(normalized)) {
+                  final pattern = _shiftMap[normalized]?.pattern;
+                  final textColor = pattern?.patternType == ShiftType.dayOff ? Colors.red : Colors.black87;
+
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${date.day}', style: TextStyle(color: textColor, fontWeight: FontWeight.w700, fontSize: 13)),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 3.0),
+                        decoration: BoxDecoration(
+                          color: pattern!.color.withOpacity(0.1),
+                          border: Border.all(
+                            color: pattern.color.withOpacity(0.5),
+                            width: 1.0,
                           ),
+                          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
                         ),
-                        Text(
-                          shortName,
-                          style: TextStyle(
-                            color: textColor,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                        // Week 3 Day 9: Show event emoji
-                        if (eventsForDate.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2.0),
-                            child: Text(
-                              eventsForDate.first.eventEmoji,
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }
-    
-                // Week 3 Day 9: Show event only (no shift pattern)
-                if (eventsForDate.isNotEmpty) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${date.day}',
-                          style: const TextStyle(
+                        child: Text(
+                          pattern.patternName,
+                          style: AppTextStyles.bodyTextStyle.copyWith(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                             color: Colors.black87,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
                           ),
                         ),
-                        Text(
-                          eventsForDate.first.eventEmoji,
-                          style: const TextStyle(fontSize: 14),
-                        ),
+                      ),
+                      if (eventsForDate.isNotEmpty) ...[
+                        const SizedBox(height: 1),
+                        Text(eventsForDate.first.eventEmoji, style: const TextStyle(fontSize: 12)),
                       ],
-                    ),
+                    ],
                   );
                 }
-    
-    return null;
-  },
-),
+
+                if (eventsForDate.isNotEmpty) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                      const SizedBox(height: 2),
+                      Text(eventsForDate.first.eventEmoji, style: const TextStyle(fontSize: 13)),
+                    ],
+                  );
+                }
+
+                return Center(
+                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                );
+              },
+              selectedBuilder: (context, date, focusedDay) {
+                return Center(
+                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                );
+              },
+              todayBuilder: (context, date, focusedDay) {
+                return Center(
+                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                );
+              },
+            ),
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
-              titleCentered: true,
-              titleTextStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-              leftChevronIcon: Icon(
-                Icons.chevron_left,
-                color: AppColors.primaryGradientStart,
-                size: 24,
-              ),
-              rightChevronIcon: Icon(
-                Icons.chevron_right,
-                color: AppColors.primaryGradientStart,
-                size: 24,
-              ),
+              titleCentered: false,
+              decoration: const BoxDecoration(color: Colors.transparent),
             ),
             daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-              weekendStyle: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+              weekdayStyle: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+              weekendStyle: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
-
         if (_shiftMap.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(AppDimensions.paddingSmall),
             decoration: BoxDecoration(
               color: AppColors.cardBgGray,
-              borderRadius:
-                  BorderRadius.circular(AppDimensions.borderRadiusSmall),
+              borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '登録済みシフト（${_shiftMap.length}日）',
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
+                Text('保存予定: ${_shiftMap.length}日', style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 12)),
                 const SizedBox(height: 6.0),
                 ..._shiftMap.entries.map((entry) {
                   final patternColor = entry.value.pattern?.color ?? Colors.grey;
                   return Padding(
-                    padding: const EdgeInsets.only(
-                      top: 4.0,
-                    ),
+                    padding: const EdgeInsets.only(top: 4.0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -600,34 +499,20 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                               height: 16,
                               decoration: BoxDecoration(
                                 color: patternColor,
-                                border: Border.all(
-                                  color: patternColor.withOpacity(0.5),
-                                  width: 1,
-                                ),
+                                border: Border.all(color: patternColor.withOpacity(0.5), width: 1),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
                             const SizedBox(width: 8.0),
                             Text(
                               '${entry.key.month}/${entry.key.day}: ${entry.value.pattern?.patternName ?? ''}',
-                              style: AppTextStyles.bodyTextStyle.copyWith(
-                                fontSize: 11,
-                                color: AppColors.textSecondary,
-                              ),
+                              style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 11, color: AppColors.textSecondary),
                             ),
                           ],
                         ),
                         GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _shiftMap.remove(entry.key);
-                            });
-                          },
-                          child: Icon(
-                            Icons.close,
-                            size: 16,
-                            color: AppColors.warningRed,
-                          ),
+                          onTap: () => setState(() => _shiftMap.remove(entry.key)),
+                          child: Icon(Icons.close, size: 16, color: AppColors.warningRed),
                         ),
                       ],
                     ),
@@ -640,24 +525,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// 方式②：期間指定入力
   Widget _buildRangeInputMethod() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '開始日と終了日を指定',
-          style: AppTextStyles.bodyTextStyle.copyWith(
-            fontSize: 13,
-            color: AppColors.textMuted,
-          ),
-        ),
+        Text('開始日と終了日を指定', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 13, color: AppColors.textMuted)),
         const SizedBox(height: AppDimensions.paddingMedium),
         Row(
           children: [
             Expanded(
               child: _buildDateField(
-                label: '開始日',
+                label: '開始',
                 date: _rangeStartDate,
                 onTap: () async {
                   final picked = await showDatePicker(
@@ -665,29 +543,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     initialDate: _rangeStartDate ?? DateTime.now(),
                     firstDate: DateTime.utc(2024, 1, 1),
                     lastDate: DateTime.utc(2026, 12, 31),
-                    builder: (context, child) {
-                      return Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: ColorScheme.light(
-                            primary: AppColors.primaryGradientStart,
-                          ),
-                        ),
-                        child: child!,
-                      );
-                    },
+                    builder: (context, child) => Theme(
+                      data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
+                      child: child!,
+                    ),
                   );
-                  if (picked != null) {
-                    setState(() {
-                      _rangeStartDate = picked;
-                    });
-                  }
+                  if (picked != null) setState(() => _rangeStartDate = picked);
                 },
               ),
             ),
             const SizedBox(width: AppDimensions.paddingSmall),
             Expanded(
               child: _buildDateField(
-                label: '終了日',
+                label: '終了',
                 date: _rangeEndDate,
                 onTap: () async {
                   final picked = await showDatePicker(
@@ -695,22 +563,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     initialDate: _rangeEndDate ?? DateTime.now(),
                     firstDate: DateTime.utc(2024, 1, 1),
                     lastDate: DateTime.utc(2026, 12, 31),
-                    builder: (context, child) {
-                      return Theme(
-                        data: Theme.of(context).copyWith(
-                          colorScheme: ColorScheme.light(
-                            primary: AppColors.primaryGradientStart,
-                          ),
-                        ),
-                        child: child!,
-                      );
-                    },
+                    builder: (context, child) => Theme(
+                      data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
+                      child: child!,
+                    ),
                   );
-                  if (picked != null) {
-                    setState(() {
-                      _rangeEndDate = picked;
-                    });
-                  }
+                  if (picked != null) setState(() => _rangeEndDate = picked);
                 },
               ),
             ),
@@ -720,38 +578,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _rangeStartDate != null &&
-                    _rangeEndDate != null &&
-                    _selectedPattern != null
-                ? _applyRangeShift
-                : null,
+            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null ? _applyRangeShift : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: _rangeStartDate != null &&
-                      _rangeEndDate != null &&
-                      _selectedPattern != null
-                  ? AppColors.primaryGradientStart
-                  : AppColors.borderDefault,
-              padding: EdgeInsets.symmetric(
-                vertical: AppDimensions.paddingSmall,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  AppDimensions.borderRadiusSmall,
-                ),
-              ),
+              backgroundColor: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null ? AppColors.primaryGradientStart : AppColors.borderDefault,
+              padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingSmall),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall)),
             ),
-            child: Text(
-              '期間に適用',
-              style: AppTextStyles.bodyTextStyle.copyWith(
-                color: _rangeStartDate != null &&
-                        _rangeEndDate != null &&
-                        _selectedPattern != null
-                    ? Colors.white
-                    : AppColors.textMuted,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
+            child: Text('範囲適用', style: AppTextStyles.bodyTextStyle.copyWith(
+              color: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null ? Colors.white : AppColors.textMuted,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            )),
           ),
         ),
         if (_shiftMap.isNotEmpty)
@@ -759,56 +596,27 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             padding: const EdgeInsets.only(top: AppDimensions.paddingMedium),
             child: Container(
               padding: const EdgeInsets.all(AppDimensions.paddingSmall),
-              decoration: BoxDecoration(
-                color: AppColors.cardBgWarning,
-                borderRadius:
-                    BorderRadius.circular(AppDimensions.borderRadiusSmall),
-              ),
-              child: Text(
-                '設定済み：${_shiftMap.length}日',
-                style: AppTextStyles.bodyTextStyle.copyWith(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
+              decoration: BoxDecoration(color: AppColors.cardBgWarning, borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall)),
+              child: Text('予定済み: ${_shiftMap.length}日', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, color: AppColors.textSecondary)),
             ),
           ),
       ],
     );
   }
 
-  /// 方式③：手入力
   Widget _buildManualInputMethod() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'パターンと時刻を手入力',
-          style: AppTextStyles.bodyTextStyle.copyWith(
-            fontSize: 13,
-            color: AppColors.textMuted,
-          ),
-        ),
+        Text('手入力', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 13, color: AppColors.textMuted)),
         const SizedBox(height: AppDimensions.paddingMedium),
-        Text(
-          '選択されたパターン：',
-          style: AppTextStyles.bodyTextStyle.copyWith(
-            fontWeight: FontWeight.w500,
-            fontSize: 13,
-          ),
-        ),
+        Text('選択パターン:', style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w500, fontSize: 13)),
         const SizedBox(height: 6.0),
         Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppDimensions.paddingSmall,
-            vertical: 10.0,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.paddingSmall, vertical: 10.0),
           decoration: BoxDecoration(
-            color: _selectedPattern != null
-                ? _selectedPattern!.color.withOpacity(0.1)
-                : AppColors.cardBgGray,
-            borderRadius:
-                BorderRadius.circular(AppDimensions.borderRadiusSmall),
+            color: _selectedPattern != null ? _selectedPattern!.color.withOpacity(0.1) : AppColors.cardBgGray,
+            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
           ),
           child: Row(
             children: [
@@ -820,10 +628,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     height: 16,
                     decoration: BoxDecoration(
                       color: _selectedPattern!.color,
-                      border: Border.all(
-                        color: _selectedPattern!.color.withOpacity(0.5),
-                        width: 1,
-                      ),
+                      border: Border.all(color: _selectedPattern!.color.withOpacity(0.5), width: 1),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -834,9 +639,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   style: AppTextStyles.bodyTextStyle.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: _selectedPattern != null
-                        ? _selectedPattern!.color
-                        : AppColors.textMuted,
+                    color: _selectedPattern != null ? _selectedPattern!.color : AppColors.textMuted,
                   ),
                 ),
               ),
@@ -847,54 +650,22 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// 日付フィールド
-  Widget _buildDateField({
-    required String label,
-    required DateTime? date,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildDateField({required String label, required DateTime? date, required VoidCallback onTap}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: AppTextStyles.bodyTextStyle.copyWith(
-            fontWeight: FontWeight.w500,
-            fontSize: 12,
-          ),
-        ),
+        Text(label, style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w500, fontSize: 12)),
         const SizedBox(height: 6.0),
         GestureDetector(
           onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppDimensions.paddingSmall,
-              vertical: 10.0,
-            ),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.borderDefault),
-              borderRadius:
-                  BorderRadius.circular(AppDimensions.borderRadiusSmall),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: AppDimensions.paddingSmall, vertical: 10.0),
+            decoration: BoxDecoration(border: Border.all(color: AppColors.borderDefault), borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall)),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  date != null
-                      ? '${date.month}/${date.day}'
-                      : 'タップで選択',
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    fontSize: 14,
-                    color: date != null
-                        ? AppColors.textPrimary
-                        : AppColors.textMuted,
-                  ),
-                ),
-                Icon(
-                  Icons.calendar_today,
-                  size: 18,
-                  color: AppColors.primaryGradientStart,
-                ),
+                Text(date != null ? '${date.month}/${date.day}' : 'タップして選択', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 14, color: date != null ? AppColors.textPrimary : AppColors.textMuted)),
+                Icon(Icons.calendar_today, size: 18, color: AppColors.primaryGradientStart),
               ],
             ),
           ),
@@ -903,64 +674,52 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// 期間のシフトを適用
   void _applyRangeShift() {
-    if (_rangeStartDate == null ||
-        _rangeEndDate == null ||
-        _selectedPattern == null) {
-      return;
-    }
-
+    if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
     DateTime current = _rangeStartDate!;
     while (!current.isAfter(_rangeEndDate!)) {
       final normalized = DateTime(current.year, current.month, current.day);
-      _shiftMap[normalized] = ShiftData(
-        date: normalized,
-        pattern: _selectedPattern,
-      );
+      _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
       current = current.add(const Duration(days: 1));
     }
-
     setState(() {});
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          '${_rangeEndDate!.difference(_rangeStartDate!).inDays + 1}日間のシフトを設定しました',
-        ),
+        content: Text('${_rangeEndDate!.difference(_rangeStartDate!).inDays + 1}日追加'),
         backgroundColor: AppColors.primaryGradientStart,
         duration: const Duration(seconds: 2),
       ),
     );
   }
-  
-  // ========== Week 3 Day 6-2 修正: public メソッドに変更、タブ切り替え時に呼び出し可能 ==========
-  /// DB からシフトデータをロード（public メソッド）
-  Future<void> loadShifts() async {
+
+  Future<void> loadCalendarEvents() async {
     try {
-      print('🔄 loadShifts() 開始');
       final now = DateTime.now();
-      // 前月・当月・来月の3ヶ月分を読み込む
       final startDate = DateTime(now.year, now.month - 1, 1);
       final endDate = DateTime(now.year, now.month + 2, 0);
-      
-      print('📅 読み込み範囲: ${startDate.toIso8601String()} ～ ${endDate.toIso8601String()}');
-      
+      final events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
+      setState(() {
+        _calendarEvents.clear();
+        _calendarEvents.addAll(events);
+      });
+    } catch (e) {
+      print('エラー: $e');
+    }
+  }
+
+  Future<void> loadShifts() async {
+    try {
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month - 1, 1);
+      final endDate = DateTime(now.year, now.month + 2, 0);
       final shiftRecords = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
-      
-      print('📝 取得したシフト数: ${shiftRecords.length}');
-      
       setState(() {
         _shiftMap.clear();
-        
         for (final record in shiftRecords) {
           final dateStr = record['shift_date'] as String;
           final patternId = record['pattern_id'] as String?;
-          
           final date = DateTime.parse(dateStr);
           final normalized = DateTime(date.year, date.month, date.day);
-          
-          // patternId で正確にパターンを検索
           ShiftPatternModel? matchingPattern;
           if (patternId != null) {
             matchingPattern = widget.patterns.firstWhere(
@@ -970,26 +729,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           } else {
             matchingPattern = _defaultDayOffPattern;
           }
-          
-          _shiftMap[normalized] = ShiftData(
-            date: normalized,
-            pattern: matchingPattern,
-          );
-          
-          print('✅ シフト読込: ${normalized.toIso8601String()} → ${matchingPattern.patternName}');
+          _shiftMap[normalized] = ShiftData(date: normalized, pattern: matchingPattern);
         }
       });
-      
-      print('✨ loadShifts() 完了 - 合計: ${_shiftMap.length}日');
     } catch (e) {
-      print('❌ Error loading shifts from DB: $e');
+      print('エラー: $e');
     }
   }
-  
-  // ========== Week 3 Day 6-2 追加: 入力データをリセット（戻る時に呼び出し） ==========
-  /// シフト入力フォームをリセット
+
   void clearShiftMap() {
-    print('🔄 clearShiftMap() - 入力データをリセット');
     setState(() {
       _shiftMap.clear();
       _selectedPattern = null;
@@ -1000,26 +748,5 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       _focusedDay = DateTime(now.year, now.month, 1);
       _selectedDay = now;
     });
-    print('✨ clearShiftMap() 完了');
   }
-  // Week 3 Day 9: Load calendar events from DB
-  Future<void> loadCalendarEvents() async {
-    try {
-      final now = DateTime.now();
-      final startDate = DateTime(now.year, now.month - 1, 1);
-      final endDate = DateTime(now.year, now.month + 2, 0);
-      
-      final events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
-      
-      setState(() {
-        _calendarEvents.clear();
-        _calendarEvents.addAll(events);
-      });
-      
-      print('loadCalendarEvents complete - ${_calendarEvents.length} events');
-    } catch (e) {
-      print('Error loading calendar events: $e');
-    }
-  }
-  // ========================================================================
 }
