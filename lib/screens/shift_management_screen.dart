@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/calendar_event.dart';  // ← 追加
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 
@@ -43,6 +44,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   final Map<DateTime, ShiftData> _shiftMap = {};
+  final List<CalendarEvent> _calendarEvents = [];  // ← 追加
   int _selectedInputMethod = 0;
   ShiftPatternModel? _selectedPattern;
   DateTime? _rangeStartDate;
@@ -58,7 +60,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     _focusedDay = DateTime(now.year, now.month, 1);
     _selectedDay = now;
 
-    // デフォルト休日パターンを作成
     _defaultDayOffPattern = ShiftPatternModel(
       id: 'default_dayoff',
       patternName: '休日',
@@ -67,8 +68,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       endTime: null,
       colorIndex: 0,
     );
-    // DB からシフトデータを読み込む
-    loadShifts();  // ========== Week 3 Day 6-2 修正: public メソッドに変更 ==========
+  
+    loadShifts();
+    loadCalendarEvents();  // Day 9 added
   }
 
   @override
@@ -439,24 +441,30 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            calendarBuilders: CalendarBuilders(
-              defaultBuilder: (context, date, focusedDay) {
-                final normalized = DateTime(date.year, date.month, date.day);
-                if (_shiftMap.containsKey(normalized)) {
-                  final pattern = _shiftMap[normalized]?.pattern;
-                  final patternColor = pattern?.color ?? Colors.grey;
-                  final patternName = pattern?.patternName ?? '';
-                  
-                  // パターン名を短縮（2文字目まで）
-                  final shortName = patternName.length > 2 
-                    ? patternName.substring(0, 2) 
-                    : patternName;
-                  
-                  // テキスト色：休日は赤、その他は黒
-                  final textColor = pattern?.patternType == ShiftType.dayOff 
-                    ? Colors.red 
-                    : Colors.black87;
-                  
+           
+           calendarBuilders: CalendarBuilders(
+             defaultBuilder: (context, date, focusedDay) {
+               final normalized = DateTime(date.year, date.month, date.day);
+    
+               // Week 3 Day 9: Get events for this date
+              final eventsForDate = _calendarEvents
+                  .where((event) => event.eventDate == 
+                      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}')
+                  .toList();
+    
+               if (_shiftMap.containsKey(normalized)) {
+                 final pattern = _shiftMap[normalized]?.pattern;
+                 final patternColor = pattern?.color ?? Colors.grey;
+                 final patternName = pattern?.patternName ?? '';
+      
+                 final shortName = patternName.length > 2 
+                   ? patternName.substring(0, 2) 
+                   : patternName;
+      
+                 final textColor = pattern?.patternType == ShiftType.dayOff 
+                   ? Colors.red 
+                   : Colors.black87;
+      
                   return Container(
                     decoration: BoxDecoration(
                       color: patternColor.withOpacity(0.3),
@@ -481,13 +489,50 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                             fontSize: 12,
                           ),
                         ),
+                        // Week 3 Day 9: Show event emoji
+                        if (eventsForDate.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2.0),
+                            child: Text(
+                              eventsForDate.first.eventEmoji,
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                          ),
                       ],
                     ),
                   );
                 }
-                return null;
-              },
-            ),
+    
+                // Week 3 Day 9: Show event only (no shift pattern)
+                if (eventsForDate.isNotEmpty) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '${date.day}',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          eventsForDate.first.eventEmoji,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+    
+    return null;
+  },
+),
             headerStyle: HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
@@ -956,6 +1001,25 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       _selectedDay = now;
     });
     print('✨ clearShiftMap() 完了');
+  }
+  // Week 3 Day 9: Load calendar events from DB
+  Future<void> loadCalendarEvents() async {
+    try {
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month - 1, 1);
+      final endDate = DateTime(now.year, now.month + 2, 0);
+      
+      final events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
+      
+      setState(() {
+        _calendarEvents.clear();
+        _calendarEvents.addAll(events);
+      });
+      
+      print('loadCalendarEvents complete - ${_calendarEvents.length} events');
+    } catch (e) {
+      print('Error loading calendar events: $e');
+    }
   }
   // ========================================================================
 }
