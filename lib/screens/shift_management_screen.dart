@@ -317,9 +317,27 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             eventLoader: (day) {
               final normalized = DateTime(day.year, day.month, day.day);
-              return _shiftMap.containsKey(normalized)
-                  ? [_shiftMap[normalized]!.pattern?.patternName ?? '']
-                  : [];
+              final events = <String>[];
+              
+              // シフトパターン名を追加
+              if (_shiftMap.containsKey(normalized)) {
+                final patternName = _shiftMap[normalized]!.pattern?.patternName ?? '';
+                if (patternName.isNotEmpty) {
+                  events.add(patternName);
+                }
+              }
+              
+              // イベント絵文字を追加
+              for (final event in _calendarEvents) {
+                final eventDate = event.eventDate is String 
+                    ? DateTime.parse(event.eventDate as String)
+                    : event.eventDate as DateTime;
+                if (isSameDay(eventDate, day)) {
+                  events.add(_getEventEmoji(event.eventType));
+                }
+              }
+              
+              return events;
             },
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
@@ -390,16 +408,166 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               todayTextStyle: const TextStyle(color: Colors.transparent),
             ),
             calendarBuilders: CalendarBuilders(
-              // ========== Week 4 Day 1 修正版 v4：defaultBuilder（日付位置完全統一版） ==========
+              // ========== 修正版 Week 5 Day 1：defaultBuilder + eventLoader 復元 ==========
               
-              selectedBuilder: (context, date, focusedDay) {
-                return Center(
-                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+              defaultBuilder: (context, date, focusedDay) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    // シフトパターン名表示（最大1行）
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Text(
+                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black54,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    // イベント絵文字表示
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                 );
               },
+
+              selectedBuilder: (context, date, focusedDay) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Text(
+                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black54,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                );
+              },
+
               todayBuilder: (context, date, focusedDay) {
-                return Center(
-                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Text(
+                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black54,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -674,8 +842,31 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           _shiftMap[normalized] = ShiftData(date: normalized, pattern: matchingPattern);
         }
       });
+      print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
+      _shiftMap.forEach((key, value) {
+        print("  ${key.toString()}: ${value.pattern?.patternName}");
+      });
     } catch (e) {
       print('エラー: $e');
+    }
+  }
+
+  String _getEventEmoji(String eventType) {
+    switch (eventType) {
+      case '給料日':
+        return '💰';
+      case 'ボーナス':
+        return '🎁';
+      case '慰安旅行':
+        return '✈️';
+      case '祝日':
+        return '🎉';
+      case '重要会議':
+        return '📅';
+      case '締切':
+        return '⏰';
+      default:
+        return '📌';
     }
   }
 
