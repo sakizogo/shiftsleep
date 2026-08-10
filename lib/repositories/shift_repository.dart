@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/database/database_helper.dart';
+import 'package:shiftsleep/models/AppSettings.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:sqflite/sqflite.dart';
@@ -376,4 +377,79 @@ class ShiftRepository {
       minute: int.parse(parts[1]),
     );
   }
+  /// ========== Week 4 Day 1 追加: AppSettings テーブル操作メソッド ==========
+
+  /// 設定を取得
+  Future<AppSettings?> getAppSettings(String userId) async {
+    try {
+      final db = await _databaseHelper.database;
+      final results = await db.query(
+        'app_settings',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+
+      if (results.isEmpty) {
+        print('⚠️ No app settings found for user: $userId');
+        return null;
+      }
+
+      return AppSettings.fromMap(results.first);
+    } catch (e) {
+      print('❌ Error getting app settings: $e');
+      return null;
+    }
+  }
+
+  /// 設定を作成または更新
+  Future<void> createOrUpdateAppSettings(AppSettings settings) async {
+    try {
+      final db = await _databaseHelper.database;
+      final now = DateTime.now().toIso8601String();
+
+      await db.insert(
+        'app_settings',
+        {
+          'user_id': settings.userId,
+          'name': null,
+          'age': null,
+          'gender': null,
+          'shift_pattern': null,
+          'language': 'ja',
+          'alarm_time_before_shift': settings.alarmTimeBeforeShift,
+          'created_at': settings.createdAt.toIso8601String(),
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+
+      print('✅ App settings saved: ${settings.userId}');
+    } catch (e) {
+      print('❌ Error saving app settings: $e');
+    }
+  }
+
+  /// アラーム時間だけを更新
+  Future<void> updateAlarmTimeBeforeShift(String userId, int minutes) async {
+    try {
+      final db = await _databaseHelper.database;
+      final now = DateTime.now().toIso8601String();
+
+      await db.update(
+        'app_settings',
+        {
+          'alarm_time_before_shift': minutes,
+          'updated_at': now,
+        },
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+
+      print('✅ Alarm time updated: $userId → ${minutes}分前');
+    } catch (e) {
+      print('❌ Error updating alarm time: $e');
+    }
+  }
+
+  /// ================================================================
 }

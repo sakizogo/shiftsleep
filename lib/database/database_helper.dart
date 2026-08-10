@@ -26,15 +26,15 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,  // ========== Week 3 Day 8 追加: version を 4 に上げる ==========
+      version: 5,  // ========== Week 4 Day 1 追加: version を 5 に上げる（アラーム時間カスタマイズ）==========
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
-        
+
         // バージョン 2 → 3 への更新：shifts テーブルに pattern_id カラムを追加
         if (oldVersion < 3) {
           print('🔧 Database upgrade: v$oldVersion → v$newVersion');
-          
+
           // shift_patterns テーブルの作成（v2で追加されていなかった場合）
           await db.execute('''
             CREATE TABLE IF NOT EXISTS shift_patterns (
@@ -49,11 +49,11 @@ class DatabaseHelper {
               updated_at TEXT NOT NULL
             )
           ''');
-          
+
           // shifts テーブルを新しいスキーマに移行
           // 古いテーブルをリネーム
           await db.execute('ALTER TABLE shifts RENAME TO shifts_old');
-          
+
           // 新しいスキーマで shifts テーブルを再作成
           await db.execute('''
             CREATE TABLE shifts (
@@ -65,16 +65,16 @@ class DatabaseHelper {
               updated_at TEXT NOT NULL
             )
           ''');
-          
+
           print('✅ Database upgrade complete: shifts table migrated to new schema');
         }
         // ========================================================================
-        
+
         // ========== Week 3 Day 8 追加: calendar_events テーブル ==========
         // バージョン 3 → 4 への更新：calendar_events テーブルを追加
         if (oldVersion < 4) {
           print('🔧 Database upgrade: v$oldVersion → v$newVersion');
-          
+
           await db.execute('''
             CREATE TABLE calendar_events (
               id TEXT PRIMARY KEY,
@@ -88,10 +88,26 @@ class DatabaseHelper {
               updated_at TEXT NOT NULL
             )
           ''');
-          
+
           print('✅ Database upgrade complete: calendar_events table created');
         }
         // ================================================================
+
+        // ========== Week 4 Day 1 追加: app_settings テーブルに alarm_time_before_shift カラムを追加 ==========
+        // バージョン 4 → 5 への更新：app_settings テーブルにアラーム時間設定カラムを追加
+        if (oldVersion < 5) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+
+          // 既存の app_settings テーブルに alarm_time_before_shift カラムを追加
+          // デフォルト値：30分（出勤30分前にアラーム）
+          await db.execute('''
+            ALTER TABLE app_settings 
+            ADD COLUMN alarm_time_before_shift INTEGER NOT NULL DEFAULT 30
+          ''');
+
+          print('✅ Database upgrade complete: app_settings table updated with alarm_time_before_shift column');
+        }
+        // ====================================================================
       },
     );
   }
@@ -129,7 +145,8 @@ class DatabaseHelper {
       )
     ''');
 
-    // app_settings テーブル
+    // ========== Week 4 Day 1 更新: app_settings テーブル ==========
+    // アラーム時間カスタマイズに対応（alarm_time_before_shift カラム追加）
     await db.execute('''
       CREATE TABLE app_settings (
         user_id TEXT PRIMARY KEY,
@@ -138,10 +155,12 @@ class DatabaseHelper {
         gender TEXT,
         shift_pattern TEXT,
         language TEXT DEFAULT 'ja',
+        alarm_time_before_shift INTEGER NOT NULL DEFAULT 30,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
     ''');
+    // ===================================================================
 
     // alarm_configs テーブル
     await db.execute('''

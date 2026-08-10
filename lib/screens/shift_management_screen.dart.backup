@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
@@ -391,7 +391,150 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ),
             calendarBuilders: CalendarBuilders(
               // ========== Week 4 Day 1 修正版 v4：defaultBuilder（日付位置完全統一版） ==========
-              
+              defaultBuilder: (context, date, focusedDay) {
+                final normalized = DateTime(date.year, date.month, date.day);
+                final eventsForDate = _calendarEvents
+                    .where((event) => event.eventDate ==
+                        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}')
+                    .toList();
+
+                // ========== 共通設定：全セルで統一 ==========
+                const double cellMinHeight = 75.0;
+                const EdgeInsets cellPadding = EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0);
+                const double spacingAfterDate = 3.0;      // 日付後の間隔
+                const double spacingAfterContent = 2.0;   // コンテンツ後の間隔
+                // ================================================
+
+                if (_shiftMap.containsKey(normalized)) {
+                  final pattern = _shiftMap[normalized]?.pattern;
+                  final textColor = pattern?.patternType == ShiftType.dayOff ? Colors.red : Colors.black87;
+
+                  return Container(
+                    constraints: BoxConstraints(minHeight: cellMinHeight),
+                    padding: cellPadding,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 日付（固定位置）
+                        Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: spacingAfterDate),  // ← 統一：3.0
+
+                        // パターン名（必ず表示）
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                          decoration: BoxDecoration(
+                            color: pattern!.color.withOpacity(0.1),
+                            border: Border.all(
+                              color: pattern.color.withOpacity(0.5),
+                              width: 0.8,
+                            ),
+                            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                          ),
+                          child: Text(
+                            pattern.patternName,
+                            style: AppTextStyles.bodyTextStyle.copyWith(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        // イベント絵文字のみ表示（eventName は非表示）
+                        if (eventsForDate.isNotEmpty) ...[
+                          const SizedBox(height: spacingAfterContent),  // ← 統一：2.0
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: eventsForDate
+                                .take(2)  // 最大2個の絵文字を表示
+                                .map((event) => Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                                  child: Text(
+                                    event.eventEmoji,  // ← 絵文字のみ
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ))
+                                .toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }
+
+                // シフトなし、イベントあり
+                if (eventsForDate.isNotEmpty) {
+                  return Container(
+                    constraints: BoxConstraints(minHeight: cellMinHeight),
+                    padding: cellPadding,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 日付（固定位置）
+                        Text(
+                          '${date.day}',
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: spacingAfterDate),  // ← 統一：3.0
+
+                        // イベント絵文字のみ表示（eventName は非表示）
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: eventsForDate
+                              .take(2)  // 最大2個の絵文字を表示
+                              .map((event) => Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                                child: Text(
+                                  event.eventEmoji,  // ← 絵文字のみ
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ))
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // シフトなし、イベントなし（日付のみ）
+                return Container(
+                  constraints: BoxConstraints(minHeight: cellMinHeight),
+                  padding: cellPadding,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 日付（固定位置）
+                      Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              // ======================================================================
               selectedBuilder: (context, date, focusedDay) {
                 return Center(
                   child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
