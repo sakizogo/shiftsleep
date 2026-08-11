@@ -4,6 +4,8 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/models/AppSettings.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'shift_pattern_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -24,36 +26,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _selectedAlarmSound = 'default';
   double _soundVolume = 1.0;
   List<ShiftPatternModel> _shiftPatterns = [];
+  int _alarmTimeBeforeShift = 30;  // デフォルト：出勤30分前
+  final ShiftRepository _shiftRepository = ShiftRepository();
 
   @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  /// DB から設定を読み込む
+Future<void> _loadSettings() async {
+  try {
+    final settings = await _shiftRepository.getAppSettings('test_user');
+    
+    if (settings != null && mounted) {
+      print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前');
+      
+      // wakeUpTime を "07:00" 形式から TimeOfDay に変換
+      final timeParts = settings.wakeUpTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+      
+      setState(() {
+        _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
+        _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
+      });
+    }
+  } catch (e) {
+    print('⚠️ 設定読み込みエラー: $e');
+    if (mounted) {
+      final defaultSettings = AppSettings(
+        id: 1,
+        userId: 'test_user',
+        alarmTimeBeforeShift: 30,
+        wakeUpTime: '07:00',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await _shiftRepository.createOrUpdateAppSettings(defaultSettings);
+    }
+  }
+}
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context);
+        return false;
+      },
+      child: Scaffold(
         backgroundColor: AppColors.backgroundLight,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: AppColors.textPrimary,
+        appBar: AppBar(
+          backgroundColor: AppColors.backgroundLight,
+          elevation: 0,
+          centerTitle: true,
+          // leading: IconButton(...) ← この部分を削除
+          title: Text(
+            '設定',
+            style: AppTextStyles.headerStyle,
           ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          '設定',
-          style: AppTextStyles.headerStyle,
-        ),
-        foregroundColor: AppColors.textPrimary,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(
-            color: AppColors.borderDefault,
-            height: 1.0,
+          foregroundColor: AppColors.textPrimary,
+          bottom: PreferredSize(
+          // ... 以下はそのまま
+            preferredSize: const Size.fromHeight(1.0),
+            child: Container(
+              color: AppColors.borderDefault,
+              height: 1.0,
+            ),
           ),
         ),
-      ),
-      body: SingleChildScrollView(
+        body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(
             vertical: AppDimensions.sectionPaddingVertical,
@@ -121,6 +164,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingLarge),
+
+                    // 出勤前アラーム設定
+                    Text(
+                      '出勤前アラーム',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4.0),
+                    Text(
+                      'シフト出勤予定時刻の何分前に通知します',
+                      style: AppTextStyles.bodyTextStyle.copyWith(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 8.0),
+                    DropdownButton<int>(
+                      value: _alarmTimeBeforeShift,
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem(
+                          value: 0,
+                          child: Text('無効（アラームなし）'),
+                        ),
+                        ...List.generate(
+                          (180 - 30) ~/ 10 + 1,
+                          (index) {
+                            final minutes = 30 + (index * 10);
+                            return DropdownMenuItem(
+                              value: minutes,
+                              child: Text('$minutes分前'),
+                            );
+                          },
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _alarmTimeBeforeShift = value;
+                          });
+                        }
+                      },
                     ),
                     const SizedBox(height: AppDimensions.paddingLarge),
 
@@ -335,6 +424,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       ),
+      ),    // ← Scaffold を閉じる括弧を追加
     );
   }
 
@@ -583,13 +673,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// 設定を保存
-  void _saveSettings() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('設定を保存しました'),
-        backgroundColor: AppColors.primaryGradientStart,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _saveSettings() async {
+    try {
+      final shiftRepository = ShiftRepository();
+    
+      // TimeOfDay を "HH:mm" 形式の文字列に変換
+      final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
+    
+      // AppSettings オブジェクトを作成して保存
+      final appSettings = AppSettings(
+        id: 1,
+        userId: 'test_user',
+        alarmTimeBeforeShift: _alarmTimeBeforeShift,
+        wakeUpTime: wakeUpTimeStr,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+    
+      await shiftRepository.createOrUpdateAppSettings(appSettings);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('設定を保存しました'),
+            backgroundColor: AppColors.primaryGradientStart,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      print('✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前');
+    } catch (e) {
+      print('❌ 設定保存エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('エラー: $e'),
+            backgroundColor: AppColors.warningRed,
+          ),
+        );
+      }
+    }
   }
 }

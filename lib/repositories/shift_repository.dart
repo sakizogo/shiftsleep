@@ -417,6 +417,7 @@ class ShiftRepository {
           'shift_pattern': null,
           'language': 'ja',
           'alarm_time_before_shift': settings.alarmTimeBeforeShift,
+          'wake_up_time': settings.wakeUpTime,  // ← この行を追加
           'created_at': settings.createdAt.toIso8601String(),
           'updated_at': now,
         },

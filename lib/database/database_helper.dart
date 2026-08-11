@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5,  // ========== Week 4 Day 1 追加: version を 5 に上げる（アラーム時間カスタマイズ）==========
+      version: 6,  // ========== アラーム時間カスタマイズ ==========
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -91,21 +91,31 @@ class DatabaseHelper {
 
           print('✅ Database upgrade complete: calendar_events table created');
         }
+        
         // ================================================================
 
-        // ========== Week 4 Day 1 追加: app_settings テーブルに alarm_time_before_shift カラムを追加 ==========
-        // バージョン 4 → 5 への更新：app_settings テーブルにアラーム時間設定カラムを追加
-        if (oldVersion < 5) {
+        // ========== Week 5 Day 2 追加: app_settings テーブルに wake_up_time カラムを追加 ==========
+        // バージョン 5 → 6 への更新：app_settings テーブルに起床時刻カラムを追加
+        if (oldVersion < 6) {
           print('🔧 Database upgrade: v$oldVersion → v$newVersion');
 
-          // 既存の app_settings テーブルに alarm_time_before_shift カラムを追加
-          // デフォルト値：30分（出勤30分前にアラーム）
-          await db.execute('''
-            ALTER TABLE app_settings 
-            ADD COLUMN alarm_time_before_shift INTEGER NOT NULL DEFAULT 30
-          ''');
-
-          print('✅ Database upgrade complete: app_settings table updated with alarm_time_before_shift column');
+          try {
+            await db.execute('''
+              ALTER TABLE app_settings 
+              ADD COLUMN wake_up_time TEXT
+            ''');
+    
+            // 既存行に default 値を設定
+            await db.execute('''
+              UPDATE app_settings 
+              SET wake_up_time = '07:00' 
+              WHERE wake_up_time IS NULL
+            ''');
+    
+            print('✅ Database upgrade complete: app_settings table updated with wake_up_time column');
+          } catch (e) {
+            print('⚠️ Column might already exist: $e');
+          }
         }
         // ====================================================================
       },
@@ -156,6 +166,7 @@ class DatabaseHelper {
         shift_pattern TEXT,
         language TEXT DEFAULT 'ja',
         alarm_time_before_shift INTEGER NOT NULL DEFAULT 30,
+        wake_up_time TEXT DEFAULT '07:00',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -175,22 +186,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // ========== Week 3 Day 5 追加: shift_patterns テーブル ==========
-    // シフトパターン定義を管理するテーブル
-    await db.execute('''
-      CREATE TABLE shift_patterns (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        pattern_name TEXT NOT NULL,
-        pattern_type TEXT NOT NULL,
-        start_time TEXT,
-        end_time TEXT,
-        color_index INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    ''');
-    // ========================================================================
+
 
     // ========== Week 3 Day 8 追加: calendar_events テーブル ==========
     // カレンダーイベント（給料日、ボーナス、慰安旅行など）
