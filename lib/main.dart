@@ -6,12 +6,11 @@ import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ 追加
 import 'screens/home_screen.dart';
 
-void main() async {  // ✅ async に変更
-  WidgetsFlutterBinding.ensureInitialized();  // ✅ 追加
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   
-  // ✅ AlarmService を初期化
   try {
-    await AlarmService().initialize();
+    await AlarmService.initialize();  // ← () を削除
     print('[main] ✅ AlarmService initialized successfully');
   } catch (e) {
     print('[main] ❌ AlarmService initialization failed: $e');

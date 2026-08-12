@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/database/database_helper.dart';
-import 'package:shiftsleep/models/AppSettings.dart';
+import 'package:shiftsleep/models/app_settings.dart';  // ← app_settings（アンダースコア）
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:sqflite/sqflite.dart';
@@ -377,10 +377,10 @@ class ShiftRepository {
       minute: int.parse(parts[1]),
     );
   }
-  /// ========== Week 4 Day 1 追加: AppSettings テーブル操作メソッド ==========
+  /// ========== Week 4 Day 1 追加: app_settings テーブル操作メソッド ==========
 
   /// 設定を取得
-  Future<AppSettings?> getAppSettings(String userId) async {
+  Future<AppSettings?> gety(String userId) async {
     try {
       final db = await _databaseHelper.database;
       final results = await db.query(
@@ -418,6 +418,7 @@ class ShiftRepository {
           'language': 'ja',
           'alarm_time_before_shift': settings.alarmTimeBeforeShift,
           'wake_up_time': settings.wakeUpTime,  // ← この行を追加
+          'selected_alarm_sound': settings.selectedAlarmSound,  // ← この1行を追加
           'created_at': settings.createdAt.toIso8601String(),
           'updated_at': now,
         },
@@ -453,4 +454,25 @@ class ShiftRepository {
   }
 
   /// ================================================================
+  /// AppSettings を取得
+  Future<AppSettings?> getAppSettings(String userId) async {
+    try {
+      final db = await _databaseHelper.database;
+      final results = await db.query(
+        'app_settings',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+
+      if (results.isEmpty) {
+        print('⚠️ No app settings found for user: $userId');
+        return null;
+      }
+
+      return AppSettings.fromMap(results.first);
+    } catch (e) {
+      print('✗ Error getting app settings: $e');
+      return null;
+    }
+  }
 }

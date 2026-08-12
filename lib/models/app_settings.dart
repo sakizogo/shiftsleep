@@ -8,6 +8,7 @@ class AppSettings {
   final String userId;
   final int alarmTimeBeforeShift;
   final String wakeUpTime;  // "07:00" 形式で保存
+  final String selectedAlarmSound;  // ← 追加（'default', 'gentle', 'harsh'）
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -16,6 +17,7 @@ class AppSettings {
     required this.userId,
     this.alarmTimeBeforeShift = 30,
     this.wakeUpTime = '07:00',  // デフォルト：07:00
+    this.selectedAlarmSound = 'default',  // ← この1行を追加
     required this.createdAt,
     required this.updatedAt,
   });
@@ -33,6 +35,7 @@ class AppSettings {
       final createdAt = DateTime.parse(map['created_at'] as String);
       final updatedAt = DateTime.parse(map['updated_at'] as String);
       final wakeUpTime = map['wake_up_time'] as String? ?? '07:00';
+      final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';  // ← この1行を追加
       
       print('✅ AppSettings読み込み完了: userId=$userId, alarm=$alarmTime分前');
       
@@ -41,6 +44,7 @@ class AppSettings {
         userId: userId,
         alarmTimeBeforeShift: alarmTime,
         wakeUpTime: wakeUpTime,  
+        selectedAlarmSound: selectedAlarmSound,  // ← 追加
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -65,6 +69,7 @@ class AppSettings {
       'user_id': userId,
       'alarm_time_before_shift': alarmTimeBeforeShift,
       'wake_up_time': wakeUpTime,  // 追加
+      'selected_alarm_sound': selectedAlarmSound,  // ← 追加
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -76,6 +81,7 @@ class AppSettings {
     String? userId,
     int? alarmTimeBeforeShift,
     String? wakeUpTime, 
+    String? selectedAlarmSound,  // ← 追加
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -84,6 +90,7 @@ class AppSettings {
       userId: userId ?? this.userId,
       alarmTimeBeforeShift: alarmTimeBeforeShift ?? this.alarmTimeBeforeShift,
       wakeUpTime: wakeUpTime ?? this.wakeUpTime, 
+      selectedAlarmSound: selectedAlarmSound ?? this.selectedAlarmSound,  // ← 追加
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

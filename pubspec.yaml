@@ -16,10 +16,11 @@ dependencies:
   sqflite: ^2.3.0
   path: ^1.8.3
   table_calendar: ^3.2.0
-  flutter_local_notifications: ^17.1.0   # ← アラーム通知
+  flutter_local_notifications: ^18.0.0  # 最新版
   timezone: ^0.9.2                       # ← タイムゾーン
   uuid: ^4.0.0                          # ← ID生成
   audioplayers: ^6.8.1          # ✅ 最新バージョンに変更
+  permission_handler: ^13.0.1
 
 dev_dependencies:
   flutter_test:

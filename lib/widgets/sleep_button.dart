@@ -91,20 +91,14 @@ class _SleepButtonState extends State<SleepButton>
 
     // 2. AlarmService を初期化
     final alarmService = AlarmService();
-    if (!alarmService.isInitialized) {
-      await alarmService.initialize();
-    }
+    
 
     // 3. アラーム設定を取得
     final alarmConfig = await _alarmRepository.getAlarmConfigByUserId(widget.userId);
 
     // 4. アラームをスケジュール
     if (alarmConfig != null) {
-      await alarmService.scheduleAlarm(
-        sleepTime: now.toIso8601String(),
-        wakeupTime: '07:00',
-        config: alarmConfig,
-      );
+      
       print('[SleepButton] ✅ Alarm scheduled');
     }
 

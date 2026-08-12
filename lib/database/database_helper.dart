@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,  // ========== アラーム時間カスタマイズ ==========
+      version: 7,  // ← 6 から 7 に変更
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -117,6 +117,23 @@ class DatabaseHelper {
             print('⚠️ Column might already exist: $e');
           }
         }
+        // ========== Week 5 Day 3 追加: app_settings テーブルに selected_alarm_sound カラムを追加 ==========
+        // バージョン 6 → 7 への更新：app_settings テーブルにアラーム音選択カラムを追加
+        if (oldVersion < 7) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+
+          try {
+            await db.execute('''
+              ALTER TABLE app_settings 
+              ADD COLUMN selected_alarm_sound TEXT DEFAULT 'default'
+            ''');
+    
+            print('✅ Database upgrade complete: app_settings table updated with selected_alarm_sound column');
+          } catch (e) {
+            print('⚠️ Column might already exist: $e');
+          }
+        }
+        // ====================================================================
         // ====================================================================
       },
     );
@@ -142,7 +159,21 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL
       )
     ''');
-
+    // ========== shift_patterns テーブル（追加） ==========
+    await db.execute('''
+      CREATE TABLE shift_patterns (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        pattern_name TEXT NOT NULL,
+        pattern_type TEXT NOT NULL,
+        start_time TEXT,
+        end_time TEXT,
+        color_index INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    // ================================================
     // shifts テーブル - Week 3 Day 6-2 版（pattern_id を使用）
     await db.execute('''
       CREATE TABLE shifts (
@@ -167,6 +198,7 @@ class DatabaseHelper {
         language TEXT DEFAULT 'ja',
         alarm_time_before_shift INTEGER NOT NULL DEFAULT 30,
         wake_up_time TEXT DEFAULT '07:00',
+        selected_alarm_sound TEXT DEFAULT 'default',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

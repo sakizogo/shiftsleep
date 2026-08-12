@@ -4,8 +4,9 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
-import 'package:shiftsleep/models/AppSettings.dart';
+import 'package:shiftsleep/models/app_settings.dart';  // ← 小文字
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/services/alarm_service.dart';  // ← 小文字
 import 'shift_pattern_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -36,38 +37,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// DB から設定を読み込む
-Future<void> _loadSettings() async {
-  try {
-    final settings = await _shiftRepository.getAppSettings('test_user');
+ Future<void> _loadSettings() async {
+   try {
+     final settings = await _shiftRepository.getAppSettings('test_user');
     
-    if (settings != null && mounted) {
-      print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前');
+     if (settings != null && mounted) {
+       print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}');  // ← 音を追加
       
-      // wakeUpTime を "07:00" 形式から TimeOfDay に変換
-      final timeParts = settings.wakeUpTime.split(':');
-      final hour = int.parse(timeParts[0]);
-      final minute = int.parse(timeParts[1]);
+       // wakeUpTime を "07:00" 形式から TimeOfDay に変換
+       final timeParts = settings.wakeUpTime.split(':');
+       final hour = int.parse(timeParts[0]);
+       final minute = int.parse(timeParts[1]);
       
-      setState(() {
-        _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
-        _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
-      });
-    }
-  } catch (e) {
-    print('⚠️ 設定読み込みエラー: $e');
-    if (mounted) {
-      final defaultSettings = AppSettings(
-        id: 1,
-        userId: 'test_user',
-        alarmTimeBeforeShift: 30,
-        wakeUpTime: '07:00',
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-      await _shiftRepository.createOrUpdateAppSettings(defaultSettings);
-    }
-  }
-}
+       setState(() {
+         _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
+         _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
+         _selectedAlarmSound = settings.selectedAlarmSound;
+       });
+     }
+   } catch (e) {
+     print('⚠️ 設定読み込みエラー: $e');
+     // ...
+   }
+ }
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -252,22 +244,15 @@ Future<void> _loadSettings() async {
                       value: _selectedAlarmSound,
                       isExpanded: true,
                       items: const [
-                        DropdownMenuItem(
-                          value: 'default',
-                          child: Text('デフォルト音'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'gentle',
-                          child: Text('やさしい音'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'harsh',
-                          child: Text('強めの音'),
-                        ),
+                        DropdownMenuItem(value: 'default', child: Text('デフォルト音')),
+                        DropdownMenuItem(value: 'gentle', child: Text('やさしい音')),
+                        DropdownMenuItem(value: 'harsh', child: Text('強めの音')),
                       ],
                       onChanged: (value) {
+                        print('🔊 ドロップダウン選択: $value');  // ← デバッグ追加
                         setState(() {
                           _selectedAlarmSound = value!;
+                          print('🔊 _selectedAlarmSound 更新: $_selectedAlarmSound');  // ← デバッグ追加
                         });
                       },
                     ),
@@ -313,7 +298,35 @@ Future<void> _loadSettings() async {
                 ),
               ),
 
-              const SizedBox(height: AppDimensions.paddingXLarge),
+              const SizedBox(height: AppDimensions.paddingLarge),
+
+              // ========================
+              // テストセクション
+              // ========================
+              Text(
+                'テスト',
+                style: AppTextStyles.bodyTextStyle.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 8.0),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _testAlarmSound,  // ← これが必須！
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.warningRed,
+                  ),
+                  child: Text(
+                    '🔊 3分後にテストアラーム',
+                    style: AppTextStyles.bodyTextStyle.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
 
               // ========================
               // シフト体系設定セクション
@@ -671,7 +684,24 @@ Future<void> _loadSettings() async {
       },
     );
   }
+  /// テストアラーム（即座通知）
+  Future<void> _testAlarmSound() async {
+    print('🔊 テストアラーム開始...');
+    print('🔊 テスト時点の _selectedAlarmSound: $_selectedAlarmSound');  // ← デバッグ追加
+    // 即座に通知を表示（音が選択値で鳴る）
+    await AlarmService.showTestNotification(
+      selectedAlarmSound: _selectedAlarmSound,  // ← 音を渡す
+    );
 
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('今すぐテスト通知が鳴ります！'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+  }
   /// 設定を保存
   Future<void> _saveSettings() async {
     try {
@@ -681,17 +711,17 @@ Future<void> _loadSettings() async {
       final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
     
       // AppSettings オブジェクトを作成して保存
-      final appSettings = AppSettings(
+      final app_settings = AppSettings(
         id: 1,
         userId: 'test_user',
         alarmTimeBeforeShift: _alarmTimeBeforeShift,
         wakeUpTime: wakeUpTimeStr,
+        selectedAlarmSound: _selectedAlarmSound,  // ← この1行を追加
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
     
-      await shiftRepository.createOrUpdateAppSettings(appSettings);
-
+      await shiftRepository.createOrUpdateAppSettings(app_settings);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "jp.sakizoapps.shiftsleep"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
