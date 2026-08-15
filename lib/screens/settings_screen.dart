@@ -3,11 +3,13 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
-import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/app_settings.dart';  // ← 小文字
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ← 小文字
-import 'shift_pattern_screen.dart';
+// ========== Week 6 Fix E: 設定画面のシフト体系登録削除 ==========
+// 削除済み: import 'shift_pattern_screen.dart';
+// 理由: ホーム → シフト詳細確認 → シフト体系登録 に統一（重複排除）
+// ================================================================
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -26,7 +28,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AlarmMode _alarmMode = AlarmMode.once;
   String _selectedAlarmSound = 'default';
   double _soundVolume = 1.0;
-  List<ShiftPatternModel> _shiftPatterns = [];
+  // ========== Week 6 Fix E: 削除済み ==========
+  // List<ShiftPatternModel> _shiftPatterns = [];  // ← 削除
+  // ==========================================
   int _alarmTimeBeforeShift = 30;  // デフォルト：出勤30分前
   final ShiftRepository _shiftRepository = ShiftRepository();
 
@@ -328,80 +332,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
 
-              // ========================
-              // シフト体系設定セクション
-              // ========================
-              Text(
-                '📅 シフト体系設定',
-                style: AppTextStyles.sectionTitleStyle,
-              ),
-              const SizedBox(height: AppDimensions.paddingMedium),
-
-              Container(
-                padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: AppColors.borderDefault),
-                  borderRadius: BorderRadius.circular(
-                    AppDimensions.borderRadiusMedium,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 登録済みシフト体系
-                    if (_shiftPatterns.isNotEmpty) ...[
-                      Text(
-                        '登録済みシフト体系',
-                        style: AppTextStyles.bodyTextStyle.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                      ..._shiftPatterns.map((pattern) {
-                        return Padding(
-                          padding: const EdgeInsets.only(
-                            bottom: AppDimensions.paddingSmall,
-                          ),
-                          child: _buildPatternItem(pattern),
-                        );
-                      }).toList(),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-                    ],
-
-                    // + シフト体系を登録ボタン
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _registerNewPattern,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              AppColors.primaryGradientStart,
-                          padding: EdgeInsets.symmetric(
-                            vertical: AppDimensions.paddingSmall,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.borderRadiusSmall,
-                            ),
-                          ),
-                        ),
-                        child: Text(
-                          '+ シフト体系を登録',
-                          style: AppTextStyles.bodyTextStyle.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: AppDimensions.paddingXLarge),
+              // ========== Week 6 Fix E: 設定画面のシフト体系設定セクション削除 ==========
+              // 削除済み：シフト体系設定セクション全体（登録、編集、削除機能）
+              // 理由：ホーム → シフト詳細確認 → シフト体系登録 に統一（重複排除）
+              // =========================================================================
 
               // ========================
               // 保存ボタン
@@ -488,87 +422,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// シフト体系アイテム
-  Widget _buildPatternItem(ShiftPatternModel pattern) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingSmall,
-        vertical: 10.0,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.cardBgGray,
-        borderRadius: BorderRadius.circular(
-          AppDimensions.borderRadiusSmall,
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  pattern.patternName,
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4.0),
-                if (pattern.patternType.isWorkDay)
-                  Text(
-                    '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')} ～ ${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}',
-                    style: AppTextStyles.bodyTextStyle.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  )
-                else
-                  Text(
-                    '休日',
-                    style: AppTextStyles.bodyTextStyle.copyWith(
-                      fontSize: 12,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: () => _editPattern(pattern),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0,
-                  ),
-                  child: Icon(
-                    Icons.edit,
-                    size: 20,
-                    color: AppColors.primaryGradientStart,
-                  ),
-                ),
-              ),
-              GestureDetector(
-                onTap: () => _deletePattern(pattern),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0,
-                  ),
-                  child: Icon(
-                    Icons.delete,
-                    size: 20,
-                    color: AppColors.warningRed,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // ========== Week 6 Fix E: 削除済みメソッド ==========
+  // _buildPatternItem, _registerNewPattern, _editPattern, _deletePattern
+  // 理由：ホーム → シフト詳細確認 → シフト体系登録 に統一（重複排除）
+  // ================================================
 
   /// 起床時刻選択
   Future<void> _selectWakeUpTime(BuildContext context) async {
@@ -593,97 +450,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// 新規シフト体系登録
-  void _registerNewPattern() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ShiftPatternScreen(
-          mode: ShiftPatternMode.register,
-          onPatternsChanged: (patterns) {
-            setState(() {
-              _shiftPatterns = patterns;
-            });
-          },
-          existingPatterns: _shiftPatterns,
-        ),
-      ),
-    ).then((_) {
-      setState(() {});
-    });
-  }
+  // ========== Week 6 Fix E: 削除済みメソッド ==========
+  // _registerNewPattern, _editPattern, _deletePattern
+  // 理由：ホーム → シフト詳細確認 → シフト体系登録 に統一（重複排除）
+  // ================================================
 
-  /// シフト体系編集
-  void _editPattern(ShiftPatternModel pattern) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ShiftPatternScreen(
-          mode: ShiftPatternMode.edit,
-          editingPattern: pattern,
-          onPatternsChanged: (patterns) {
-            setState(() {
-              _shiftPatterns = patterns;
-            });
-          },
-          existingPatterns: _shiftPatterns,
-        ),
-      ),
-    ).then((_) {
-      setState(() {});
-    });
-  }
-
-  /// シフト体系削除
-  void _deletePattern(ShiftPatternModel pattern) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(
-            '「${pattern.patternName}」を削除',
-            style: AppTextStyles.sectionTitleStyle,
-          ),
-          content: Text(
-            'このシフト体系を削除してもよろしいですか？',
-            style: AppTextStyles.bodyTextStyle,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'キャンセル',
-                style: AppTextStyles.bodyTextStyle.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _shiftPatterns.removeWhere((p) => p.id == pattern.id);
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('「${pattern.patternName}」を削除しました'),
-                    backgroundColor: AppColors.warningRed,
-                  ),
-                );
-              },
-              child: Text(
-                '削除',
-                style: AppTextStyles.bodyTextStyle.copyWith(
-                  color: AppColors.warningRed,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
   /// テストアラーム（即座通知）
   Future<void> _testAlarmSound() async {
     print('🔊 テストアラーム開始...');
