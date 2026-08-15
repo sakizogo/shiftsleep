@@ -608,6 +608,38 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           ),
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
+        // ========== Week 6 Fix D: カレンダー下にシフト保存ボタンを配置 ==========
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _shiftMap.isNotEmpty
+                ? () {
+                    if (widget.onNavigateToDetails != null) {
+                      widget.onNavigateToDetails!(_shiftMap, widget.patterns);
+                    }
+                  }
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _shiftMap.isNotEmpty
+                  ? AppColors.primaryGradientStart
+                  : AppColors.borderDefault,
+              padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+              ),
+            ),
+            child: Text(
+              'シフト保存',
+              style: AppTextStyles.bodyTextStyle.copyWith(
+                color: _shiftMap.isNotEmpty ? Colors.white : AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+        // ===================================================================
+        const SizedBox(height: AppDimensions.paddingMedium),
         if (_shiftMap.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(AppDimensions.paddingSmall),
