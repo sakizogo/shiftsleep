@@ -60,11 +60,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final patterns = await _shiftRepository.getAllPatterns();
+    
+      // ========== 古いパターン（colorIndex=0）を削除 ==========
+      for (final pattern in patterns) {
+        if (pattern.colorIndex == 0) {
+          await _shiftRepository.deletePattern(pattern.id);
+          print('🗑️  古いパターンを削除: ${pattern.patternName}');
+        }
+      }
+    
+      // 削除後に再度ロード
+      final updatedPatterns = await _shiftRepository.getAllPatterns();
+      // ====================================================
+    
       setState(() {
-        _patterns = patterns;
+        _patterns = updatedPatterns;
         _isLoadingPatterns = false;
       });
-      print('Loaded ${patterns.length} patterns from DB');
+      print('Loaded ${updatedPatterns.length} patterns from DB');
     } catch (e) {
       print('Error loading patterns: $e');
       setState(() {
@@ -436,13 +449,21 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       );
-                      
-                      if (result == 1) {
+        
+                      // ========== Fix：戻ってきたパターンを反映 ==========
+                      if (result is List<ShiftPatternModel>) {
+                        setState(() {
+                          _patterns = result;
+                          _selectedIndex = 1;  // シフト管理タブに切り替え
+                        });
+                      } else if (result == 1) {
+                        // 後方互換性のため
                         setState(() {
                           _selectedIndex = 1;
                         });
                         await _loadPatterns();
                       }
+                      // ==================================================
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -471,7 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              // ====================================================================================
+              // ================================================================================================================================================================
 
               // ========================
               // Circadian State Section - Compact

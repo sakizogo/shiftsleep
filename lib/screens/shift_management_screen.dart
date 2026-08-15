@@ -408,7 +408,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               todayTextStyle: const TextStyle(color: Colors.transparent),
             ),
             calendarBuilders: CalendarBuilders(
-              // ========== 修正版 Week 5 Day 1：defaultBuilder + eventLoader 復元 ==========
+              // ========== Fix B Week 5 Day 4：defaultBuilder にシフト色分け追加 ==========
               
               defaultBuilder: (context, date, focusedDay) {
                 return Column(
@@ -427,19 +427,26 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                       ),
                     ),
                     const SizedBox(height: 2.0),
-                    // シフトパターン名表示（最大1行）
+                    // シフトパターン名表示（背景色付き - Fix B）
                     Expanded(
                       child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Text(
-                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black54,
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
                             )
                           : const SizedBox.shrink(),
                     ),
@@ -465,6 +472,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 );
               },
 
+              // ========== Fix B Week 5 Day 4：selectedBuilder にシフト色分け追加 ==========
+              
               selectedBuilder: (context, date, focusedDay) {
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.start,
@@ -484,16 +493,23 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     const SizedBox(height: 2.0),
                     Expanded(
                       child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Text(
-                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black54,
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
                             )
                           : const SizedBox.shrink(),
                     ),
@@ -518,6 +534,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 );
               },
 
+              // ========== Fix B Week 5 Day 4：todayBuilder にシフト色分け追加 ==========
+              
               todayBuilder: (context, date, focusedDay) {
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.start,
@@ -537,16 +555,23 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     const SizedBox(height: 2.0),
                     Expanded(
                       child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Text(
-                              _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black54,
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
                             )
                           : const SizedBox.shrink(),
                     ),

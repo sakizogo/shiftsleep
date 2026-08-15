@@ -317,9 +317,27 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             eventLoader: (day) {
               final normalized = DateTime(day.year, day.month, day.day);
-              return _shiftMap.containsKey(normalized)
-                  ? [_shiftMap[normalized]!.pattern?.patternName ?? '']
-                  : [];
+              final events = <String>[];
+              
+              // シフトパターン名を追加
+              if (_shiftMap.containsKey(normalized)) {
+                final patternName = _shiftMap[normalized]!.pattern?.patternName ?? '';
+                if (patternName.isNotEmpty) {
+                  events.add(patternName);
+                }
+              }
+              
+              // イベント絵文字を追加
+              for (final event in _calendarEvents) {
+                final eventDate = event.eventDate is String 
+                    ? DateTime.parse(event.eventDate as String)
+                    : event.eventDate as DateTime;
+                if (isSameDay(eventDate, day)) {
+                  events.add(_getEventEmoji(event.eventType));
+                }
+              }
+              
+              return events;
             },
             onDaySelected: (selectedDay, focusedDay) {
               setState(() {
@@ -390,139 +408,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               todayTextStyle: const TextStyle(color: Colors.transparent),
             ),
             calendarBuilders: CalendarBuilders(
-              // ========== Week 4 Day 1 修正版 v4：defaultBuilder（日付位置完全統一版） ==========
+              // ========== Fix B Week 5 Day 4：defaultBuilder にシフト色分け追加 ==========
+              
               defaultBuilder: (context, date, focusedDay) {
-                final normalized = DateTime(date.year, date.month, date.day);
-                final eventsForDate = _calendarEvents
-                    .where((event) => event.eventDate ==
-                        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}')
-                    .toList();
-
-                // ========== 共通設定：全セルで統一 ==========
-                const double cellMinHeight = 75.0;
-                const EdgeInsets cellPadding = EdgeInsets.symmetric(vertical: 4.0, horizontal: 2.0);
-                const double spacingAfterDate = 3.0;      // 日付後の間隔
-                const double spacingAfterContent = 2.0;   // コンテンツ後の間隔
-                // ================================================
-
-                if (_shiftMap.containsKey(normalized)) {
-                  final pattern = _shiftMap[normalized]?.pattern;
-                  final textColor = pattern?.patternType == ShiftType.dayOff ? Colors.red : Colors.black87;
-
-                  return Container(
-                    constraints: BoxConstraints(minHeight: cellMinHeight),
-                    padding: cellPadding,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 日付（固定位置）
-                        Text(
-                          '${date.day}',
-                          style: TextStyle(
-                            color: textColor,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: spacingAfterDate),  // ← 統一：3.0
-
-                        // パターン名（必ず表示）
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
-                          decoration: BoxDecoration(
-                            color: pattern!.color.withOpacity(0.1),
-                            border: Border.all(
-                              color: pattern.color.withOpacity(0.5),
-                              width: 0.8,
-                            ),
-                            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
-                          ),
-                          child: Text(
-                            pattern.patternName,
-                            style: AppTextStyles.bodyTextStyle.copyWith(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-
-                        // イベント絵文字のみ表示（eventName は非表示）
-                        if (eventsForDate.isNotEmpty) ...[
-                          const SizedBox(height: spacingAfterContent),  // ← 統一：2.0
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: eventsForDate
-                                .take(2)  // 最大2個の絵文字を表示
-                                .map((event) => Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                                  child: Text(
-                                    event.eventEmoji,  // ← 絵文字のみ
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ))
-                                .toList(),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }
-
-                // シフトなし、イベントあり
-                if (eventsForDate.isNotEmpty) {
-                  return Container(
-                    constraints: BoxConstraints(minHeight: cellMinHeight),
-                    padding: cellPadding,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 日付（固定位置）
-                        Text(
-                          '${date.day}',
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(height: spacingAfterDate),  // ← 統一：3.0
-
-                        // イベント絵文字のみ表示（eventName は非表示）
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: eventsForDate
-                              .take(2)  // 最大2個の絵文字を表示
-                              .map((event) => Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                                child: Text(
-                                  event.eventEmoji,  // ← 絵文字のみ
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ))
-                              .toList(),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                // シフトなし、イベントなし（日付のみ）
-                return Container(
-                  constraints: BoxConstraints(minHeight: cellMinHeight),
-                  padding: cellPadding,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 日付（固定位置）
-                      Text(
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
                         '${date.day}',
                         style: const TextStyle(
                           color: Colors.black87,
@@ -530,19 +425,174 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                           fontSize: 13,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    // シフトパターン名表示（背景色付き - Fix B）
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    // イベント絵文字表示
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                 );
               },
-              // ======================================================================
+
+              // ========== Fix B Week 5 Day 4：selectedBuilder にシフト色分け追加 ==========
+              
               selectedBuilder: (context, date, focusedDay) {
-                return Center(
-                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                 );
               },
+
+              // ========== Fix B Week 5 Day 4：todayBuilder にシフト色分け追加 ==========
+              
               todayBuilder: (context, date, focusedDay) {
-                return Center(
-                  child: Text('${date.day}', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13)),
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    Expanded(
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String 
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Text(
+                              _getEventEmoji(e.eventType),
+                              style: const TextStyle(fontSize: 11),
+                            ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                 );
               },
             ),
@@ -817,8 +867,31 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           _shiftMap[normalized] = ShiftData(date: normalized, pattern: matchingPattern);
         }
       });
+      print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
+      _shiftMap.forEach((key, value) {
+        print("  ${key.toString()}: ${value.pattern?.patternName}");
+      });
     } catch (e) {
       print('エラー: $e');
+    }
+  }
+
+  String _getEventEmoji(String eventType) {
+    switch (eventType) {
+      case '給料日':
+        return '💰';
+      case 'ボーナス':
+        return '🎁';
+      case '慰安旅行':
+        return '✈️';
+      case '祝日':
+        return '🎉';
+      case '重要会議':
+        return '📅';
+      case '締切':
+        return '⏰';
+      default:
+        return '📌';
     }
   }
 

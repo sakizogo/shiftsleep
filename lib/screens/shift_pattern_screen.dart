@@ -644,7 +644,6 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
   }
 
-  /// シフト体系を追加
   void _addPattern() async {
     if (_patternNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -656,16 +655,29 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       return;
     }
 
-    // ========== Week 3 Day 6-1 修正: ShiftType.work 固定 ==========
+    // ========== Fix：DB から全パターンをロードして colorIndex を割り当て ==========
+    final dbPatterns = await _shiftRepository.getAllPatterns();
+  
+    // DB に保存されているパターンから、最大の colorIndex を探す
+    int maxColorIndex = -1;
+    for (final pattern in dbPatterns) {
+      if (pattern.colorIndex > maxColorIndex) {
+        maxColorIndex = pattern.colorIndex;
+      }
+    }
+  
+    // 次の colorIndex を計算（0～5 をループ）
+    int nextColorIndex = (maxColorIndex + 1) % 6;
+    // ===========================================================================
+
     final newPattern = ShiftPatternModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       patternName: _patternNameController.text.trim(),
-      patternType: ShiftType.work,  // work のみ
+      patternType: ShiftType.work,
       startTime: _startTime,
       endTime: _endTime,
-      colorIndex: _patterns.length,
+      colorIndex: nextColorIndex,  // ← DB ベースの colorIndex
     );
-    // ===========================================================
 
     // DB に保存
     await _shiftRepository.createPattern(newPattern);
@@ -731,7 +743,10 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
   }
 
-  void _proceedToNextScreen() {
-    Navigator.pop(context, 1);  // 1 = シフト管理タブを選択
+  void _proceedToNextScreen() async {
+    // ========== Fix：DB から最新のパターンをロードして返す ==========
+    final latestPatterns = await _shiftRepository.getAllPatterns();
+    Navigator.pop(context, latestPatterns);
+    // ==============================================================
   }
 }
