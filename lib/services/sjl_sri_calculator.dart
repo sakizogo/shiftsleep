@@ -3,6 +3,10 @@ import 'package:shiftsleep/models/sleep_record.dart';
 /// SJL（Social Jetlag / ソーシャル・ジェットラグ）と
 /// SRI（Sleep Regularity Index / 睡眠規則正しさ指数）を計算するエンジン
 ///
+/// Week 7 A 修正:
+/// - メイン睡眠（primary）のみを使用して計算
+/// - 昼寝（supplementary）や分割睡眠（split_segment）は除外
+///
 /// 参考: 神奈川県立保健福祉大学 機関リポジトリ
 /// - SJL: 休日と平日の睡眠中点（中央時刻）の差
 /// - SRI: 24時間を細かい時間単位に分割し、連続2日間の一致度を算出
@@ -11,7 +15,7 @@ class SJLSRICalculator {
   // SJL（社会的時差）計算
   // ========================
 
-  /// SJL を計算
+  /// SJL を計算（Week 7 A 版：メイン睡眠のみ）
   /// 
   /// Parameters:
   ///   - records: 過去7日間の睡眠記録（最低5日分必要）
@@ -30,11 +34,22 @@ class SJLSRICalculator {
   }) {
     if (records.isEmpty) return 0.0;
 
+    // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
+    // 補助睡眠（nap）や分割睡眠（split_segment）を除外
+    final primaryRecords = _filterPrimaryRecords(records);
+    
+    if (primaryRecords.isEmpty) {
+      print('[SJLSRICalculator] No primary sleep records found');
+      return 0.0;
+    }
+    print('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records');
+    // ====================================================================
+
     // 過去7日間のデータから平日・休日を分類
     final List<SleepRecord> weekdayRecords = [];
     final List<SleepRecord> weekendRecords = [];
 
-    for (final record in records) {
+    for (final record in primaryRecords) {
       final dayOfWeek = record.bedtime.weekday;
       // weekday: 1=Monday, 7=Sunday
       if (dayOfWeek >= 1 && dayOfWeek <= 5) {
@@ -56,8 +71,10 @@ class SJLSRICalculator {
     final sjl = (weekdayMidpoint.difference(weekendMidpoint).inMinutes.abs() / 60);
 
     print('[SJLSRICalculator] SJL = $sjl h');
-    print('  - Weekday midpoint: ${weekdayMidpoint.hour}:${weekdayMidpoint.minute}');
-    print('  - Weekend midpoint: ${weekendMidpoint.hour}:${weekendMidpoint.minute}');
+    print('  - Weekday records: ${weekdayRecords.length}');
+    print('  - Weekend records: ${weekendRecords.length}');
+    print('  - Weekday midpoint: ${weekdayMidpoint.hour}:${weekdayMidpoint.minute.toString().padLeft(2, '0')}');
+    print('  - Weekend midpoint: ${weekendMidpoint.hour}:${weekendMidpoint.minute.toString().padLeft(2, '0')}');
 
     return sjl;
   }
@@ -116,7 +133,7 @@ class SJLSRICalculator {
   // SRI（睡眠規則正しさ指数）計算
   // ========================
 
-  /// SRI を計算（完全版）
+  /// SRI を計算（Week 7 A 版：メイン睡眠のみ）
   ///
   /// 24時間を1時間単位（24区間）に分割し、
   /// 連続する2日間ペアで睡眠/覚醒の一致度を計算
@@ -136,8 +153,18 @@ class SJLSRICalculator {
   }) {
     if (records.length < 2) return 0.0;
 
+    // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
+    final primaryRecords = _filterPrimaryRecords(records);
+    
+    if (primaryRecords.length < 2) {
+      print('[SJLSRICalculator] Not enough primary sleep records for SRI calculation');
+      return 0.0;
+    }
+    print('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records for SRI');
+    // ====================================================================
+
     // 日付でソート（古い順）
-    final sortedRecords = List<SleepRecord>.from(records)
+    final sortedRecords = List<SleepRecord>.from(primaryRecords)
       ..sort((a, b) => a.bedtime.compareTo(b.bedtime));
 
     // 連続する2日間ペアを作成
@@ -217,6 +244,8 @@ class SJLSRICalculator {
 
   /// 睡眠負債を計算（目標睡眠時間との差分）
   ///
+  /// Week 7 A 修正: メイン睡眠のみを対象
+  ///
   /// Parameters:
   ///   - records: 過去30日間の睡眠記録
   ///   - targetDailyHours: 目標睡眠時間（デフォルト: 7時間）
@@ -230,9 +259,17 @@ class SJLSRICalculator {
   }) {
     if (records.isEmpty) return Duration.zero;
 
+    // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
+    final primaryRecords = _filterPrimaryRecords(records);
+    
+    if (primaryRecords.isEmpty) {
+      return Duration.zero;
+    }
+    // ====================================================================
+
     int totalDebtMinutes = 0;
 
-    for (final record in records) {
+    for (final record in primaryRecords) {
       final sleepDuration = record.wakeTime.difference(record.bedtime);
       
       // 翌日にまたがる場合の処理
@@ -243,11 +280,25 @@ class SJLSRICalculator {
       }
     }
 
-    final targetTotalMinutes = (targetDailyHours * 60 * records.length).toInt();
+    final targetTotalMinutes = (targetDailyHours * 60 * primaryRecords.length).toInt();
     final debtMinutes = totalDebtMinutes - targetTotalMinutes;
 
     return Duration(minutes: debtMinutes);
   }
+
+  // ========== Week 7 A 追加: メイン睡眠のみをフィルタリングするメソッド ==========
+  /// 睡眠記録からメイン睡眠（primary）のみを抽出
+  /// 
+  /// 補助睡眠（supplementary）や分割睡眠（split_segment）は除外
+  /// 
+  /// Returns:
+  ///   SleepRole が 'primary' の記録リスト
+  static List<SleepRecord> _filterPrimaryRecords(List<SleepRecord> records) {
+    return records
+        .where((record) => record.sleepRole == SleepRole.primary)
+        .toList();
+  }
+  // ========================================================================
 
   /// 過去7日間のデータを取得（テスト用）
   static List<SleepRecord> getLast7DaysData(List<SleepRecord> allRecords) {

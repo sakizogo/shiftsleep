@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7,  // ← 6 から 7 に変更
+      version: 8,  // ← 7 から 8 に変更（Week 7 A）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -133,13 +133,42 @@ class DatabaseHelper {
             print('⚠️ Column might already exist: $e');
           }
         }
-        // ====================================================================
+        
+        // ========== Week 7 A 追加: sleep_records テーブルに sleep_role カラムを追加 ==========
+        // バージョン 7 → 8 への更新：sleep_records テーブルに睡眠の質的役割カラムを追加
+        if (oldVersion < 8) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+
+          try {
+            await db.execute('''
+              ALTER TABLE sleep_records 
+              ADD COLUMN sleep_role TEXT DEFAULT 'primary'
+            ''');
+    
+            // 既存の sleep_records を duration_minutes から自動判定して sleep_role を設定
+            // 5時間以上 → primary, 30分～5時間 → supplementary, 30分未満 → split_segment
+            await db.execute('''
+              UPDATE sleep_records 
+              SET sleep_role = CASE
+                WHEN duration_minutes >= 300 THEN 'primary'
+                WHEN duration_minutes >= 30 THEN 'supplementary'
+                ELSE 'split_segment'
+              END
+              WHERE sleep_role IS NULL OR sleep_role = 'primary'
+            ''');
+    
+            print('✅ Database upgrade complete: sleep_records table updated with sleep_role column');
+          } catch (e) {
+            print('⚠️ Column might already exist or other error: $e');
+          }
+        }
         // ====================================================================
       },
     );
   }
 
   Future<void> _createTables(Database db, int version) async {
+    // ========== Week 7 A 修正: sleep_records テーブルに sleep_role カラムを追加 ==========
     // sleep_records テーブル
     await db.execute('''
       CREATE TABLE sleep_records (
@@ -156,9 +185,12 @@ class DatabaseHelper {
         last_modified_at TEXT NOT NULL,
         can_edit_until TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        sleep_role TEXT DEFAULT 'primary'
       )
     ''');
+    // ========== Week 7 A 修正 完了 ==========
+    
     // ========== shift_patterns テーブル（追加） ==========
     await db.execute('''
       CREATE TABLE shift_patterns (
@@ -217,8 +249,6 @@ class DatabaseHelper {
         updatedAt TEXT NOT NULL
       )
     ''');
-
-
 
     // ========== Week 3 Day 8 追加: calendar_events テーブル ==========
     // カレンダーイベント（給料日、ボーナス、慰安旅行など）

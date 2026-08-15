@@ -1,3 +1,52 @@
+// ========== Week 7 A 追加: SleepRole enum ==========
+/// 睡眠の質的役割を定義
+/// 
+/// 時間帯ベースではなく、睡眠の「役割」で分類
+/// これにより、シフトワーカー（特に夜勤者）にも対応
+enum SleepRole {
+  primary,        // メイン睡眠（5時間以上の長時間睡眠）
+  supplementary,  // 補助睡眠（30分～5時間の昼寝など）
+  split_segment   // 分割睡眠の一部（30分未満）
+}
+
+extension SleepRoleExtension on SleepRole {
+  String get displayName {
+    switch (this) {
+      case SleepRole.primary:
+        return 'メイン睡眠';
+      case SleepRole.supplementary:
+        return '補助睡眠';
+      case SleepRole.split_segment:
+        return '分割睡眠';
+    }
+  }
+
+  String get jsonValue {
+    switch (this) {
+      case SleepRole.primary:
+        return 'primary';
+      case SleepRole.supplementary:
+        return 'supplementary';
+      case SleepRole.split_segment:
+        return 'split_segment';
+    }
+  }
+
+  static SleepRole fromString(String value) {
+    switch (value) {
+      case 'primary':
+        return SleepRole.primary;
+      case 'supplementary':
+        return SleepRole.supplementary;
+      case 'split_segment':
+        return SleepRole.split_segment;
+      default:
+        return SleepRole.primary; // デフォルト
+    }
+  }
+}
+// ================================================
+
 class SleepRecord {
   final String id;
   final String userId;
@@ -13,6 +62,7 @@ class SleepRecord {
   final DateTime canEditUntil;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final SleepRole sleepRole;  // ========== Week 7 A 追加 ==========
 
   SleepRecord({
     required this.id,
@@ -29,6 +79,7 @@ class SleepRecord {
     required this.canEditUntil,
     required this.createdAt,
     required this.updatedAt,
+    this.sleepRole = SleepRole.primary,  // ========== Week 7 A デフォルト値 ==========
   });
 
   // Convert to JSON (for database storage)
@@ -48,6 +99,7 @@ class SleepRecord {
       'can_edit_until': canEditUntil.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'sleep_role': sleepRole.jsonValue,  // ========== Week 7 A 追加 ==========
     };
   }
 
@@ -68,6 +120,7 @@ class SleepRecord {
       canEditUntil: DateTime.parse(json['can_edit_until'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+      sleepRole: SleepRoleExtension.fromString(json['sleep_role'] as String? ?? 'primary'),  // ========== Week 7 A 追加 ==========
     );
   }
 
@@ -87,6 +140,7 @@ class SleepRecord {
     DateTime? canEditUntil,
     DateTime? createdAt,
     DateTime? updatedAt,
+    SleepRole? sleepRole,  // ========== Week 7 A 追加 ==========
   }) {
     return SleepRecord(
       id: id ?? this.id,
@@ -103,25 +157,45 @@ class SleepRecord {
       canEditUntil: canEditUntil ?? this.canEditUntil,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      sleepRole: sleepRole ?? this.sleepRole,  // ========== Week 7 A 追加 ==========
     );
   }
-   // ========================
-   // 互換性用 getter
-   // ========================
-  
-   /// bedtime の互換性 getter（sleepStartTime のエイリアス）
-   DateTime get bedtime => sleepStartTime;
 
-   /// wakeTime の互換性 getter（sleepEndTime のエイリアス）
-   DateTime get wakeTime => sleepEndTime;
+  // ========================
+  // 互換性用 getter
+  // ========================
 
-   /// fromMap メソッド（fromJson のエイリアス）
-   static SleepRecord fromMap(Map<String, dynamic> map) {
-     return SleepRecord.fromJson(map);
-   }
+  /// bedtime の互換性 getter（sleepStartTime のエイリアス）
+  DateTime get bedtime => sleepStartTime;
 
-   /// toMap メソッド（toJson のエイリアス）
-   Map<String, dynamic> toMap() {
-     return toJson();
-   }
- }
+  /// wakeTime の互換性 getter（sleepEndTime のエイリアス）
+  DateTime get wakeTime => sleepEndTime;
+
+  /// fromMap メソッド（fromJson のエイリアス）
+  static SleepRecord fromMap(Map<String, dynamic> map) {
+    return SleepRecord.fromJson(map);
+  }
+
+  /// toMap メソッド（toJson のエイリアス）
+  Map<String, dynamic> toMap() {
+    return toJson();
+  }
+
+  // ========== Week 7 A 追加: sleepRole 自動判定メソッド ==========
+  /// 睡眠時間（durationMinutes）から sleepRole を自動判定
+  /// 
+  /// ロジック:
+  /// - 5時間以上: primary（メイン睡眠）
+  /// - 30分～5時間: supplementary（補助睡眠）
+  /// - 30分未満: split_segment（分割睡眠）
+  static SleepRole determineSleepRole(int durationMinutes) {
+    if (durationMinutes >= 300) {  // 5時間以上
+      return SleepRole.primary;
+    } else if (durationMinutes >= 30) {  // 30分～5時間
+      return SleepRole.supplementary;
+    } else {
+      return SleepRole.split_segment;  // 30分未満
+    }
+  }
+  // ========================================================================
+}

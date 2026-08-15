@@ -664,7 +664,443 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
+              // ========== Week 7 A 追加: 分割睡眠セクション ==========
+              // 【昨晩の睡眠】メイン睡眠 + 補助睡眠の詳細表示
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bedtime,
+                          size: 20,
+                          color: AppColors.primaryGradientStart,
+                        ),
+                        const SizedBox(width: AppDimensions.paddingSmall),
+                        Text(
+                          '睡眠の内訳',
+                          style: AppTextStyles.sectionTitleStyle,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
 
+                    // ========== メイン睡眠 + 補助睡眠 の 2列表示 ==========
+                    Row(
+                      children: [
+                        // メイン睡眠
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(
+                                color: AppColors.borderDefault,
+                                width: AppDimensions.borderWidthThin,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'メイン睡眠',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 6.0),
+                                Text(
+                                  sleepProvider.lastPrimarySleepFormatted,
+                                  style: AppTextStyles.statNumberStyle
+                                      .copyWith(
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '（長時間睡眠）',
+                                  style: AppTextStyles.descriptionStyle
+                                      .copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppDimensions.gapMedium),
+                        // 補助睡眠
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(
+                                color: AppColors.borderDefault,
+                                width: AppDimensions.borderWidthThin,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '補助睡眠',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 6.0),
+                                Text(
+                                  sleepProvider.lastSupplementarySleepFormatted,
+                                  style: AppTextStyles.statNumberStyle
+                                      .copyWith(
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '（昼寝など）',
+                                  style: AppTextStyles.descriptionStyle
+                                      .copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    // ========== 総睡眠時間 ==========
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(
+                        AppDimensions.paddingSmall,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.primaryGradientStart.withOpacity(0.1),
+                            AppColors.primaryGradientEnd.withOpacity(0.1),
+                          ],
+                        ),
+                        border: Border.all(
+                          color: AppColors.primaryGradientStart
+                              .withOpacity(0.3),
+                          width: AppDimensions.borderWidthThin,
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusSmall,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '合計睡眠時間',
+                            style: AppTextStyles.bodyTextStyle.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            sleepProvider.lastTotalSleepFormatted,
+                            style: AppTextStyles.statNumberStyle.copyWith(
+                              fontSize: 16,
+                              color: AppColors.primaryGradientStart,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+// ========================================================================
+              // ========== Week 7 A 追加: 睡眠改善アドバイスセクション ==========
+              // 無料版：最優先アドバイス 1個
+              // 有料版：優先度1,2のアドバイス 最大5個
+              if (sleepProvider.hasAdvice)
+                Container(
+                  margin: EdgeInsets.zero,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppDimensions.sectionPaddingVertical,
+                    horizontal: AppDimensions.sectionPaddingHorizontal,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: AppColors.borderDefault,
+                        width: AppDimensions.borderWidthThin,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.lightbulb,
+                            size: 20,
+                            color: AppColors.primaryGradientStart,
+                          ),
+                          const SizedBox(width: AppDimensions.paddingSmall),
+                          Text(
+                            '💡 改善アドバイス',
+                            style: AppTextStyles.sectionTitleStyle,
+                          ),
+                          if (sleepProvider.isPremiumUser)
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                left: AppDimensions.paddingSmall,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8.0,
+                                  vertical: 2.0,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryGradientStart,
+                                  borderRadius: BorderRadius.circular(4.0),
+                                ),
+                                child: Text(
+                                  'プレミアム',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: AppDimensions.paddingMedium),
+
+                      // ========== メインアドバイス（優先度1） ==========
+                      if (sleepProvider.topAdvice != null)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(
+                            AppDimensions.paddingMedium,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                AppColors.primaryGradientStart.withOpacity(0.15),
+                                AppColors.primaryGradientEnd.withOpacity(0.15),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: AppColors.primaryGradientStart
+                                  .withOpacity(0.5),
+                              width: AppDimensions.borderWidthThin,
+                            ),
+                            borderRadius: BorderRadius.circular(
+                              AppDimensions.borderRadiusMedium,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // タイトル
+                              Text(
+                                sleepProvider.topAdvice!.title,
+                                style: AppTextStyles.subtitleLabelStyle
+                                    .copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: AppColors.primaryGradientStart,
+                                ),
+                              ),
+                              const SizedBox(
+                                height: AppDimensions.paddingMedium,
+                              ),
+
+                              // 説明
+                              Text(
+                                sleepProvider.topAdvice!.description,
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  color: AppColors.textSecondary,
+                                  height: 1.5,
+                                ),
+                              ),
+
+                              // アクションTip
+                              if (sleepProvider.topAdvice!.actionTip != null)
+                                Column(
+                                  children: [
+                                    const SizedBox(
+                                      height: AppDimensions.paddingMedium,
+                                    ),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppDimensions.paddingSmall,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.7),
+                                        borderRadius: BorderRadius.circular(
+                                          AppDimensions.borderRadiusSmall,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Text(
+                                            '💡 ',
+                                            style: AppTextStyles.bodyTextStyle,
+                                          ),
+                                          Expanded(
+                                            child: Text(
+                                              sleepProvider
+                                                  .topAdvice!.actionTip!,
+                                              style: AppTextStyles
+                                                  .descriptionStyle
+                                                  .copyWith(
+                                                color: AppColors
+                                                    .primaryGradientStart,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+
+                      // ========== 追加アドバイス（有料版のみ）==========
+                      if (sleepProvider.isPremiumUser &&
+                          sleepProvider.displayedAdvice.length > 1)
+                        Column(
+                          children: [
+                            const SizedBox(
+                              height: AppDimensions.paddingMedium,
+                            ),
+                            ...sleepProvider.displayedAdvice
+                                .skip(1)
+                                .map((advice) => Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: AppDimensions.paddingSmall,
+                                      ),
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(
+                                          AppDimensions.paddingSmall,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          border: Border.all(
+                                            color: AppColors.borderDefault,
+                                            width: AppDimensions
+                                                .borderWidthThin,
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(
+                                            AppDimensions.borderRadiusSmall,
+                                          ),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              advice.title,
+                                              style: AppTextStyles
+                                                  .labelStyle
+                                                  .copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4.0),
+                                            Text(
+                                              advice.description,
+                                              style: AppTextStyles
+                                                  .descriptionStyle
+                                                  .copyWith(
+                                                fontSize: 11,
+                                                color: AppColors
+                                                    .textSecondary,
+                                              ),
+                                              maxLines: 2,
+                                              overflow:
+                                                  TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ))
+                                .toList(),
+                          ],
+                        ),
+
+                      // ========== 「もっと見る」ボタン（有料版のみ）==========
+                      if (sleepProvider.isPremiumUser &&
+                          sleepProvider.allAdvice.length >
+                              sleepProvider.displayedAdvice.length)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppDimensions.paddingMedium,
+                          ),
+                          child: Center(
+                            child: TextButton(
+                              onPressed: () {
+                                // TODO: 詳細アドバイス画面へ遷移
+                                print(
+                                    'Navigate to detailed advice screen');
+                              },
+                              child: Text(
+                                '全てのアドバイスを見る',
+                                style: AppTextStyles.labelStyle.copyWith(
+                                  color: AppColors.primaryGradientStart,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+// ====================================================================
               // ========================
               // Sleep Debt Section - Highlighted
               // ========================

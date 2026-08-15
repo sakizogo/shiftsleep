@@ -32,6 +32,4 @@ flutter:
   uses-material-design: true
   
   assets:
-    - assets/raw/alarm_default.mp3
-    - assets/raw/alarm_gentle.mp3
-    - assets/raw/alarm_harsh.mp3
+    - assets/raw/
