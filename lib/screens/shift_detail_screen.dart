@@ -223,22 +223,39 @@ const SizedBox(height: AppDimensions.paddingLarge),
     );
   }
 
+  /// ========== Week 6 Fix C: シフトカード（色表示機能追加） ==========
   /// シフトカード
   Widget _buildShiftCard(DateTime date, ShiftData shiftData) {
     final dayOfWeek = _getDayOfWeek(date);
     final pattern = shiftData.pattern;
+    final patternColor = pattern?.color ?? AppColors.textMuted;
 
-    return Container(
-      padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(
-          color: AppColors.borderDefault,
-        ),
-        borderRadius: BorderRadius.circular(
-          AppDimensions.borderRadiusMedium,
-        ),
+    // ========== Fix C 修正: ClipRRectで角丸を実現 ==========
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(
+        AppDimensions.borderRadiusMedium,
       ),
+      child: Container(
+        padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(
+            left: BorderSide(
+              color: patternColor,
+              width: 8.0,  // ← 色付き左枠の幅
+            ),
+            top: BorderSide(
+              color: AppColors.borderDefault,
+            ),
+            right: BorderSide(
+              color: AppColors.borderDefault,
+            ),
+            bottom: BorderSide(
+              color: AppColors.borderDefault,
+            ),
+          ),
+        ),
+        // ===================================================================
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -278,15 +295,34 @@ const SizedBox(height: AppDimensions.paddingLarge),
           ),
           const SizedBox(height: AppDimensions.paddingSmall),
 
+          // ========== Fix C 追加: パターン名の前に色付き■を追加 ==========
           // パターン名
           if (pattern != null)
-            Text(
-              'パターン: ${pattern.patternName}',
-              style: AppTextStyles.bodyTextStyle.copyWith(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
+            Row(
+              children: [
+                // 色を示す小さな■（12×12px）
+                Container(
+                  width: 12.0,
+                  height: 12.0,
+                  decoration: BoxDecoration(
+                    color: patternColor,
+                    borderRadius: BorderRadius.circular(2.0),
+                  ),
+                ),
+                const SizedBox(width: 8.0),
+                // パターン名
+                Expanded(
+                  child: Text(
+                    pattern.patternName,
+                    style: AppTextStyles.bodyTextStyle.copyWith(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
             ),
+          // ===================================================================
 
           // 時間情報
           if (pattern?.patternType == ShiftType.work &&
@@ -326,8 +362,10 @@ const SizedBox(height: AppDimensions.paddingLarge),
           ),
         ],
       ),
+      ),  // ← Container と ClipRRect の閉じタグ
     );
   }
+  // ==============================================================================
 
   /// 編集ダイアログ
   void _showEditDialog(DateTime date, ShiftData shiftData) {
