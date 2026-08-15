@@ -153,37 +153,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               _buildRangeInputMethod()
             else
               _buildManualInputMethod(),
-            const SizedBox(height: AppDimensions.paddingXLarge),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _shiftMap.isNotEmpty
-                    ? () {
-                        if (widget.onNavigateToDetails != null) {
-                          widget.onNavigateToDetails!(_shiftMap, widget.patterns);
-                        }
-                      }
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _shiftMap.isNotEmpty
-                      ? AppColors.primaryGradientStart
-                      : AppColors.borderDefault,
-                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                  ),
-                ),
-                child: Text(
-                  'シフト保存',
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    color: _shiftMap.isNotEmpty ? Colors.white : AppColors.textMuted,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: AppDimensions.paddingLarge),
+            // ========== Week 6 Fix D 改良: 下部の重複したボタンを削除（上部のみに統一） ==========
+            // 削除済み：下部「シフト保存」ボタン
+            // 理由：上部ボタンで十分（スクロール不要）、UI/UXをシンプルに
+            // =========================================================================
+
           ],
         ),
       ),
