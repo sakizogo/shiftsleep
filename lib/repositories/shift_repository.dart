@@ -407,21 +407,19 @@ class ShiftRepository {
       final db = await _databaseHelper.database;
       final now = DateTime.now().toIso8601String();
 
+      // AppSettings の toMap() を使用
+      final map = settings.toMap();
+      map.remove('id');
+      map['updated_at'] = now;
+      map['name'] = null;
+      map['age'] = null;
+      map['gender'] = null;
+      map['shift_pattern'] = null;
+      map['language'] = 'ja';
+
       await db.insert(
         'app_settings',
-        {
-          'user_id': settings.userId,
-          'name': null,
-          'age': null,
-          'gender': null,
-          'shift_pattern': null,
-          'language': 'ja',
-          'alarm_time_before_shift': settings.alarmTimeBeforeShift,
-          'wake_up_time': settings.wakeUpTime,  // ← この行を追加
-          'selected_alarm_sound': settings.selectedAlarmSound,  // ← この1行を追加
-          'created_at': settings.createdAt.toIso8601String(),
-          'updated_at': now,
-        },
+        map,
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
 

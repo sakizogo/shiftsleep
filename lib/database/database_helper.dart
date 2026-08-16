@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8,  // ← 7 から 8 に変更（Week 7 A）
+      version: 9,  // ← 8 から 9 に変更（Week 7 Phase 2）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -162,6 +162,23 @@ class DatabaseHelper {
             print('⚠️ Column might already exist or other error: $e');
           }
         }
+        // ========== Week 7 Phase 2 追加: app_settings テーブルに advice_promo_visible カラムを追加 ==========
+        // バージョン 8 → 9 への更新：app_settings テーブルにプロモーション表示フラグを追加
+        if (oldVersion < 9) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+
+          try {
+            await db.execute('''
+              ALTER TABLE app_settings 
+              ADD COLUMN advice_promo_visible INTEGER DEFAULT 1
+            ''');
+    
+            print('✅ Database upgrade complete: app_settings table updated with advice_promo_visible column');
+          } catch (e) {
+            print('⚠️ Column might already exist: $e');
+          }
+        }
+        // ====================================================================
         // ====================================================================
       },
     );
@@ -231,6 +248,7 @@ class DatabaseHelper {
         alarm_time_before_shift INTEGER NOT NULL DEFAULT 30,
         wake_up_time TEXT DEFAULT '07:00',
         selected_alarm_sound TEXT DEFAULT 'default',
+        advice_promo_visible INTEGER DEFAULT 1,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

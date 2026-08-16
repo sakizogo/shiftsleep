@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';  // ← この行を追加
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';  // ========== Week 7 A 追加 ==========
@@ -17,7 +18,7 @@ import 'package:shiftsleep/services/sleep_advisory_service.dart';  // ==========
 /// - 睡眠改善アドバイスの生成
 class SleepProvider extends ChangeNotifier {
   final SleepRepository _repository;
-
+  
   // ========================
   // 状態変数
   // ========================
@@ -37,6 +38,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> _allAdvice = [];    // 生成されたアドバイス（全て）
   List<SleepAdvice> _displayedAdvice = []; // 表示対象のアドバイス
   bool _isPremiumUser = false;          // 有料ユーザーフラグ
+  bool _advicePromoVisible = true;  // ← この行を追加
   // ================================================
 
   // ========================
@@ -58,6 +60,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> get displayedAdvice => _displayedAdvice;
   List<SleepAdvice> get allAdvice => _allAdvice;
   bool get isPremiumUser => _isPremiumUser;
+  bool get advicePromoVisible => _advicePromoVisible;  // ← この行を追加
   
   /// 表示対象のアドバイスがあるか
   bool get hasAdvice => _displayedAdvice.isNotEmpty;
@@ -292,6 +295,16 @@ class SleepProvider extends ChangeNotifier {
       _calculateMetrics();
 
       // ========== Week 7 A 追加: アドバイス生成 ==========
+            
+      // ========== Week 7 Phase 2 追加: AppSettings から改善アドバイス表示設定を読み込む ==========
+      // settings_screen.dart と同じリポジトリインスタンスを作成
+      final shiftRepository = ShiftRepository();
+      final settings = await shiftRepository.getAppSettings('test_user');
+      if (settings != null) {
+        _advicePromoVisible = settings.advicePromoVisible;
+      }
+      // ====================================================================
+      
       _generateAdvice();
       // ================================================
 

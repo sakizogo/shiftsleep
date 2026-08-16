@@ -8,6 +8,7 @@ import 'package:shiftsleep/models/sleep_record.dart';
 /// - SJL/SRI/睡眠負債から改善ポイントを特定
 /// - 具体的で実行可能なアドバイスを生成
 /// - 無料版/有料版での内容区別
+/// - シフトワーカーにストレスを与えない言い回しを採用
 class SleepAdvice {
   final String title;           // アドバイスのタイトル
   final String description;     // 詳細説明
@@ -48,34 +49,38 @@ class SleepAdvisoryService {
     final List<SleepAdvice> advices = [];
 
     // ========== SJL ベースのアドバイス ==========
+    // シフトワーカー向け: 体内時計の乱れは仕事の性質上避けられない
+    // その中で「改善できることに焦点を当てる」という方針
     if (sjl >= 2.0) {
       advices.add(
         SleepAdvice(
-          title: '体内時計が大きく乱れています',
-          description: 'SJL が 2時間以上あるため、体内時計の同期ズレが大きくなっています。'
-              '毎日の就寝・起床時刻を一定に保つことが最優先です。',
+          title: 'シフト勤務での体内時計ズレを最小化',
+          description: 'SJL が 2時間以上あります。シフト勤務による体内時計の変動は避けられませんが、'
+              'その中でも就寝・起床時刻を一定に保つことで、睡眠の質と疲労回復効果を高められます。'
+              'あなたのシフトパターンに合わせた固定的な睡眠スケジュールを心がけてみてください。',
           category: 'sjl',
           priority: 1,
-          actionTip: '毎日 23:00 に寝ることを 1週間継続してみてください',
+          actionTip: '現在のシフトパターンに合わせて、毎日同じ時刻に就寝・起床する目標を設定しましょう',
         ),
       );
     } else if (sjl >= 1.0) {
       advices.add(
         SleepAdvice(
-          title: '体内時計がやや乱れています',
-          description: 'SJL が 1～2時間あるため、体内時計がやや乱れています。'
-              '平日と休日の睡眠時刻の差を ±30分 以内に抑えることが効果的です。',
+          title: 'シフト変動での睡眠リズムを安定化',
+          description: 'SJL が 1～2時間あります。シフト勤務の影響で平日と休日の睡眠時刻がずれていますが、'
+              'この差を ±30分以内に抑えることで、睡眠の質を改善できます。'
+              '可能な限り、休日でも平日と近い時刻に寝起きするリズムを作りましょう。',
           category: 'sjl',
           priority: 1,
-          actionTip: '休日の起床時刻を平日の ±30分以内に設定しましょう',
+          actionTip: '休日の起床時刻を平日の ±30分以内に設定してみてください',
         ),
       );
     } else {
       advices.add(
         SleepAdvice(
-          title: '体内時計は正常範囲です',
-          description: 'SJL が 1時間未満で、体内時計の状態は良好です。'
-              '現在の睡眠習慣を維持することが重要です。',
+          title: '体内時計が安定した状態です',
+          description: 'SJL が 1時間未満で、現在のシフトパターンの中でも体内時計が良く安定しています。'
+              'この睡眠習慣をさらに続けることで、体調管理の安定性が高まります。',
           category: 'sjl',
           priority: 3,
           actionTip: null,
@@ -87,9 +92,10 @@ class SleepAdvisoryService {
     if (sri < 40) {
       advices.add(
         SleepAdvice(
-          title: '睡眠時刻が不規則です',
+          title: '睡眠時刻を安定させて体調を整える',
           description: 'SRI が 40未満で、毎日の睡眠時刻がバラバラです。'
-              '寝る時間と起きる時間を毎日 ±15分以内に統一することが重要です。',
+              'シフト勤務でも、毎日 ±15分以内に睡眠時刻を統一することで、'
+              '体調の安定性と日中のパフォーマンスが大きく向上します。',
           category: 'sri',
           priority: 1,
           actionTip: '毎日同じ時刻にアラームを設定し、一貫した睡眠スケジュールを作成してください',
@@ -99,9 +105,9 @@ class SleepAdvisoryService {
     } else if (sri < 60) {
       advices.add(
         SleepAdvice(
-          title: '睡眠時刻がやや不規則です',
+          title: '睡眠時刻をさらに安定させる',
           description: 'SRI が 40～60で、睡眠時刻がやや不規則です。'
-              '毎日 ±30分以内に睡眠時刻を固定することで改善できます。',
+              '毎日 ±30分以内に睡眠時刻を固定することで、睡眠の深さと疲労回復が改善します。',
           category: 'sri',
           priority: 2,
           actionTip: '就寝時刻を毎日同じ時間に固定する実験を 2週間行ってみてください',
@@ -110,9 +116,9 @@ class SleepAdvisoryService {
     } else if (sri < 80) {
       advices.add(
         SleepAdvice(
-          title: '睡眠時刻は規則正しいです',
+          title: '睡眠時刻は安定しています',
           description: 'SRI が 60～80で、睡眠時刻が規則正しく保たれています。'
-              'この習慣をさらに改善して SRI 85% 以上を目指しましょう。',
+              'この習慣をさらに高めて SRI 85% 以上を目指すと、さらに睡眠の質が向上します。',
           category: 'sri',
           priority: 2,
           actionTip: null,
@@ -121,9 +127,10 @@ class SleepAdvisoryService {
     } else {
       advices.add(
         SleepAdvice(
-          title: '睡眠時刻が非常に規則正しいです',
-          description: 'SRI が 80以上で、毎日の睡眠時刻が非常に安定しています。'
-              '優れた睡眠習慣が確立されています。',
+          title: '睡眠リズムが完璧に安定しています',
+          description: 'SRI が 80以上で、毎日の睡眠時刻が非常に安定しており、'
+              '優れた睡眠習慣が確立されています。'
+              'この素晴らしい生活パターンをそのまま維持してください。',
           category: 'sri',
           priority: 3,
           actionTip: null,
@@ -138,21 +145,22 @@ class SleepAdvisoryService {
       if (debtHours >= 10) {
         advices.add(
           SleepAdvice(
-            title: '睡眠不足が深刻です',
+            title: '睡眠不足への対策が必要です',
             description: '10時間以上の睡眠不足が蓄積しています。'
-                '心身の健康に影響を与えます。週末に昼寝を増やすなど、すぐに対策が必要です。',
+                'このままでは心身の回復が間に合いません。'
+                'シフト勤務の合間に昼寝を増やすなど、すぐに対策を取ることが重要です。',
             category: 'debt',
             priority: 1,
-            actionTip: '週末に 2時間の追加睡眠を取ってください',
+            actionTip: '週末に 2時間の追加睡眠を取るか、毎日 30分の昼寝を追加してみてください',
             isPremiumOnly: false,
           ),
         );
       } else if (debtHours >= 5) {
         advices.add(
           SleepAdvice(
-            title: '睡眠不足が蓄積しています',
+            title: '睡眠時間を増やして回復を促す',
             description: '5～10時間の睡眠不足が蓄積しています。'
-                '毎日の睡眠時間を 30分～1時間 増やすことで改善できます。',
+                '毎日の睡眠時間を 30分～1時間増やすことで、疲労回復が改善します。',
             category: 'debt',
             priority: 1,
             actionTip: '毎日の就寝時刻を 30分早めるか、起床時刻を 30分遅くしてみてください',
@@ -163,10 +171,10 @@ class SleepAdvisoryService {
           SleepAdvice(
             title: '軽度の睡眠不足があります',
             description: '5時間未満の軽度な睡眠不足があります。'
-                '昼寝を 20～30分追加することで改善できます。',
+                '勤務の合間に 20～30分の短い昼寝を加えることで改善できます。',
             category: 'debt',
             priority: 2,
-            actionTip: '昼間に 20分の短い昼寝を取ってみてください',
+            actionTip: '勤務中に 20分の短い昼寝を取ってみてください',
           ),
         );
       }
@@ -175,7 +183,7 @@ class SleepAdvisoryService {
         SleepAdvice(
           title: '十分な睡眠が取れています',
           description: '睡眠負債が解消され、十分な睡眠が取れています。'
-              '現在の睡眠習慣を継続することが重要です。',
+              'あなたのシフトパターンと現在の睡眠習慣は良好なバランスが取れています。',
           category: 'debt',
           priority: 3,
           actionTip: null,
@@ -216,10 +224,10 @@ class SleepAdvisoryService {
     // 補助睡眠がある場合、ポリファシック睡眠の改善アドバイスを生成
     if (supplementaryCount >= 3) {
       return SleepAdvice(
-        title: 'ポリファシック睡眠の導入効果が見られます',
+        title: 'ポリファシック睡眠が効果を発揮しています',
         description: '過去7日間で補助睡眠が ${supplementaryCount}日 記録されています。'
             '分割睡眠により、シフト勤務での睡眠効率が向上しています。'
-            '現在の昼寝タイミングを最適化することで、さらに効果を高められます。',
+            '現在の昼寝タイミングを最適化することで、さらに体調管理の質を高められます。',
         category: 'debt',
         priority: 2,
         actionTip: '毎日 14:00～14:30 に 30分の昼寝を設定してみてください',

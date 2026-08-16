@@ -1,6 +1,7 @@
-/// lib/models/AppSettings.dart
+/// lib/models/app_settings.dart
 /// アプリ全体設定を管理するモデル
 /// - アラーム時間カスタマイズ（30〜180分、15分刻み）
+/// - 改善アドバイスの有料版プロモーション表示設定
 /// - その他ユーザー設定
 
 class AppSettings {
@@ -8,7 +9,8 @@ class AppSettings {
   final String userId;
   final int alarmTimeBeforeShift;
   final String wakeUpTime;  // "07:00" 形式で保存
-  final String selectedAlarmSound;  // ← 追加（'default', 'gentle', 'harsh'）
+  final String selectedAlarmSound;  // （'default', 'gentle', 'harsh'）
+  final bool advicePromoVisible;  // ← 新規追加：有料版プロモーション表示フラグ
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -17,7 +19,8 @@ class AppSettings {
     required this.userId,
     this.alarmTimeBeforeShift = 30,
     this.wakeUpTime = '07:00',  // デフォルト：07:00
-    this.selectedAlarmSound = 'default',  // ← この1行を追加
+    this.selectedAlarmSound = 'default',
+    this.advicePromoVisible = true,  // ← 新規追加：デフォルト true（表示する）
     required this.createdAt,
     required this.updatedAt,
   });
@@ -35,16 +38,18 @@ class AppSettings {
       final createdAt = DateTime.parse(map['created_at'] as String);
       final updatedAt = DateTime.parse(map['updated_at'] as String);
       final wakeUpTime = map['wake_up_time'] as String? ?? '07:00';
-      final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';  // ← この1行を追加
+      final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';
+      final advicePromoVisible = _safeBoolCast(map['advice_promo_visible']) ?? true;  // ← 新規追加
       
-      print('✅ AppSettings読み込み完了: userId=$userId, alarm=$alarmTime分前');
+      print('✅ AppSettings読み込み完了: userId=$userId, alarm=$alarmTime分前, promoVisible=$advicePromoVisible');
       
       return AppSettings(
         id: id,
         userId: userId,
         alarmTimeBeforeShift: alarmTime,
         wakeUpTime: wakeUpTime,  
-        selectedAlarmSound: selectedAlarmSound,  // ← 追加
+        selectedAlarmSound: selectedAlarmSound,
+        advicePromoVisible: advicePromoVisible,  // ← 新規追加
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -54,11 +59,20 @@ class AppSettings {
     }
   }
 
-  /// 安全な int キャスト（この1つだけ保つ）
+  /// 安全な int キャスト
   static int? _safeIntCast(dynamic value) {
     if (value == null) return null;
     if (value is int) return value;
     if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  /// 安全な bool キャスト（新規追加）
+  static bool? _safeBoolCast(dynamic value) {
+    if (value == null) return null;
+    if (value is bool) return value;
+    if (value is int) return value != 0;
+    if (value is String) return value.toLowerCase() == 'true' || value == '1';
     return null;
   }
 
@@ -68,8 +82,9 @@ class AppSettings {
       'id': id,
       'user_id': userId,
       'alarm_time_before_shift': alarmTimeBeforeShift,
-      'wake_up_time': wakeUpTime,  // 追加
-      'selected_alarm_sound': selectedAlarmSound,  // ← 追加
+      'wake_up_time': wakeUpTime,
+      'selected_alarm_sound': selectedAlarmSound,
+      'advice_promo_visible': advicePromoVisible ? 1 : 0,  // ← 新規追加（boolean を int に変換）
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -81,7 +96,8 @@ class AppSettings {
     String? userId,
     int? alarmTimeBeforeShift,
     String? wakeUpTime, 
-    String? selectedAlarmSound,  // ← 追加
+    String? selectedAlarmSound,
+    bool? advicePromoVisible,  // ← 新規追加
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -90,7 +106,8 @@ class AppSettings {
       userId: userId ?? this.userId,
       alarmTimeBeforeShift: alarmTimeBeforeShift ?? this.alarmTimeBeforeShift,
       wakeUpTime: wakeUpTime ?? this.wakeUpTime, 
-      selectedAlarmSound: selectedAlarmSound ?? this.selectedAlarmSound,  // ← 追加
+      selectedAlarmSound: selectedAlarmSound ?? this.selectedAlarmSound,
+      advicePromoVisible: advicePromoVisible ?? this.advicePromoVisible,  // ← 新規追加
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -102,6 +119,7 @@ AppSettings(
   id: $id,
   userId: $userId,
   alarmTimeBeforeShift: ${alarmTimeBeforeShift}分前,
+  advicePromoVisible: $advicePromoVisible,
   createdAt: $createdAt,
   updatedAt: $updatedAt
 )

@@ -5,6 +5,7 @@ import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
 import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/screens/advice_detail_screen.dart';
 import 'package:shiftsleep/screens/settings_screen.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
@@ -1005,7 +1006,40 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-
+                      
+// ========== 「全てのアドバイスを見る」ボタン ==========
+                      if (sleepProvider.hasAdvice)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppDimensions.paddingMedium,
+                          ),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        AdviceDetailScreen(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.arrow_forward),
+                              label: const Text('全てのアドバイスを見る'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    AppColors.primaryGradientStart,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppDimensions.borderRadiusMedium,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        
                       // ========== 追加アドバイス（有料版のみ）==========
                       if (sleepProvider.isPremiumUser &&
                           sleepProvider.displayedAdvice.length > 1)

@@ -28,10 +28,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   AlarmMode _alarmMode = AlarmMode.once;
   String _selectedAlarmSound = 'default';
   double _soundVolume = 1.0;
-  // ========== Week 6 Fix E: 削除済み ==========
-  // List<ShiftPatternModel> _shiftPatterns = [];  // ← 削除
-  // ==========================================
   int _alarmTimeBeforeShift = 30;  // デフォルト：出勤30分前
+  bool _advicePromoVisible = true;  // ← 新規追加：改善アドバイスの有料版表示フラグ
   final ShiftRepository _shiftRepository = ShiftRepository();
 
   @override
@@ -46,7 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
      final settings = await _shiftRepository.getAppSettings('test_user');
     
      if (settings != null && mounted) {
-       print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}');  // ← 音を追加
+       print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}');
       
        // wakeUpTime を "07:00" 形式から TimeOfDay に変換
        final timeParts = settings.wakeUpTime.split(':');
@@ -57,11 +55,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
          _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
          _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
          _selectedAlarmSound = settings.selectedAlarmSound;
+         _advicePromoVisible = settings.advicePromoVisible;  // ← 新規追加
        });
      }
    } catch (e) {
      print('⚠️ 設定読み込みエラー: $e');
-     // ...
    }
  }
   @override
@@ -208,7 +206,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                     const SizedBox(height: AppDimensions.paddingLarge),
+                    const SizedBox(height: AppDimensions.paddingLarge),
 
+                    // ========================
+                    // 改善アドバイス表示設定セクション
+                    // ========================
+                    Text(
+                      '💡 改善アドバイス表示設定',
+                      style: AppTextStyles.sectionTitleStyle,
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+
+                    Container(
+                      padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: AppColors.borderDefault),
+                        borderRadius: BorderRadius.circular(
+                          AppDimensions.borderRadiusMedium,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'プレミアム版案内を表示',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4.0),
+                              Text(
+                                'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: _advicePromoVisible,
+                            onChanged: (value) {
+                              setState(() {
+                                _advicePromoVisible = value;
+                              });
+                            },
+                            activeColor: AppColors.primaryGradientStart,
+                          ),
+                        ],
+                      ),
+                    ),
                     // アラームモード選択
                     Text(
                       'アラームモード',
@@ -488,6 +540,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         alarmTimeBeforeShift: _alarmTimeBeforeShift,
         wakeUpTime: wakeUpTimeStr,
         selectedAlarmSound: _selectedAlarmSound,  // ← この1行を追加
+        advicePromoVisible: _advicePromoVisible,  // ← 新規追加
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -502,7 +555,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
-      print('✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前');
+      print('✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前, promoVisible=$_advicePromoVisible');
     } catch (e) {
       print('❌ 設定保存エラー: $e');
       if (mounted) {
