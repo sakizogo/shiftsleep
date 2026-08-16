@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
-import 'package:shiftsleep/repositories/shift_repository.dart';  // ← この行を追加
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/sjl_sri_calculator.dart';
-import 'package:shiftsleep/services/sleep_advisory_service.dart';  // ========== Week 7 A 追加 ==========
+import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
 
 /// 睡眠データの状態を一元管理する Provider
 /// 
@@ -16,8 +17,12 @@ import 'package:shiftsleep/services/sleep_advisory_service.dart';  // ==========
 /// - 分割睡眠（メイン + 補助）の集計
 /// - 理想睡眠時間の推奨
 /// - 睡眠改善アドバイスの生成
+///
+/// Week 7 Phase 3 追加:
+/// - PremiumService を統合（有料版ステータス管理）
 class SleepProvider extends ChangeNotifier {
   final SleepRepository _repository;
+  final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
   
   // ========================
   // 状態変数
@@ -38,7 +43,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> _allAdvice = [];    // 生成されたアドバイス（全て）
   List<SleepAdvice> _displayedAdvice = []; // 表示対象のアドバイス
   bool _isPremiumUser = false;          // 有料ユーザーフラグ
-  bool _advicePromoVisible = true;  // ← この行を追加
+  bool _advicePromoVisible = true;
   // ================================================
 
   // ========================
@@ -60,7 +65,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> get displayedAdvice => _displayedAdvice;
   List<SleepAdvice> get allAdvice => _allAdvice;
   bool get isPremiumUser => _isPremiumUser;
-  bool get advicePromoVisible => _advicePromoVisible;  // ← この行を追加
+  bool get advicePromoVisible => _advicePromoVisible;
   
   /// 表示対象のアドバイスがあるか
   bool get hasAdvice => _displayedAdvice.isNotEmpty;
@@ -272,11 +277,26 @@ class SleepProvider extends ChangeNotifier {
   // ========================
 
   /// 全睡眠データとメトリクスをロード
+  /// 
+  /// ========== Week 7 Phase 3 追加 ==========
+  /// PremiumService から有料版ステータスを読み込み
   Future<void> loadAllSleepData() async {
     try {
       _isLoading = true;
       _errorMessage = null;
       notifyListeners();
+
+      // ========== Week 7 Phase 3: PremiumService から有料版ステータスを読み込み ==========
+      print('[SleepProvider] 💳 PremiumService から有料版ステータスを読み込み中...');
+      try {
+        final isPremium = await _premiumService.loadPremiumStatusFromDatabase('test_user');
+        _isPremiumUser = isPremium;
+        print('[SleepProvider] ✅ 有料版ステータス読み込み完了: $_isPremiumUser');
+      } catch (e) {
+        print('[SleepProvider] ⚠️  PremiumService エラー（アドバイス生成は続行）: $e');
+        // エラーが発生しても、既存のキャッシュ値を使用して処理を続行
+      }
+      // =====================================================================
 
       // データ取得
       _latestRecord = await _repository.getLatestSleepRecord('test_user');
@@ -295,7 +315,7 @@ class SleepProvider extends ChangeNotifier {
       _calculateMetrics();
 
       // ========== Week 7 A 追加: アドバイス生成 ==========
-            
+      
       // ========== Week 7 Phase 2 追加: AppSettings から改善アドバイス表示設定を読み込む ==========
       // settings_screen.dart と同じリポジトリインスタンスを作成
       final shiftRepository = ShiftRepository();
@@ -406,6 +426,33 @@ class SleepProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// ========== Week 7 Phase 3 修正: RevenueCat から有料版ステータスを確認して DB に反映 ==========
+  /// 
+  /// 購入フロー完了後に呼び出す
+  /// 処理:
+  /// 1. RevenueCat にユーザーの有料版ステータスを確認
+  /// 2. DB に保存
+  /// 3. SleepProvider のメモリキャッシュを更新
+  /// 4. アドバイス再生成
+  Future<void> syncPremiumStatusFromRevenueCat() async {
+    try {
+      print('[SleepProvider] 💳 RevenueCat からプレミアムステータスを同期中...');
+      
+      final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
+      _isPremiumUser = isPremium;
+      
+      // アドバイスを再生成（プレミアム判定を反映）
+      _generateAdvice();
+      notifyListeners();
+      
+      print('[SleepProvider] ✅ プレミアムステータス同期完了: $_isPremiumUser');
+    } catch (e) {
+      print('[SleepProvider] ❌ 同期エラー: $e');
+      notifyListeners();
+    }
+  }
+  // =====================================================================
+
   /// ========== Week 7 A 追加: 有料ユーザーフラグを設定 ==========
   /// 
   /// AppSettings から isPremium を取得して設定
@@ -477,4 +524,26 @@ class SleepProvider extends ChangeNotifier {
     }
   }
   // ================================================================
+  // ========== Week 7 Phase 3 追加: テスト用プレミアム状態切り替えメソッド ==========
+  void togglePremiumStatusForTest() {
+    _isPremiumUser = !_isPremiumUser;
+    print('[SleepProvider] 🧪 テスト用プレミアム状態切り替え: $_isPremiumUser');
+    _generateAdvice();
+    notifyListeners();
+  }
+
+  void setPremiumForTest() {
+    _isPremiumUser = true;
+    print('[SleepProvider] 🧪 テスト用：プレミアム版に設定: $_isPremiumUser');
+    _generateAdvice();
+    notifyListeners();
+  }
+
+  void setFreeForTest() {
+    _isPremiumUser = false;
+    print('[SleepProvider] 🧪 テスト用：無料版に設定: $_isPremiumUser');
+    _generateAdvice();
+    notifyListeners();
+  }
+  // =====================================================================
 }

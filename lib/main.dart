@@ -1,16 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';  // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
-import 'package:shiftsleep/services/alarm_service.dart';  // ✅ 追加
+import 'package:shiftsleep/services/alarm_service.dart';
 import 'screens/home_screen.dart';
+
+// ========== Week 7 Phase 3: RevenueCat API キー（テスト環境） ==========
+// 本番環境では environment variable から読み込むことを推奨
+const String REVENUECAT_API_KEY = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
+// ====================================================================
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // ========== Week 7 Phase 3: RevenueCat 初期化 ==========
   try {
-    await AlarmService.initialize();  // ← () を削除
+    await Purchases.configure(
+      PurchasesConfiguration(
+        REVENUECAT_API_KEY,
+      ),
+    );
+    print('[main] ✅ RevenueCat initialized successfully with API Key: $REVENUECAT_API_KEY');
+  } catch (e) {
+    print('[main] ❌ RevenueCat initialization failed: $e');
+  }
+  // ====================================================
+  
+  try {
+    await AlarmService.initialize();
     print('[main] ✅ AlarmService initialized successfully');
   } catch (e) {
     print('[main] ❌ AlarmService initialization failed: $e');

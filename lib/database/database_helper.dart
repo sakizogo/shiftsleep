@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 9,  // ← 8 から 9 に変更（Week 7 Phase 2）
+      version: 10,  // ← 9 から 10 に変更（Week 7 Phase 3: 課金機能）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -178,7 +178,23 @@ class DatabaseHelper {
             print('⚠️ Column might already exist: $e');
           }
         }
-        // ====================================================================
+        
+        // ========== Week 7 Phase 3 追加: app_settings テーブルに is_premium_user カラムを追加 ==========
+        // バージョン 9 → 10 への更新：app_settings テーブルに有料ユーザーフラグを追加
+        if (oldVersion < 10) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+
+          try {
+            await db.execute('''
+              ALTER TABLE app_settings 
+              ADD COLUMN is_premium_user INTEGER DEFAULT 0
+            ''');
+    
+            print('✅ Database upgrade complete: app_settings table updated with is_premium_user column');
+          } catch (e) {
+            print('⚠️ Column might already exist: $e');
+          }
+        }
         // ====================================================================
       },
     );
@@ -235,7 +251,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // ========== Week 4 Day 1 更新: app_settings テーブル ==========
+    // ========== Week 7 Phase 3 修正: app_settings テーブルに is_premium_user カラム追加 ==========
     // アラーム時間カスタマイズに対応（alarm_time_before_shift カラム追加）
     await db.execute('''
       CREATE TABLE app_settings (
@@ -249,6 +265,7 @@ class DatabaseHelper {
         wake_up_time TEXT DEFAULT '07:00',
         selected_alarm_sound TEXT DEFAULT 'default',
         advice_promo_visible INTEGER DEFAULT 1,
+        is_premium_user INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

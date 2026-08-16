@@ -2,15 +2,17 @@
 /// アプリ全体設定を管理するモデル
 /// - アラーム時間カスタマイズ（30〜180分、15分刻み）
 /// - 改善アドバイスの有料版プロモーション表示設定
+/// - 有料版ユーザーフラグ
 /// - その他ユーザー設定
 
 class AppSettings {
   final int id;
   final String userId;
   final int alarmTimeBeforeShift;
-  final String wakeUpTime;  // "07:00" 形式で保存
+  final String wakeUpTime;  // \"07:00\" 形式で保存
   final String selectedAlarmSound;  // （'default', 'gentle', 'harsh'）
-  final bool advicePromoVisible;  // ← 新規追加：有料版プロモーション表示フラグ
+  final bool advicePromoVisible;  // ← Week 7 A で追加：有料版プロモーション表示フラグ
+  final bool isPremiumUser;  // ← Week 7 Phase 3 追加：有料ユーザーフラグ
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -20,7 +22,8 @@ class AppSettings {
     this.alarmTimeBeforeShift = 30,
     this.wakeUpTime = '07:00',  // デフォルト：07:00
     this.selectedAlarmSound = 'default',
-    this.advicePromoVisible = true,  // ← 新規追加：デフォルト true（表示する）
+    this.advicePromoVisible = true,  // ← Week 7 A：デフォルト true（表示する）
+    this.isPremiumUser = false,  // ← Week 7 Phase 3：デフォルト false（無料ユーザー）
     required this.createdAt,
     required this.updatedAt,
   });
@@ -39,9 +42,10 @@ class AppSettings {
       final updatedAt = DateTime.parse(map['updated_at'] as String);
       final wakeUpTime = map['wake_up_time'] as String? ?? '07:00';
       final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';
-      final advicePromoVisible = _safeBoolCast(map['advice_promo_visible']) ?? true;  // ← 新規追加
+      final advicePromoVisible = _safeBoolCast(map['advice_promo_visible']) ?? true;
+      final isPremiumUser = _safeBoolCast(map['is_premium_user']) ?? false;  // ← Week 7 Phase 3 追加
       
-      print('✅ AppSettings読み込み完了: userId=$userId, alarm=$alarmTime分前, promoVisible=$advicePromoVisible');
+      print('✅ AppSettings読み込み完了: userId=$userId, alarm=$alarmTime分前, promoVisible=$advicePromoVisible, isPremium=$isPremiumUser');
       
       return AppSettings(
         id: id,
@@ -49,7 +53,8 @@ class AppSettings {
         alarmTimeBeforeShift: alarmTime,
         wakeUpTime: wakeUpTime,  
         selectedAlarmSound: selectedAlarmSound,
-        advicePromoVisible: advicePromoVisible,  // ← 新規追加
+        advicePromoVisible: advicePromoVisible,
+        isPremiumUser: isPremiumUser,  // ← Week 7 Phase 3 追加
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
@@ -67,7 +72,7 @@ class AppSettings {
     return null;
   }
 
-  /// 安全な bool キャスト（新規追加）
+  /// 安全な bool キャスト
   static bool? _safeBoolCast(dynamic value) {
     if (value == null) return null;
     if (value is bool) return value;
@@ -84,7 +89,8 @@ class AppSettings {
       'alarm_time_before_shift': alarmTimeBeforeShift,
       'wake_up_time': wakeUpTime,
       'selected_alarm_sound': selectedAlarmSound,
-      'advice_promo_visible': advicePromoVisible ? 1 : 0,  // ← 新規追加（boolean を int に変換）
+      'advice_promo_visible': advicePromoVisible ? 1 : 0,
+      'is_premium_user': isPremiumUser ? 1 : 0,  // ← Week 7 Phase 3 追加（boolean を int に変換）
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -97,7 +103,8 @@ class AppSettings {
     int? alarmTimeBeforeShift,
     String? wakeUpTime, 
     String? selectedAlarmSound,
-    bool? advicePromoVisible,  // ← 新規追加
+    bool? advicePromoVisible,
+    bool? isPremiumUser,  // ← Week 7 Phase 3 追加
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -107,7 +114,8 @@ class AppSettings {
       alarmTimeBeforeShift: alarmTimeBeforeShift ?? this.alarmTimeBeforeShift,
       wakeUpTime: wakeUpTime ?? this.wakeUpTime, 
       selectedAlarmSound: selectedAlarmSound ?? this.selectedAlarmSound,
-      advicePromoVisible: advicePromoVisible ?? this.advicePromoVisible,  // ← 新規追加
+      advicePromoVisible: advicePromoVisible ?? this.advicePromoVisible,
+      isPremiumUser: isPremiumUser ?? this.isPremiumUser,  // ← Week 7 Phase 3 追加
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -120,6 +128,7 @@ AppSettings(
   userId: $userId,
   alarmTimeBeforeShift: ${alarmTimeBeforeShift}分前,
   advicePromoVisible: $advicePromoVisible,
+  isPremiumUser: $isPremiumUser,
   createdAt: $createdAt,
   updatedAt: $updatedAt
 )

@@ -3,13 +3,18 @@ import 'package:provider/provider.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 
-/// ========== Week 7 Phase 2: 詳細アドバイス画面 ==========
+/// ========== Week 7 Phase 3 修正: actionTip を有料版限定に ==========
 /// 
+/// 差別化戦略：案②
+/// - 無料版：アドバイスの詳細説明は見える
+/// - 無料版：実行ヒント（actionTip）はロック表示
+/// - 有料版：実行ヒントが完全に見える
+///
 /// 目的:
 /// - すべてのアドバイスをリスト表示
 /// - 無料版：最大1個、有料版：最大5個
 /// - アドバイスをタップで詳細ポップアップ表示
-/// - 有料版ロック表示（isPremiumOnly）
+/// - 有料版ロック表示（isPremiumOnly）+ actionTip ロック表示
 /// 
 /// デザイン:
 /// - リスト形式（スクロール対応）
@@ -94,13 +99,18 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
     BuildContext context,
     SleepAdvice advice,
     bool isPremiumUser,
-    bool advicePromoVisible,  // ← パラメータ追加
+    bool advicePromoVisible,
   ) {
     showDialog(
       context: context,
       builder: (context) {
-        // 有料版ロック表示
-        final isLocked = advice.isPremiumOnly && !isPremiumUser && advicePromoVisible;
+        // 有料版ロック表示（アドバイス自体が有料版限定の場合）
+        final isAdviceLocked = advice.isPremiumOnly && !isPremiumUser && advicePromoVisible;
+        
+        // ========== Week 7 Phase 3 修正: actionTip のロック判定 ==========
+        // actionTip は、有料版ユーザーか、無料版でも isPremiumOnly でない場合のみ表示
+        final isActionTipLocked = advice.actionTip != null && !isPremiumUser;
+        // ====================================================================
 
         return AlertDialog(
           title: Text(
@@ -113,7 +123,7 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 説明文
-                isLocked
+                isAdviceLocked
                     ? Column(
                         children: [
                           const Icon(Icons.lock, size: 48, color: Colors.grey),
@@ -159,34 +169,68 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                             advice.description,
                             style: const TextStyle(fontSize: 14, height: 1.6),
                           ),
+                          
+                          // ========== Week 7 Phase 3 修正: actionTip をロック化 ==========
                           if (advice.actionTip != null) ...[
                             const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                border: Border.all(color: Colors.blue.shade200),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '💡 実行ヒント',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
+                            isActionTipLocked
+                                ? Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.shade50,
+                                      border: Border.all(color: Colors.amber.shade200),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '💡 実行ヒント（プレミアム版で解放）',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.amber,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'プレミアム版ではここに「${advice.title}」を実行するための具体的な方法が表示されます。\n\n例：毎日のアラーム設定時刻、食事のタイミング、運動の頻度など、すぐに実行できるアクション情報が満載です。',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      border: Border.all(color: Colors.blue.shade200),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '💡 実行ヒント',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          advice.actionTip!,
+                                          style: const TextStyle(fontSize: 13),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    advice.actionTip!,
-                                    style: const TextStyle(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            ),
                           ],
+                          // ========================================================================
                         ],
                       ),
               ],
@@ -197,10 +241,9 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('閉じる'),
             ),
-            if (isLocked)
+            if (isAdviceLocked)
               ElevatedButton(
                 onPressed: () {
-                  // TODO: プレミアム版登録フロー
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('準備中です')),
@@ -253,32 +296,32 @@ class _AdviceCard extends StatelessWidget {
     IconData categoryIcon() {
       switch (advice.category) {
         case 'sjl':
-          return Icons.schedule; // 時計アイコン
+          return Icons.schedule;
         case 'sri':
-          return Icons.bedtime; // 睡眠アイコン
+          return Icons.bedtime;
         case 'debt':
-          return Icons.energy_savings_leaf; // 疲労アイコン
+          return Icons.energy_savings_leaf;
         default:
           return Icons.info;
       }
     }
 
-    // 優先度の色（赤緑色盲対応：色ではなくテキストで区別）
+    // 優先度の色（赤緑色盲対応）
     Color priorityColor() {
       switch (advice.priority) {
         case 1:
-          return Colors.red.shade600; // 高（赤）
+          return Colors.red.shade600;
         case 2:
-          return Colors.orange.shade600; // 中（橙）
+          return Colors.orange.shade600;
         case 3:
-          return Colors.green.shade600; // 低（緑）
+          return Colors.green.shade600;
         default:
           return Colors.grey;
       }
     }
 
     return GestureDetector(
-      onTap: onTap, // 常にタップ可能（ポップアップでロック表示）
+      onTap: onTap,
       child: Card(
         margin: const EdgeInsets.only(bottom: 12),
         child: Container(
@@ -295,7 +338,7 @@ class _AdviceCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-// ヘッダー: 優先度 + カテゴリ
+                // ヘッダー: 優先度 + カテゴリ
                 Row(
                   children: [
                     // 優先度 + カテゴリ名バッジ
@@ -330,7 +373,6 @@ class _AdviceCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-
                     const Spacer(),
 
                     // ロック表示

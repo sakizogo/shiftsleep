@@ -238,17 +238,17 @@ class SleepAdvisoryService {
     return null;
   }
 
-  /// アドバイスの種類別に分類（無料版：1つ、有料版：3～5個）
+  /// lib/services/sleep_advisory_service.dart の filterAdviceByPlan メソッド修正版
+  /// 
+  /// 既存の filterAdviceByPlan メソッドを以下に置き換えてください
+
   static List<SleepAdvice> filterAdviceByPlan(
     List<SleepAdvice> advices, {
     required bool isPremiumUser,
   }) {
     if (isPremiumUser) {
-      // 有料版: 優先度1, 2 のアドバイスを表示（最大5個）
-      return advices
-          .where((a) => a.priority <= 2)
-          .take(5)
-          .toList();
+      // 有料版: すべてのアドバイスを表示（最大5個）
+      return advices.take(5).toList();
     } else {
       // 無料版: 優先度1 のアドバイスのみ表示（最大1個）
       return advices
