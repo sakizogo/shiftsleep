@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:async';  // ← 追加
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';  // ← 追加
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -8,6 +10,13 @@ import 'package:permission_handler/permission_handler.dart';
 class AlarmService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();  
+
+      // ========== 追加：テスト音声再生用 ==========
+      static final AudioPlayer _testAudioPlayer = AudioPlayer();
+      static Timer? _testAudioTimer;
+      // ==========================================
+
+      bool _isInitialized = false;
 
     static Future<void> initialize() async {
       tz_data.initializeTimeZones();
@@ -249,42 +258,54 @@ class AlarmService {
       NotificationResponse notificationResponse) {
     print('通知がタップされました: ${notificationResponse.payload}');
   }
-  /// テスト用：即座に通知を表示
+  // ========== Week 7 Phase 3 修正：showTestNotification()メソッド（音量制御 + 2秒長制限）==========
+  /// テスト通知を即座に再生（設定画面用）
+  /// 
+  /// [selectedAlarmSound] - アラーム音の種類（'default', 'gentle', 'harsh'）
+  /// [volume] - 音量（0.0〜1.0）
+  /// 
+  /// 動作：
+  /// 1. 即座にアラーム音を再生（audioplayers 使用）
+  /// 2. ユーザー指定の音量で再生
+  /// 3. 2秒後に自動停止（長い音源の途中停止対応）
   static Future<void> showTestNotification({
-    String selectedAlarmSound = 'default',
+    required String selectedAlarmSound,
+    double volume = 1.0,
   }) async {
     try {
-      // channel ID を音に応じて変更
-      final channelId = _getChannelId(selectedAlarmSound);
-      final soundFileName = _getSoundFileName(selectedAlarmSound);
-      print('🔊 [showTestNotification] 受け取った音: $selectedAlarmSound → $soundFileName (channelId: $channelId)');
-    
-      final androidDetails = AndroidNotificationDetails(
-        channelId,
-        'アラーム通知',
-        importance: Importance.high,
-        priority: Priority.high,
-      );
-    
-      final iosDetails = DarwinNotificationDetails(
-        sound: soundFileName,
-      );
-    
-      final notificationDetails = NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      );
-    
-      print('🔔 即座に通知を表示...');
-      await _notificationsPlugin.show(
-        999,
-        '【テスト】出勤時間です',
-        '今すぐ通知が来ましたか？',
-        notificationDetails,
-      );
-      print('✓ 即座通知完了');
+      // 既に再生中なら停止
+      if (_testAudioPlayer.state == PlayerState.playing) {
+        await _testAudioPlayer.stop();
+        _testAudioTimer?.cancel();
+        print('[AlarmService] ℹ️ 前の再生を停止しました');
+      }
+
+      // 音声ファイルのマッピング（assets/raw/ 配下のファイル）
+      final soundMap = {
+        'default': 'alarm_default.mp3',
+        'gentle': 'alarm_gentle.mp3',
+        'harsh': 'alarm_harsh.mp3',
+      };
+
+      final soundFileName = soundMap[selectedAlarmSound] ?? soundMap['default']!;
+
+      // 音量設定（0.0〜1.0）
+      await _testAudioPlayer.setVolume(volume);
+
+      print('[AlarmService] 🔊 テスト音再生開始: $selectedAlarmSound (音量: ${(volume * 100).toStringAsFixed(0)}%)');
+
+      // AssetSource を使用してアセットから再生
+      await _testAudioPlayer.play(AssetSource('raw/$soundFileName'));
+
+      // 2秒後に停止（タイマー設定）
+      _testAudioTimer = Timer(const Duration(seconds: 2), () async {
+        await _testAudioPlayer.stop();
+        print('[AlarmService] ⏱️ テスト音停止（2秒経過）');
+      });
+
     } catch (e) {
-      print('✗ 即座通知エラー: $e');
+      print('[AlarmService] ❌ テスト音再生エラー: $e');
     }
-    }
+  }
+  // ===========================================================================================
 }

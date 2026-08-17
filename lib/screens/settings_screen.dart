@@ -459,10 +459,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: AppDimensions.paddingLarge),
 
                 // ========================
-                // 改善アドバイス表示設定セクション
+                // テスト & 改善アドバイス設定セクション
                 // ========================
                 Text(
-                  '💡 改善アドバイス表示設定',
+                  '🔊 テスト',
                   style: AppTextStyles.sectionTitleStyle,
                 ),
                 const SizedBox(height: AppDimensions.paddingMedium),
@@ -476,77 +476,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       AppDimensions.borderRadiusMedium,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'プレミアム版案内を表示',
+                      // テストアラームボタン（テキスト修正）
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _testAlarmSound,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.warningRed,
+                          ),
+                          child: Text(
+                            '🔊 テストアラーム',
                             style: AppTextStyles.bodyTextStyle.copyWith(
+                              color: Colors.white,
                               fontWeight: FontWeight.w600,
-                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(height: 4.0),
-                          Text(
-                            'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
-                            style: AppTextStyles.bodyTextStyle.copyWith(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
+                        ),
+                      ),
+
+                      const SizedBox(height: AppDimensions.paddingLarge),
+
+                      // 改善アドバイス表示設定（移動）
+                      Text(
+                        '💡 改善アドバイス表示設定',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'プレミアム版案内を表示',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4.0),
+                              Text(
+                                'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: _advicePromoVisible,
+                            onChanged: (value) {
+                              setState(() {
+                                _advicePromoVisible = value;
+                              });
+                            },
+                            activeColor: AppColors.primaryGradientStart,
                           ),
                         ],
-                      ),
-                      Switch(
-                        value: _advicePromoVisible,
-                        onChanged: (value) {
-                          setState(() {
-                            _advicePromoVisible = value;
-                          });
-                        },
-                        activeColor: AppColors.primaryGradientStart,
                       ),
                     ],
                   ),
                 ),
 
                 const SizedBox(height: AppDimensions.paddingLarge),
-
-                // ========================
-                // テストセクション
-                // ========================
-                Text(
-                  'テスト',
-                  style: AppTextStyles.bodyTextStyle.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 8.0),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _testAlarmSound,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.warningRed,
-                    ),
-                    child: Text(
-                      '🔊 3分後にテストアラーム',
-                      style: AppTextStyles.bodyTextStyle.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: AppDimensions.paddingLarge),
                 const SizedBox(height: AppDimensions.paddingLarge),
 
                 // ========================
-                // 🧪 テスト用セクション（開発時のみ）
+                // 🧪 テスト用セクション（開発者向け）
                 // ========================
                 Text(
                   '🧪 テスト用（開発者向け）',
@@ -841,22 +845,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// テストアラーム（即座通知）
+  /// テストアラーム（即座再生 + 音量制御 + 2秒長制限）
+  /// ========== ステップB&C 修正: 音量パラメータ追加 + メッセージ更新 ==========
   Future<void> _testAlarmSound() async {
     print('🔊 テストアラーム開始...');
     await AlarmService.showTestNotification(
       selectedAlarmSound: _selectedAlarmSound,
+      volume: _soundVolume,  // ← 音量スライダーの値を渡す
     );
 
     if (mounted) {
+      final volumePercent = (_soundVolume * 100).toStringAsFixed(0);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('今すぐテスト通知が鳴ります！'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text('テストアラーム再生中...（音量: $volumePercent%、2秒で停止）'),
+          duration: const Duration(seconds: 3),
         ),
       );
     }
   }
+  // =====================================================================
 
   /// 設定を保存
   Future<void> _saveSettings() async {
