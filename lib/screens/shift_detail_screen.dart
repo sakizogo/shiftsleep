@@ -5,6 +5,7 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/services/alarm_service.dart';
 import 'shift_management_screen.dart';
 
 class ShiftDetailScreen extends StatefulWidget {
@@ -493,28 +494,55 @@ const SizedBox(height: AppDimensions.paddingLarge),
     return days[date.weekday - 1];
   }
 
-  /// ========== Week 3 Day 6-2 修正: シフトをDB に保存 ==========
-  /// シフトを保存
+  /// ========== Phase 3.2 修正: シフト保存 + アラームスケジュール ==========
+  /// シフトを保存 + アラームをスケジュール
   Future<void> _saveShifts() async {
     try {
-       // ========== デバッグログ追加 ==========
-       print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
-       print('💾 保存データ:');
-       for (final entry in widget.shiftDataMap.entries) {
-         print('  - ${entry.key.toIso8601String()}: ${entry.value.pattern?.patternName}');
-       }
-       // ====================================
+      // ========== デバッグログ追加 ==========
+      print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
+      print('💾 保存データ:');
+      for (final entry in widget.shiftDataMap.entries) {
+        print('  - ${entry.key.toIso8601String()}: ${entry.value.pattern?.patternName}');
+      }
+      // ====================================
 
-       // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
-       final Map<DateTime, ShiftPatternModel?> patternMap = {};
-       for (final entry in widget.shiftDataMap.entries) {
-         patternMap[entry.key] = entry.value.pattern;
-       }
+      // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
+      final Map<DateTime, ShiftPatternModel?> patternMap = {};
+      for (final entry in widget.shiftDataMap.entries) {
+        patternMap[entry.key] = entry.value.pattern;
+      }
 
-       // DB に保存
-       await _shiftRepository.createShifts(patternMap);
+      // DB に保存
+      await _shiftRepository.createShifts(patternMap);
 
-       print('✅ DB保存完了');
+      print('✅ DB保存完了');
+
+      // ✅ ========== Phase 3.2 追加: アラームをスケジュール ==========
+      print('⏰ アラームスケジュール開始...');
+      for (final entry in widget.shiftDataMap.entries) {
+        final date = entry.key;
+        final shiftData = entry.value;
+        final pattern = shiftData.pattern;
+
+        // 勤務シフトの場合のみアラームをスケジュール
+        if (pattern != null && 
+            pattern.patternType == ShiftType.work && 
+            pattern.startTime != null) {
+          print('🔔 アラームスケジュール: $date, 出勤時刻: ${pattern.startTime!.hour}:${pattern.startTime!.minute}');
+
+          await AlarmService.scheduleAlarmForShift(
+            shiftDate: date,
+            alarmTime: pattern.startTime!,
+            preAlarmEnabled: true,
+            preAlarmMinutes: 5,
+            selectedAlarmSound: 'default',
+          );
+        } else {
+          print('⊘ スキップ: $date (非勤務シフト)');
+        }
+      }
+      print('✅ アラームスケジュール完了');
+      // ==============================================================
 
       // 成功メッセージ
       if (mounted) {
@@ -544,5 +572,6 @@ const SizedBox(height: AppDimensions.paddingLarge),
       print('Error saving shifts: $e');
     }
   }
+  // ==============================================================================
   // ==============================================================================
 }

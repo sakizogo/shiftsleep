@@ -1,68 +1,80 @@
 import 'dart:io';
-import 'dart:async';  // ← 追加
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';  // ← 追加
+import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:permission_handler/permission_handler.dart';
 
 class AlarmService {
+  // ===== MethodChannel 定義 =====
+  static const String _methodChannelName = 'com.sakizoapps.shiftsleep/alarm';
+  static final MethodChannel _methodChannel = MethodChannel(_methodChannelName);
+
+  // ===== Notification Plugin =====
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
-      FlutterLocalNotificationsPlugin();  
+      FlutterLocalNotificationsPlugin();
 
-      // ========== 追加：テスト音声再生用 ==========
-      static final AudioPlayer _testAudioPlayer = AudioPlayer();
-      static Timer? _testAudioTimer;
-      // ==========================================
+  // ===== テスト音声再生用 =====
+  static final AudioPlayer _testAudioPlayer = AudioPlayer();
+  static Timer? _testAudioTimer;
 
-      bool _isInitialized = false;
+  // ===== 初期化フラグ =====
+  static bool _isInitialized = false;
 
-    static Future<void> initialize() async {
-      tz_data.initializeTimeZones();
-       // ========== Channel を削除（古い設定をリセット） ==========
-       if (Platform.isAndroid) {
-         final plugin = _notificationsPlugin
-             .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-         await plugin?.deleteNotificationChannel('alarm_channel_id');
-         print('✅ 古い Notification Channel を削除');
-       }
-  // ==================================================
-      // 実行時権限をリクエスト（Android 12+）
-      if (Platform.isAndroid) {
-        final statusExactAlarm = await Permission.scheduleExactAlarm.request();
-                print('📋 scheduleExactAlarm permission: $statusExactAlarm');
-  
-        final statusNotification = await Permission.notification.request();
-        print('📋 notification permission: $statusNotification');
-      }
-
-      const AndroidInitializationSettings androidSettings =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
-
-      const DarwinInitializationSettings iosSettings =
-          DarwinInitializationSettings(
-            requestSoundPermission: true,
-            requestBadgePermission: true,
-            requestAlertPermission: true,
-          );
-
-     final InitializationSettings initSettings = InitializationSettings(
-       android: androidSettings,
-       iOS: iosSettings,
-      );
-
-      await _notificationsPlugin.initialize(
-        initSettings,
-        onDidReceiveNotificationResponse: _onNotificationTapped,
-      );
-
-      // デバッグログを有効化
-      print('🔊 Notifications plugin initialized');
-      print('🔊 Platform-specific implementation: ${_notificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()}');
-
-      await _setupAndroidChannel();
+  static Future<void> initialize() async {
+    tz_data.initializeTimeZones();
+    // ========== Channel を削除（古い設定をリセット） ==========
+    if (Platform.isAndroid) {
+      final plugin = _notificationsPlugin
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await plugin?.deleteNotificationChannel('alarm_channel_id');
+      print('✅ 古い Notification Channel を削除');
     }
+    // ==================================================
+    // 実行時権限をリクエスト（Android 12+）
+    if (Platform.isAndroid) {
+      final statusExactAlarm = await Permission.scheduleExactAlarm.request();
+      print('📋 scheduleExactAlarm permission: $statusExactAlarm');
+
+      final statusNotification = await Permission.notification.request();
+      print('📋 notification permission: $statusNotification');
+
+      // ※ WAKE_LOCK は AndroidManifest.xml に宣言済みなので、リクエスト不要
+    }
+
+    const AndroidInitializationSettings androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const DarwinInitializationSettings iosSettings =
+        DarwinInitializationSettings(
+          requestSoundPermission: true,
+          requestBadgePermission: true,
+          requestAlertPermission: true,
+        );
+
+    final InitializationSettings initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    await _notificationsPlugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: _onNotificationTapped,
+    );
+
+    // デバッグログを有効化
+    print('🔊 Notifications plugin initialized');
+    print('🔊 Platform-specific implementation: ${_notificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()}');
+
+    await _setupAndroidChannel();
+
+    // ★ 追加：初期化完了フラグをセット ★
+    _isInitialized = true;
+    print('✅ AlarmService initialized successfully');
+  }
 
   static Future<void> _setupAndroidChannel() async {
     final channels = [
@@ -99,7 +111,7 @@ class AlarmService {
       print('🔧 通知チャネル作成開始...');
       final plugin = _notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    
+
       for (final channel in channels) {
         await plugin?.createNotificationChannel(channel);
       }
@@ -114,37 +126,54 @@ class AlarmService {
     required TimeOfDay alarmTime,
     bool preAlarmEnabled = true,
     int preAlarmMinutes = 5,
-    String selectedAlarmSound = 'default',  // ← このパラメータを追加
+    String selectedAlarmSound = 'default',
   }) async {
+    print('🔴 [DEBUG] scheduleAlarmForShift が呼び出されました！');
+    print('🔴 [DEBUG] シフト日: $shiftDate, 出勤時刻: ${alarmTime.hour}:${alarmTime.minute}');
+
+    // メインアラーム
+    final mainAlarmDateTime = DateTime(
+      shiftDate.year,
+      shiftDate.month,
+      shiftDate.day,
+      alarmTime.hour,
+      alarmTime.minute,
+    );
+
     await _scheduleNotification(
       id: _generateNotificationId(shiftDate, 'main'),
       title: '出勤時間です',
       body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
-      scheduledDate: DateTime(
-        shiftDate.year,
-        shiftDate.month,
-        shiftDate.day,
-        alarmTime.hour,
-        alarmTime.minute,
-      ),
-      selectedAlarmSound: selectedAlarmSound,  // ← ここに追加
+      scheduledDate: mainAlarmDateTime,
+      selectedAlarmSound: selectedAlarmSound,
     );
 
+    // ✅ AlarmManager でもスケジュール（デバイススリープ中対応）
+    await _scheduleWithAlarmManager(
+      alarmId: _generateNotificationId(shiftDate, 'main'),
+      scheduledDate: mainAlarmDateTime,
+      title: '出勤時間です',
+      body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+    );
+
+    // 事前アラーム
     if (preAlarmEnabled) {
-      final preAlarmDateTime = DateTime(
-        shiftDate.year,
-        shiftDate.month,
-        shiftDate.day,
-        alarmTime.hour,
-        alarmTime.minute,
-      ).subtract(Duration(minutes: preAlarmMinutes));
+      final preAlarmDateTime = mainAlarmDateTime.subtract(Duration(minutes: preAlarmMinutes));
 
       await _scheduleNotification(
         id: _generateNotificationId(shiftDate, 'pre'),
         title: '出勤${preAlarmMinutes}分前です',
         body: '準備をお始めください',
         scheduledDate: preAlarmDateTime,
-        selectedAlarmSound: selectedAlarmSound,  // ← ここに追加
+        selectedAlarmSound: selectedAlarmSound,
+      );
+
+      // ✅ AlarmManager でもスケジュール（デバイススリープ中対応）
+      await _scheduleWithAlarmManager(
+        alarmId: _generateNotificationId(shiftDate, 'pre'),
+        scheduledDate: preAlarmDateTime,
+        title: '出勤${preAlarmMinutes}分前です',
+        body: '準備をお始めください',
       );
     }
   }
@@ -154,13 +183,13 @@ class AlarmService {
     required String title,
     required String body,
     required DateTime scheduledDate,
-    String selectedAlarmSound = 'default',  // ← このパラメータを追加
+    String selectedAlarmSound = 'default',
   }) async {
     try {
       print('⏰ 現在時刻: ${DateTime.now()}');
       print('⏰ スケジュール時刻: $scheduledDate');
       print('⏰ 時差計算: ${tz.TZDateTime.from(scheduledDate, tz.local)}');
-    
+
       if (scheduledDate.isBefore(DateTime.now())) {
         print('⚠️ Scheduled time is in the past: $scheduledDate');
         return;
@@ -177,13 +206,13 @@ class AlarmService {
         priority: Priority.high,
         enableVibration: true,
         playSound: true,
-        sound: RawResourceAndroidNotificationSound(soundFileName),  // ← 動的に変更
+        sound: RawResourceAndroidNotificationSound(soundFileName),
         enableLights: true,
         showWhen: true,
       );
 
       final iosDetails = DarwinNotificationDetails(
-        sound: soundFileName,  // ← 動的に変更
+        sound: soundFileName,
         presentSound: true,
         presentAlert: true,
         presentBadge: true,
@@ -201,7 +230,7 @@ class AlarmService {
         body,
         tz.TZDateTime.from(scheduledDate, tz.local),
         notificationDetails,
-        androidScheduleMode: AndroidScheduleMode.exact,  // ← alarmClock から exact に変更
+        androidScheduleMode: AndroidScheduleMode.exact,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
@@ -213,6 +242,51 @@ class AlarmService {
     }
   }
 
+  /// AlarmManager でアラームをスケジュール（デバイススリープ中対応）
+  static Future<void> _scheduleWithAlarmManager({
+    required int alarmId,
+    required DateTime scheduledDate,
+    required String title,
+    required String body,
+  }) async {
+    try {
+      print('⏰ AlarmManager スケジュール開始');
+      print('⏰ アラーム ID: $alarmId');
+      print('⏰ スケジュール時刻: $scheduledDate');
+
+      // MillisecondsSinceEpoch でタイムスタンプを取得
+      final timestampMs = scheduledDate.millisecondsSinceEpoch;
+
+      // Kotlin の scheduleAlarmWithAlarmManager メソッドを呼び出し
+      final result = await _methodChannel.invokeMethod<String>(
+        'scheduleAlarmWithAlarmManager',
+        {
+          'timestampMs': timestampMs,
+          'alarmId': alarmId,
+          'title': title,
+          'body': body,
+        },
+      );
+
+      print('✅ AlarmManager スケジュール成功: $result');
+    } catch (e) {
+      print('❌ AlarmManager スケジュール エラー: $e');
+    }
+  }
+
+  /// AlarmManager のアラームをキャンセル
+  static Future<void> _cancelWithAlarmManager(int alarmId) async {
+    try {
+      final result = await _methodChannel.invokeMethod<String>(
+        'cancelAlarmWithAlarmManager',
+        {'alarmId': alarmId},
+      );
+      print('✅ AlarmManager キャンセル成功: $result');
+    } catch (e) {
+      print('❌ AlarmManager キャンセル エラー: $e');
+    }
+  }
+
   static int _generateNotificationId(DateTime date, String type) {
     final dateStr =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
@@ -221,8 +295,17 @@ class AlarmService {
   }
 
   static Future<void> cancelAlarm(DateTime date) async {
-    await _notificationsPlugin.cancel(_generateNotificationId(date, 'main'));
-    await _notificationsPlugin.cancel(_generateNotificationId(date, 'pre'));
+    final mainAlarmId = _generateNotificationId(date, 'main');
+    final preAlarmId = _generateNotificationId(date, 'pre');
+
+    // flutter_local_notifications をキャンセル
+    await _notificationsPlugin.cancel(mainAlarmId);
+    await _notificationsPlugin.cancel(preAlarmId);
+
+    // ✅ AlarmManager もキャンセル
+    await _cancelWithAlarmManager(mainAlarmId);
+    await _cancelWithAlarmManager(preAlarmId);
+
     print('✓ アラームをキャンセルしました: $date');
   }
 
@@ -230,6 +313,7 @@ class AlarmService {
     await _notificationsPlugin.cancelAll();
     print('✓ すべてのアラームをクリアしました');
   }
+
   /// selectedAlarmSound から実際のファイル名を取得
   static String _getSoundFileName(String selectedAlarmSound) {
     switch (selectedAlarmSound) {
@@ -254,16 +338,17 @@ class AlarmService {
         return 'alarm_channel_default';
     }
   }
+
   static void _onNotificationTapped(
       NotificationResponse notificationResponse) {
     print('通知がタップされました: ${notificationResponse.payload}');
   }
-  // ========== Week 7 Phase 3 修正：showTestNotification()メソッド（音量制御 + 2秒長制限）==========
+
   /// テスト通知を即座に再生（設定画面用）
-  /// 
+  ///
   /// [selectedAlarmSound] - アラーム音の種類（'default', 'gentle', 'harsh'）
   /// [volume] - 音量（0.0〜1.0）
-  /// 
+  ///
   /// 動作：
   /// 1. 即座にアラーム音を再生（audioplayers 使用）
   /// 2. ユーザー指定の音量で再生
@@ -307,5 +392,4 @@ class AlarmService {
       print('[AlarmService] ❌ テスト音再生エラー: $e');
     }
   }
-  // ===========================================================================================
 }

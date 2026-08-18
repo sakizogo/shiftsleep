@@ -64,13 +64,19 @@ class _SleepButtonState extends State<SleepButton>
     _controller.reverse();
     setState(() => _isPressed = false);
 
+    print('[SleepButton] 🎯 ボタンがタップされました (TapUp)');
+
     // ========== Week 7 Phase 3 修正: SleepProvider から睡眠状態を取得 ==========
     final sleepProvider = context.read<SleepProvider>();
     final isSleeping = sleepProvider.isSleepingNow;
     
+    print('[SleepButton] 📊 isSleepingNow: $isSleeping');
+    
     if (isSleeping) {
+      print('[SleepButton] 🌅 起床処理を開始します');
       await _handleWakeUp(sleepProvider);
     } else {
+      print('[SleepButton] 😴 就寝処理を開始します');
       await _handleStartSleep(sleepProvider);
     }
     // ========================================================================
@@ -135,8 +141,11 @@ class _SleepButtonState extends State<SleepButton>
 
   Future<void> _handleWakeUp(SleepProvider sleepProvider) async {
     try {
+      print('[SleepButton] 🛏️ _handleWakeUp メソッドが呼ばれました');
+      
       // ========== Week 7 Phase 3 修正: SleepProvider から現在の睡眠レコード ID を取得 ==========
       final currentSleepRecordId = sleepProvider.currentSleepRecordIdNow;
+      print('[SleepButton] 🔍 currentSleepRecordId: $currentSleepRecordId');
       if (currentSleepRecordId == null) {
         throw Exception('Sleep record ID not found in SleepProvider');
       }
@@ -148,6 +157,8 @@ class _SleepButtonState extends State<SleepButton>
           await _sleepRepository.getSleepRecordById(currentSleepRecordId);
 
       if (sleepRecord != null) {
+        print('[SleepButton] 💾 睡眠レコードを更新中...');
+        
         final updatedRecord = sleepRecord.copyWith(
           sleepEndTime: now,
           sleepEndAuto: false,
@@ -160,16 +171,21 @@ class _SleepButtonState extends State<SleepButton>
         print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
 
         // ========== Week 7 Phase 3 追加: アラームをスケジュール ==========
+        print('[SleepButton] 🔔 アラームスケジュール処理を開始...');
         await _scheduleAlarmForNextShift(now);
+        print('[SleepButton] ✅ アラームスケジュール処理が完了しました');
         // ================================================================
 
         // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
         sleepProvider.endSleepingNow();
+        print('[SleepButton] ✅ 睡眠中フラグをクリア');
         // ========================================================================
 
         if (mounted) {
           await sleepProvider.loadAllSleepData();
         }
+      } else {
+        print('[SleepButton] ⚠️ 睡眠レコードが見つかりません');
       }
 
       if (mounted) {
@@ -222,7 +238,11 @@ class _SleepButtonState extends State<SleepButton>
       final tomorrow = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day + 1);
       final thirtydaysLater = tomorrow.add(const Duration(days: 30));
 
+      print('[SleepButton] 📅 シフト検索期間: $tomorrow ～ $thirtydaysLater');
+
       final shiftsMapList = await _shiftRepository.getShiftsForDateRange(tomorrow, thirtydaysLater);
+      print('[SleepButton] 📊 getShiftsForDateRange の結果: ${shiftsMapList.length}件');
+      
       if (shiftsMapList.isEmpty) {
         print('[SleepButton] ⚠️ 予定されたシフトが見つかりません');
         return;
@@ -237,6 +257,8 @@ class _SleepButtonState extends State<SleepButton>
 
       for (final shiftMap in shiftsMapList) {
         final patternId = shiftMap['pattern_id'] as String;
+        
+        print('[SleepButton] 🔍 チェック中: pattern_id=$patternId');
         
         // デフォルト休日は skip
         if (patternId == 'default_dayoff') {
@@ -258,9 +280,11 @@ class _SleepButtonState extends State<SleepButton>
 
       // ========== ステップ4: patternId から出勤時刻を取得 ==========
       final patterns = await _shiftRepository.getAllPatterns();
+      print('[SleepButton] 🎯 getAllPatterns で${patterns.length}個のパターンを取得');
+      
       final pattern = patterns.firstWhere(
         (p) => p.id == nextWorkShift!['pattern_id'],
-        orElse: () => throw Exception('Pattern not found'),
+        orElse: () => throw Exception('Pattern not found: ${nextWorkShift!['pattern_id']}'),
       );
 
       final startTime = pattern.startTime;
@@ -289,6 +313,8 @@ class _SleepButtonState extends State<SleepButton>
       final alarmMode = AlarmMode.once;  // デフォルトは once
       final preAlarmEnabled = alarmMode != AlarmMode.none;
 
+      print('[SleepButton] 🚀 AlarmService.scheduleAlarmForShift() を呼び出し中...');
+
       await AlarmService.scheduleAlarmForShift(
         shiftDate: nextShiftDate,
         alarmTime: startTime,
@@ -302,6 +328,7 @@ class _SleepButtonState extends State<SleepButton>
 
     } catch (e) {
       print('[SleepButton] ❌ アラームスケジュールエラー: $e');
+      print('[SleepButton] 📍 スタックトレース: ${e.toString()}');
       // エラーが発生してもユーザーに通知しない（睡眠記録は成功している）
     }
   }
