@@ -20,6 +20,7 @@ import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7
 ///
 /// Week 7 Phase 3 追加:
 /// - PremiumService を統合（有料版ステータス管理）
+/// - isSleepingNow フラグで「睡眠中」状態をグローバル管理
 class SleepProvider extends ChangeNotifier {
   final SleepRepository _repository;
   final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
@@ -46,6 +47,11 @@ class SleepProvider extends ChangeNotifier {
   bool _advicePromoVisible = true;
   // ================================================
 
+  // ========== Week 7 Phase 3 修正: 睡眠中フラグをグローバル管理 ==========
+  bool _isSleepingNow = false;          // 現在睡眠中かどうか
+  String? _currentSleepRecordIdNow;      // 睡眠中のレコード ID
+  // ========================================================================
+
   // ========================
   // Getter
   // ========================
@@ -60,6 +66,11 @@ class SleepProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  // ========== Week 7 Phase 3 追加: 睡眠中フラグの Getter ==========
+  bool get isSleepingNow => _isSleepingNow;
+  String? get currentSleepRecordIdNow => _currentSleepRecordIdNow;
+  // ================================================================
 
   // ========== Week 7 A 追加: アドバイス Getter ==========
   List<SleepAdvice> get displayedAdvice => _displayedAdvice;
@@ -409,6 +420,12 @@ class SleepProvider extends ChangeNotifier {
 
       await _repository.insertSleepRecord(record);
 
+      // ========== Week 7 Phase 3 修正: 睡眠中フラグをセット ==========
+      _isSleepingNow = true;
+      _currentSleepRecordIdNow = record.id;
+      print('[SleepProvider] ✅ 睡眠中フラグをセット: $_isSleepingNow');
+      // ================================================================
+
       // 更新後、データを再ロード
       await loadAllSleepData();
 
@@ -425,6 +442,15 @@ class SleepProvider extends ChangeNotifier {
     _calculateMetrics();
     notifyListeners();
   }
+
+  /// ========== Week 7 Phase 3 追加: 睡眠終了時に睡眠中フラグをクリア ==========
+  void endSleepingNow() {
+    _isSleepingNow = false;
+    _currentSleepRecordIdNow = null;
+    print('[SleepProvider] ✅ 睡眠終了フラグをクリア');
+    notifyListeners();
+  }
+  // ========================================================================
 
   /// ========== Week 7 Phase 3 修正: RevenueCat から有料版ステータスを確認して DB に反映 ==========
   /// 

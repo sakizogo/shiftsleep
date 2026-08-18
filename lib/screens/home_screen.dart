@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -41,9 +42,26 @@ class _HomeScreenState extends State<HomeScreen> {
   late GlobalKey<ShiftManagementScreenState> _shiftManagementKey;
   // ========================================================================
 
+  // ========== Week 7 Phase 3: Timer for time update ==========
+  Timer? _timeUpdateTimer;
+  // ==========================================================
+
   @override
   void initState() {
     super.initState();
+    
+    // ========== Week 7 Phase 3: 1秒ごとに時刻を更新 ==========
+    _timeUpdateTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        setState(() {
+          // setState() のコールバック内は空でOK
+          // build() が再実行されて _getCurrentTime() が新しい時刻を取得する
+        });
+      },
+    );
+    // =========================================================
+    
     // ========== Week 3 Day 6-2 追加: GlobalKey を初期化 ==========
     _shiftManagementKey = GlobalKey<ShiftManagementScreenState>();
     // ===========================================================
@@ -52,6 +70,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     
     _loadPatterns();
+  }
+
+  @override
+  void dispose() {
+    // ========== Week 7 Phase 3: Timer をキャンセル（メモリリーク防止） ==========
+    _timeUpdateTimer?.cancel();
+    // =====================================================================
+    super.dispose();
   }
 
   Future<void> _loadPatterns() async {

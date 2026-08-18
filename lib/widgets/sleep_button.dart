@@ -28,9 +28,6 @@ class _SleepButtonState extends State<SleepButton>
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
 
-  bool _isSleeping = false;
-  String? _currentSleepRecordId;
-
   final SleepRepository _sleepRepository = SleepRepository();
 
   @override
@@ -63,11 +60,16 @@ class _SleepButtonState extends State<SleepButton>
     _controller.reverse();
     setState(() => _isPressed = false);
 
-    if (_isSleeping) {
-      await _handleWakeUp();
+    // ========== Week 7 Phase 3 修正: SleepProvider から睡眠状態を取得 ==========
+    final sleepProvider = context.read<SleepProvider>();
+    final isSleeping = sleepProvider.isSleepingNow;
+    
+    if (isSleeping) {
+      await _handleWakeUp(sleepProvider);
     } else {
-      await _handleStartSleep();
+      await _handleStartSleep(sleepProvider);
     }
+    // ========================================================================
   }
 
   void _onTapCancel() {
@@ -75,7 +77,7 @@ class _SleepButtonState extends State<SleepButton>
     setState(() => _isPressed = false);
   }
 
-  Future<void> _handleStartSleep() async {
+  Future<void> _handleStartSleep(SleepProvider sleepProvider) async {
     try {
       final now = DateTime.now();
       final tomorrow7am = DateTime(now.year, now.month, now.day + 1, 7, 0);
@@ -98,13 +100,11 @@ class _SleepButtonState extends State<SleepButton>
         updatedAt: now,
       );
 
-      await _sleepRepository.insertSleepRecord(sleepRecord);
-      print('[SleepButton] ✅ Sleep record saved: ${sleepRecord.id}');
-
-      setState(() {
-        _isSleeping = true;
-        _currentSleepRecordId = sleepRecord.id;
-      });
+      // ========== Week 7 Phase 3 修正: SleepProvider にレコード挿入を依頼 ==========
+      // これにより、SleepProvider が自動的に睡眠中フラグをセットする
+      await sleepProvider.insertSleepRecord(sleepRecord);
+      print('[SleepButton] ✅ Sleep record saved via SleepProvider: ${sleepRecord.id}');
+      // ========================================================================
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -129,16 +129,19 @@ class _SleepButtonState extends State<SleepButton>
     }
   }
 
-  Future<void> _handleWakeUp() async {
+  Future<void> _handleWakeUp(SleepProvider sleepProvider) async {
     try {
-      if (_currentSleepRecordId == null) {
-        throw Exception('Sleep record ID not found');
+      // ========== Week 7 Phase 3 修正: SleepProvider から現在の睡眠レコード ID を取得 ==========
+      final currentSleepRecordId = sleepProvider.currentSleepRecordIdNow;
+      if (currentSleepRecordId == null) {
+        throw Exception('Sleep record ID not found in SleepProvider');
       }
+      // ========================================================================
 
       final now = DateTime.now();
 
       final sleepRecord =
-          await _sleepRepository.getSleepRecordById(_currentSleepRecordId!);
+          await _sleepRepository.getSleepRecordById(currentSleepRecordId);
 
       if (sleepRecord != null) {
         final updatedRecord = sleepRecord.copyWith(
@@ -152,15 +155,14 @@ class _SleepButtonState extends State<SleepButton>
         await _sleepRepository.updateSleepRecord(updatedRecord);
         print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
 
+        // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
+        sleepProvider.endSleepingNow();
+        // ========================================================================
+
         if (mounted) {
-          await context.read<SleepProvider>().loadAllSleepData();
+          await sleepProvider.loadAllSleepData();
         }
       }
-
-      setState(() {
-        _isSleeping = false;
-        _currentSleepRecordId = null;
-      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -187,65 +189,73 @@ class _SleepButtonState extends State<SleepButton>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: _onTapDown,
-      onTapUp: _onTapUp,
-      onTapCancel: _onTapCancel,
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: _isSleeping
-                  ? [
-                      AppColors.primaryGradientStart.withOpacity(0.6),
-                      AppColors.primaryGradientEnd.withOpacity(0.6),
-                    ]
-                  : [
-                      AppColors.primaryGradientStart,
-                      AppColors.primaryGradientEnd,
-                    ],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(_isSleeping ? 0.1 : 0.15),
-                blurRadius: 12,
-                spreadRadius: 0,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                _isSleeping ? '睡眠中' : '今から寝る',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.buttonTextStyle.copyWith(
-                  fontSize: _isSleeping ? 14 : 16,
+    // ========== Week 7 Phase 3 修正: SleepProvider から睡眠状態を監視 ==========
+    return Consumer<SleepProvider>(
+      builder: (context, sleepProvider, _) {
+        final isSleeping = sleepProvider.isSleepingNow;
+        
+        return GestureDetector(
+          onTapDown: _onTapDown,
+          onTapUp: _onTapUp,
+          onTapCancel: _onTapCancel,
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: isSleeping
+                      ? [
+                          AppColors.primaryGradientStart.withOpacity(0.6),
+                          AppColors.primaryGradientEnd.withOpacity(0.6),
+                        ]
+                      : [
+                          AppColors.primaryGradientStart,
+                          AppColors.primaryGradientEnd,
+                        ],
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isSleeping ? 0.1 : 0.15),
+                    blurRadius: 12,
+                    spreadRadius: 0,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              if (_isSleeping)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    '起きる',
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    isSleeping ? '睡眠中' : '今から寝る',
                     textAlign: TextAlign.center,
                     style: AppTextStyles.buttonTextStyle.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontSize: isSleeping ? 14 : 16,
                     ),
                   ),
-                ),
-            ],
+                  if (isSleeping)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(
+                        '起きる',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.buttonTextStyle.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+    // ========================================================================
   }
 }
