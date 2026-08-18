@@ -6,7 +6,10 @@ import '../constants/dimensions.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/constants/shift_enums.dart';
 
 class SleepButton extends StatefulWidget {
   final String userId;
@@ -29,6 +32,7 @@ class _SleepButtonState extends State<SleepButton>
   bool _isPressed = false;
 
   final SleepRepository _sleepRepository = SleepRepository();
+  final ShiftRepository _shiftRepository = ShiftRepository();
 
   @override
   void initState() {
@@ -155,6 +159,10 @@ class _SleepButtonState extends State<SleepButton>
         await _sleepRepository.updateSleepRecord(updatedRecord);
         print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
 
+        // ========== Week 7 Phase 3 追加: アラームをスケジュール ==========
+        await _scheduleAlarmForNextShift(now);
+        // ================================================================
+
         // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
         sleepProvider.endSleepingNow();
         // ========================================================================
@@ -186,6 +194,118 @@ class _SleepButtonState extends State<SleepButton>
       }
     }
   }
+
+  // ========== Week 7 Phase 3 追加: 次のシフト出勤に合わせてアラームをスケジュール ==========
+  /// 
+  /// 流れ:
+  /// 1. 「起きる」を押した翌日以降のシフトを検索
+  /// 2. 最初の出勤シフトを見つける
+  /// 3. 出勤時刻から alarmTimeBeforeShift 分前にアラーム実行
+  /// 4. AlarmService.scheduleAlarmForShift() で実行
+  Future<void> _scheduleAlarmForNextShift(DateTime wakeUpTime) async {
+    try {
+      print('[SleepButton] 🔔 次のシフト出勤に合わせてアラームをスケジュール中...');
+
+      // ========== ステップ1: 設定を取得 ==========
+      final settings = await _shiftRepository.getAppSettings('test_user');
+      if (settings == null) {
+        print('[SleepButton] ⚠️ 設定が見つかりません');
+        return;
+      }
+
+      final alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
+      final selectedAlarmSound = settings.selectedAlarmSound;
+      print('[SleepButton] ✅ 設定取得: 出勤前${alarmTimeBeforeShift}分、音=${selectedAlarmSound}');
+      // ========================================
+
+      // ========== ステップ2: 明日以降30日間のシフトを取得 ==========
+      final tomorrow = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day + 1);
+      final thirtydaysLater = tomorrow.add(const Duration(days: 30));
+
+      final shiftsMapList = await _shiftRepository.getShiftsForDateRange(tomorrow, thirtydaysLater);
+      if (shiftsMapList.isEmpty) {
+        print('[SleepButton] ⚠️ 予定されたシフトが見つかりません');
+        return;
+      }
+
+      print('[SleepButton] 📅 ${shiftsMapList.length}件のシフトが見つかりました');
+      // ==================================================
+
+      // ========== ステップ3: 最初の「work」シフトを見つける ==========
+      Map<String, dynamic>? nextWorkShift;
+      DateTime? nextShiftDate;
+
+      for (final shiftMap in shiftsMapList) {
+        final patternId = shiftMap['pattern_id'] as String;
+        
+        // デフォルト休日は skip
+        if (patternId == 'default_dayoff') {
+          print('[SleepButton] ℹ️ スキップ: 休日');
+          continue;
+        }
+
+        nextWorkShift = shiftMap;
+        nextShiftDate = DateTime.parse(shiftMap['shift_date'] as String);
+        print('[SleepButton] ✅ 次のシフト: $nextShiftDate / pattern_id=$patternId');
+        break;
+      }
+
+      if (nextWorkShift == null || nextShiftDate == null) {
+        print('[SleepButton] ⚠️ 出勤予定が見つかりません');
+        return;
+      }
+      // ======================================================
+
+      // ========== ステップ4: patternId から出勤時刻を取得 ==========
+      final patterns = await _shiftRepository.getAllPatterns();
+      final pattern = patterns.firstWhere(
+        (p) => p.id == nextWorkShift!['pattern_id'],
+        orElse: () => throw Exception('Pattern not found'),
+      );
+
+      final startTime = pattern.startTime;
+      if (startTime == null) {
+        print('[SleepButton] ⚠️ 出勤時刻が設定されていません');
+        return;
+      }
+
+      print('[SleepButton] ⏰ 出勤時刻: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}');
+      // =========================================================
+
+      // ========== ステップ5: アラーム時刻を計算 ==========
+      final alarmDateTime = DateTime(
+        nextShiftDate.year,
+        nextShiftDate.month,
+        nextShiftDate.day,
+        startTime.hour,
+        startTime.minute,
+      ).subtract(Duration(minutes: alarmTimeBeforeShift));
+
+      print('[SleepButton] 🔔 アラーム時刻: ${alarmDateTime.toString()}');
+      // ================================================
+
+      // ========== ステップ6: AlarmService でアラームをスケジュール ==========
+      // AlarmMode から判定（none=無効、once=1回、twice=2回）
+      final alarmMode = AlarmMode.once;  // デフォルトは once
+      final preAlarmEnabled = alarmMode != AlarmMode.none;
+
+      await AlarmService.scheduleAlarmForShift(
+        shiftDate: nextShiftDate,
+        alarmTime: startTime,
+        preAlarmEnabled: preAlarmEnabled,
+        preAlarmMinutes: alarmTimeBeforeShift,
+        selectedAlarmSound: selectedAlarmSound,
+      );
+
+      print('[SleepButton] ✅ アラーム設定完了: $nextShiftDate の ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')} 出勤');
+      // ===================================================================
+
+    } catch (e) {
+      print('[SleepButton] ❌ アラームスケジュールエラー: $e');
+      // エラーが発生してもユーザーに通知しない（睡眠記録は成功している）
+    }
+  }
+  // =====================================================================================
 
   @override
   Widget build(BuildContext context) {
