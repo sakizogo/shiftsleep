@@ -64,7 +64,11 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
             );
           }
 
-          final records = snapshot.data ?? [];
+          // ✅ Phase 5 Step 1: 0h 0m のレコードをフィルタ
+          final allRecords = snapshot.data ?? [];
+          final records = allRecords
+              .where((record) => record.durationMinutes >= 1)
+              .toList();
 
           if (records.isEmpty) {
             return Center(
@@ -100,6 +104,7 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ✅ Phase 5 Step 2: × ボタン追加
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -107,11 +112,26 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                             '${record.sleepDate.year}年${record.sleepDate.month}月${record.sleepDate.day}日',
                             style: AppTextStyles.sectionTitleStyle,
                           ),
-                          Text(
-                            '${hours}h ${minutes}m',
-                            style: AppTextStyles.statNumberStyle.copyWith(
-                              color: AppColors.warningRed,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                '${hours}h ${minutes}m',
+                                style: AppTextStyles.statNumberStyle.copyWith(
+                                  color: AppColors.warningRed,
+                                ),
+                              ),
+                              // × ボタン
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                iconSize: 20.0,
+                                color: AppColors.warningRed,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  _showDeleteConfirmDialog(context, record.id);
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -160,5 +180,51 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.year}/${dateTime.month}/${dateTime.day} ${_formatTime(dateTime)}';
+  }
+
+  // ✅ Phase 5 Step 3: 削除確認ダイアログ
+  void _showDeleteConfirmDialog(BuildContext context, String recordId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('削除確認'),
+        content: const Text('この睡眠記録を削除してもいいですか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () async {
+              // ✅ Phase 5 Step 4: 削除実行 + UI リフレッシュ
+              try {
+                await _sleepRepository.deleteSleepRecord(recordId);
+                // 削除後、リストを再読み込み
+                setState(() {
+                  _recordsFuture = _sleepRepository.getSleepRecordsByUserId(widget.userId);
+                });
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('睡眠記録を削除しました')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('削除に失敗しました: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text(
+              '削除',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
