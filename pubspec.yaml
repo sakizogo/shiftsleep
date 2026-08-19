@@ -24,6 +24,7 @@ dependencies:
 
   # ========== Week 7 Phase 3 追加: 課金機能 ==========
   purchases_flutter: ^9.0.0      # ← RevenueCat 公式 Flutter SDK
+  shared_preferences: ^2.5.5
   # ================================================
 
 dev_dependencies:

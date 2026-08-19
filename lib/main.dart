@@ -1,21 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'screens/home_screen.dart';
 
-// ========== Week 7 Phase 3: RevenueCat API キー（テスト環境） ==========
-// 本番環境では environment variable から読み込むことを推奨
 const String REVENUECAT_API_KEY = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
-// ====================================================================
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // ========== Week 7 Phase 3: RevenueCat 初期化 ==========
   try {
     await Purchases.configure(
       PurchasesConfiguration(
@@ -26,7 +22,6 @@ void main() async {
   } catch (e) {
     print('[main] ❌ RevenueCat initialization failed: $e');
   }
-  // ====================================================
   
   try {
     await AlarmService.initialize();
@@ -38,6 +33,7 @@ void main() async {
   runApp(const MyApp());
 }
 
+// ========== Week 8 Phase 4 修正: MultiProvider を MyApp の外側に配置 ==========
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
 
@@ -64,9 +60,51 @@ class MyApp extends StatelessWidget {
           primarySwatch: Colors.blue,
           useMaterial3: true,
         ),
-        home: const HomeScreen(),
+        home: const _HomeScreenWrapper(),  // ← ホーム画面をラッパーに
         debugShowCheckedModeBanner: false,
       ),
     );
   }
 }
+
+// ========== Week 8 Phase 4 追加: ホーム画面ラッパー（ここで初期化を実行） ==========
+class _HomeScreenWrapper extends StatefulWidget {
+  const _HomeScreenWrapper({Key? key}) : super(key: key);
+
+  @override
+  State<_HomeScreenWrapper> createState() => _HomeScreenWrapperState();
+}
+
+class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // ========== Week 8 Phase 4 追加: アプリ起動時に睡眠状態を復元 ==========
+    _initializeSleep();
+  }
+
+  /// 睡眠状態を復元
+  Future<void> _initializeSleep() async {
+    print('[_HomeScreenWrapperState] 🛏️  睡眠状態の初期化を開始...');
+    
+    // ここで MultiProvider が存在するので、SleepProvider にアクセス可能
+    await Future.delayed(Duration(milliseconds: 500), () async {
+      try {
+        final sleepProvider = 
+          Provider.of<SleepProvider>(context, listen: false);
+        await sleepProvider.initializeSleepState();
+        print('[_HomeScreenWrapperState] ✅ 睡眠状態の初期化完了');
+      } catch (e) {
+        print('[_HomeScreenWrapperState] ❌ 睡眠状態の初期化エラー: $e');
+      }
+    });
+  }
+  // ======================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    return const HomeScreen();
+  }
+}
+// ====================================================================================

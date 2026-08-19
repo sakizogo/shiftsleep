@@ -5,6 +5,7 @@ import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:shiftsleep/services/sleep_preference_service.dart';  // ========== Week 8 Phase 4 追加 ==========
 
 /// 睡眠データの状態を一元管理する Provider
 /// 
@@ -52,9 +53,24 @@ class SleepProvider extends ChangeNotifier {
   String? _currentSleepRecordIdNow;      // 睡眠中のレコード ID
   // ========================================================================
 
+  // ========== Week 8 Phase 4 追加: 睡眠状態の永続化用 ==========
+  DateTime? _sleepStartTime;            // 睡眠開始時刻
+  int? _currentShiftId;                 // 関連するシフトID
+  // ============================================================
+
   // ========================
   // Getter
   // ========================
+
+  // ========== Week 7 A 追加: アドバイス Getter ==========
+  List<SleepAdvice> get displayedAdvice => _displayedAdvice;
+  // ... 他の Getter ...
+  // ================================================
+
+  // ========== Week 8 Phase 4 追加: 睡眠状態復元用の Getter ==========
+  DateTime? get sleepStartTime => _sleepStartTime;
+  int? get currentShiftId => _currentShiftId;
+  // ================================================================
 
   SleepRecord? get latestRecord => _latestRecord;
   List<SleepRecord> get last7DaysRecords => _last7DaysRecords;
@@ -73,8 +89,7 @@ class SleepProvider extends ChangeNotifier {
   // ================================================================
 
   // ========== Week 7 A 追加: アドバイス Getter ==========
-  List<SleepAdvice> get displayedAdvice => _displayedAdvice;
-  List<SleepAdvice> get allAdvice => _allAdvice;
+    List<SleepAdvice> get allAdvice => _allAdvice;
   bool get isPremiumUser => _isPremiumUser;
   bool get advicePromoVisible => _advicePromoVisible;
   
@@ -412,7 +427,8 @@ class SleepProvider extends ChangeNotifier {
   }
 
   /// 新規睡眠記録を挿入
-  Future<void> insertSleepRecord(SleepRecord record) async {
+  /// shiftId: 関連するシフトID（オプション）
+  Future<void> insertSleepRecord(SleepRecord record, {int? shiftId}) async {
     try {
       _isLoading = true;
       _errorMessage = null;
@@ -425,6 +441,17 @@ class SleepProvider extends ChangeNotifier {
       _currentSleepRecordIdNow = record.id;
       print('[SleepProvider] ✅ 睡眠中フラグをセット: $_isSleepingNow');
       // ================================================================
+
+      // ========== Week 8 Phase 4 追加: 睡眠開始時刻を SharedPreferences に保存 ==========
+      _sleepStartTime = record.sleepStartTime;  // ✅ record.sleepStartTime を使用
+      _currentShiftId = shiftId;  // ✅ 呼び出し元から受け取ったシフトIDを使用
+      
+      await SleepPreferenceService.saveSleepStartTime(
+        _sleepStartTime!,
+        shiftId: _currentShiftId,
+      );
+      print('[SleepProvider] 💾 睡眠開始時刻をSharedPreferencesに保存しました');
+      // =============================================================================
 
       // 更新後、データを再ロード
       await loadAllSleepData();
@@ -443,14 +470,93 @@ class SleepProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// ========== Week 7 Phase 3 追加: 睡眠終了時に睡眠中フラグをクリア ==========
-  void endSleepingNow() {
+  /// ========== Week 8 Phase 4 追加: アプリ起動時に睡眠状態を復元 ==========
+  /// 
+  /// main.dart の initState() から呼び出される
+  /// 処理:
+  /// 1. SharedPreferences から睡眠開始時刻を取得
+  /// 2. あれば _isSleepingNow = true をセット
+  /// 3. ホーム画面に「現在睡眠中」を表示
+  Future<void> initializeSleepState() async {
+    try {
+      print('[SleepProvider] 🛏️  睡眠状態を復元中...');
+      
+      final savedStartTime = await SleepPreferenceService.getSleepStartTime();
+      if (savedStartTime != null) {
+        _sleepStartTime = savedStartTime;
+        _isSleepingNow = true;
+        _currentShiftId = await SleepPreferenceService.getShiftId();
+        
+        final elapsed = DateTime.now().difference(_sleepStartTime!);
+        print('[SleepProvider] ✅ 睡眠状態を復元しました');
+        print('  - 睡眠開始時刻: $_sleepStartTime');
+        print('  - 経過時間: ${elapsed.inHours}h ${elapsed.inMinutes % 60}m');
+        print('  - 関連シフトID: $_currentShiftId');
+      } else {
+        print('[SleepProvider] ℹ️  保存された睡眠状態なし');
+        _isSleepingNow = false;
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      print('[SleepProvider] ❌ 睡眠状態復元エラー: $e');
+      _isSleepingNow = false;
+      notifyListeners();
+    }
+  }
+  // ===================================================================
+
+  /// ========== Week 8 Phase 4 修正: 睡眠終了時に0h 0m チェックを追加 ==========
+  /// 
+  /// 処理:
+  /// 1. 睡眠時間が1分未満なら記録をスキップ
+  /// 2. SharedPreferences をクリア
+  /// 3. 睡眠中フラグをクリア
+  Future<void> endSleepingNow() async {
+    if (_sleepStartTime == null) {
+      print('[SleepProvider] ⚠️  睡眠開始時刻がありません');
+      return;
+    }
+
+    final duration = DateTime.now().difference(_sleepStartTime!);
+    final durationInMinutes = duration.inMinutes;
+
+    // ❌ 1分未満の睡眠は記録をスキップ
+    if (durationInMinutes < 1) {
+      print('[SleepProvider] ⚠️  睡眠時間が1分未満のため、記録をスキップ');
+      print('  - 睡眠開始: $_sleepStartTime');
+      print('  - 起床時刻: ${DateTime.now()}');
+      print('  - 経過時間: ${duration.inSeconds}秒');
+
+      // ✅ SharedPreferences をクリア
+      await SleepPreferenceService.clearSleepState();
+      print('[SleepProvider] 💾 SharedPreferences をクリアしました');
+
+      _sleepStartTime = null;
+      _currentShiftId = null;
+      _isSleepingNow = false;
+      _currentSleepRecordIdNow = null;
+      
+      notifyListeners();
+      return;
+    }
+
+    // ✅ 通常の睡眠終了処理
+    print('[SleepProvider] ✅ 睡眠終了フラグをクリア');
+    print('  - 睡眠時間: ${durationInMinutes}分');
+
+    // ✅ SharedPreferences をクリア
+    await SleepPreferenceService.clearSleepState();
+    print('[SleepProvider] 💾 SharedPreferences をクリアしました');
+
+    _sleepStartTime = null;
+    _currentShiftId = null;
     _isSleepingNow = false;
     _currentSleepRecordIdNow = null;
-    print('[SleepProvider] ✅ 睡眠終了フラグをクリア');
+    
     notifyListeners();
   }
-  // ========================================================================
+  // ===================================================================
 
   /// ========== Week 7 Phase 3 修正: RevenueCat から有料版ステータスを確認して DB に反映 ==========
   /// 
