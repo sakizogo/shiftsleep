@@ -655,20 +655,23 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       return;
     }
 
-    // ========== Fix：DB から全パターンをロードして colorIndex を割り当て ==========
+    // ========== Week 8 Phase 6 修正: colorIndex=0 を避ける ==========
     final dbPatterns = await _shiftRepository.getAllPatterns();
-  
-    // DB に保存されているパターンから、最大の colorIndex を探す
+
     int maxColorIndex = -1;
     for (final pattern in dbPatterns) {
       if (pattern.colorIndex > maxColorIndex) {
         maxColorIndex = pattern.colorIndex;
       }
     }
-  
-    // 次の colorIndex を計算（0～5 をループ）
+
+    // 次の colorIndex を計算（1～5 をループ）
+    // colorIndex=0 は削除対象なので避ける
     int nextColorIndex = (maxColorIndex + 1) % 6;
-    // ===========================================================================
+    if (nextColorIndex == 0) {
+      nextColorIndex = 1;  // 0 は避けて 1 にする
+    }
+    // ================================================================
 
     final newPattern = ShiftPatternModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -676,10 +679,9 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       patternType: ShiftType.work,
       startTime: _startTime,
       endTime: _endTime,
-      colorIndex: nextColorIndex,  // ← DB ベースの colorIndex
+      colorIndex: nextColorIndex,
     );
 
-    // DB に保存
     await _shiftRepository.createPattern(newPattern);
 
     setState(() {
