@@ -27,4 +27,23 @@ class AppColors {
 
   // Accent
   static const Color starYellow = Color(0xFFFDB022);
+
+    // ========== Week 9-1 追加: 睡眠集計セクション用カラー（Wong 2011 対応）==========
+  // テキスト + 色の組み合わせで色盲対応
+  
+  /// 当日の睡眠集計用：青系（Wong 2011: Blue）
+  static const Color summaryTodayBg = Color(0xFFE3F2FD);    // 薄い青（背景）
+  static const Color summaryTodayBorder = Color(0xFF0072B2); // 濃い青（枠線）
+  static const Color summaryTodayText = Color(0xFF01579B);   // テキスト
+  
+  /// 今週の睡眠集計用：緑系（Wong 2011: Blueish-green）
+  static const Color summaryWeekBg = Color(0xFFE8F5E9);     // 薄い緑（背景）
+  static const Color summaryWeekBorder = Color(0xFF009E73);  // 濃い緑（枠線）
+  static const Color summaryWeekText = Color(0xFF00695C);    // テキスト
+  
+  /// 今月の睡眠集計用：紫系（既存 primary に調和）
+  static const Color summaryMonthBg = Color(0xFFF3E5F5);    // 薄い紫（背景）
+  static const Color summaryMonthBorder = Color(0xFF6A1B9A); // 濃い紫（枠線）
+  static const Color summaryMonthText = Color(0xFF4A148C);   // テキスト
+  // =============================================================================
 }

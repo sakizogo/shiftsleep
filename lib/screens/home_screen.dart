@@ -1165,6 +1165,196 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
 // ====================================================================
               // ========================
+              // Week 9-1 追加: 睡眠集計セクション（当日/今週/今月）==========
+              // Wong 2011 パレット対応（色盲アクセシビリティ）
+              Container(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppDimensions.sectionPaddingVertical,
+                  horizontal: AppDimensions.sectionPaddingHorizontal,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: AppColors.borderDefault,
+                      width: AppDimensions.borderWidthThin,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.bar_chart,
+                          size: 20,
+                          color: AppColors.primaryGradientStart,
+                        ),
+                        const SizedBox(width: AppDimensions.paddingSmall),
+                        Text(
+                          '睡眠集計',
+                          style: AppTextStyles.sectionTitleStyle,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppDimensions.paddingMedium),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.summaryTodayBg,
+                              border: Border.all(
+                                color: AppColors.summaryTodayBorder,
+                                width: AppDimensions.borderWidthThin,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '当日',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                    color: AppColors.summaryTodayBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 6.0),
+                                Text(
+                                  sleepProvider.todaysSleepDurationFormatted,
+                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                    fontSize: 16,
+                                    color: AppColors.summaryTodayText,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '今日の合計',
+                                  style: AppTextStyles.descriptionStyle.copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.summaryTodayBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppDimensions.gapSmall),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.summaryWeekBg,
+                              border: Border.all(
+                                color: AppColors.summaryWeekBorder,
+                                width: AppDimensions.borderWidthThin,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '今週',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                    color: AppColors.summaryWeekBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 6.0),
+                                Text(
+                                  sleepProvider.thisWeekTotalSleepFormatted,
+                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                    fontSize: 16,
+                                    color: AppColors.summaryWeekText,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '月～日累計',
+                                  style: AppTextStyles.descriptionStyle.copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.summaryWeekBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppDimensions.gapSmall),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.all(
+                              AppDimensions.paddingSmall,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.summaryMonthBg,
+                              border: Border.all(
+                                color: AppColors.summaryMonthBorder,
+                                width: AppDimensions.borderWidthThin,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppDimensions.borderRadiusSmall,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '今月',
+                                  style: AppTextStyles.labelStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11,
+                                    color: AppColors.summaryMonthBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 6.0),
+                                Text(
+                                  sleepProvider.thisMonthAverageSleepFormatted,
+                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                    fontSize: 16,
+                                    color: AppColors.summaryMonthText,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  '平均睡眠時間',
+                                  style: AppTextStyles.descriptionStyle.copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.summaryMonthBorder,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // ========================================================================
+
+              // ========================
               // Sleep Debt Section - Highlighted
               // ========================
               Container(

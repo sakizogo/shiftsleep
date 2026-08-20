@@ -708,4 +708,93 @@ class SleepProvider extends ChangeNotifier {
     notifyListeners();
   }
   // =====================================================================
+  // ========== Week 9-1 追加: 当日/週間/月間の睡眠集計 ==========
+  
+  /// 当日（本日0時以降）の総睡眠時間（時間:分 形式）
+  /// 
+  /// メイン睡眠 + 補助睡眠（昼寝など）の合計
+  String get todaysSleepDurationFormatted {
+    final today = DateTime.now();
+    final todayRecords = _last7DaysRecords
+        .where((record) =>
+          record.sleepDate.year == today.year &&
+          record.sleepDate.month == today.month &&
+          record.sleepDate.day == today.day
+        )
+        .toList();
+    
+    if (todayRecords.isEmpty) return '0h 0m';
+    
+    int totalMinutes = 0;
+    for (final record in todayRecords) {
+      final duration = record.wakeTime.difference(record.bedtime);
+      if (duration.isNegative) {
+        totalMinutes += (duration.inMinutes + 24 * 60);
+      } else {
+        totalMinutes += duration.inMinutes;
+      }
+    }
+    
+    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
+  }
+
+  /// 今週（月曜～日曜）の累計睡眠時間（時間:分 形式）
+  String get thisWeekTotalSleepFormatted {
+    final now = DateTime.now();
+    final weekStart = now.subtract(Duration(days: now.weekday - 1)); // 月曜日
+    final weekEnd = weekStart.add(Duration(days: 6)); // 日曜日
+    
+    final weekRecords = _last7DaysRecords
+        .where((record) {
+          final recordDate = record.sleepDate;
+          return !recordDate.isBefore(weekStart) &&
+                 !recordDate.isAfter(weekEnd);
+        })
+        .toList();
+    
+    if (weekRecords.isEmpty) return '0h 0m';
+    
+    int totalMinutes = 0;
+    for (final record in weekRecords) {
+      final duration = record.wakeTime.difference(record.bedtime);
+      if (duration.isNegative) {
+        totalMinutes += (duration.inMinutes + 24 * 60);
+      } else {
+        totalMinutes += duration.inMinutes;
+      }
+    }
+    
+    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
+  }
+
+  /// 今月の平均睡眠時間（時間:分 形式）
+  String get thisMonthAverageSleepFormatted {
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month, 1);
+    final monthEnd = DateTime(now.year, now.month + 1, 0);
+    
+    final monthRecords = _last30DaysRecords
+        .where((record) {
+          final recordDate = record.sleepDate;
+          return !recordDate.isBefore(monthStart) &&
+                 !recordDate.isAfter(monthEnd);
+        })
+        .toList();
+    
+    if (monthRecords.isEmpty) return '--:--';
+    
+    int totalMinutes = 0;
+    for (final record in monthRecords) {
+      final duration = record.wakeTime.difference(record.bedtime);
+      if (duration.isNegative) {
+        totalMinutes += (duration.inMinutes + 24 * 60);
+      } else {
+        totalMinutes += duration.inMinutes;
+      }
+    }
+    
+    final averageMinutes = totalMinutes ~/ monthRecords.length;
+    return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
+  }
+  // ================================================================
 }
