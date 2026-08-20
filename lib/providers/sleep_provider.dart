@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
@@ -655,6 +656,35 @@ class SleepProvider extends ChangeNotifier {
       print('  - Top advice: ${_displayedAdvice.first.title}');
     }
   }
+
+   // ========== Week 8 Phase 6 追加: 自動起床時刻管理 ==========
+  DateTime? _autoWakeUpTime;           // 計算された起床時刻
+  TimeOfDay? _autoWakeUpTimeOfDay;    // 起床時刻（TimeOfDay 形式）
+
+  DateTime? get autoWakeUpTime => _autoWakeUpTime;
+  TimeOfDay? get autoWakeUpTimeOfDay => _autoWakeUpTimeOfDay;
+
+  /// 起床時刻を設定（自動計算後）
+  void setAutoWakeUpTime(DateTime wakeTime) {
+    _autoWakeUpTime = wakeTime;
+    _autoWakeUpTimeOfDay = TimeOfDay(
+      hour: wakeTime.hour,
+      minute: wakeTime.minute,
+    );
+    notifyListeners();
+    print('✅ [SleepProvider] 自動起床時刻を設定: '
+        '${_autoWakeUpTimeOfDay!.hour}:${_autoWakeUpTimeOfDay!.minute.toString().padLeft(2, '0')}');
+  }
+
+  /// 起床時刻をクリア（起床時に呼び出す）
+  void clearAutoWakeUpTime() {
+    _autoWakeUpTime = null;
+    _autoWakeUpTimeOfDay = null;
+    notifyListeners();
+    print('🗑️ [SleepProvider] 自動起床時刻をクリア');
+  }
+  // ================================================================
+  
   // ================================================================
   // ========== Week 7 Phase 3 追加: テスト用プレミアム状態切り替えメソッド ==========
   void togglePremiumStatusForTest() {
