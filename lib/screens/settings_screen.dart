@@ -287,35 +287,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 8.0),
-                      Row(
-                        children: [
-                          Text(
-                            '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}',
-                            style: AppTextStyles.largeNumberStyle.copyWith(
-                              fontSize: 32,
-                            ),
-                          ),
-                          const Spacer(),
-                          ElevatedButton(
-                            onPressed: () => _selectWakeUpTime(context),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  AppColors.primaryGradientStart,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppDimensions.borderRadiusSmall,
+                                            const SizedBox(height: 8.0),
+                      Consumer<SleepProvider>(
+                        builder: (context, sleepProvider, _) {
+                          final displayWakeUpTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
+                          return Row(
+                            children: [
+                              Text(
+                                '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
+                                style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
+                              ),
+                              const Spacer(),
+                              ElevatedButton(
+                                onPressed: () => _selectWakeUpTime(context),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryGradientStart,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                                  ),
                                 ),
+                                child: Text('変更', style: AppTextStyles.bodyTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
                               ),
-                            ),
-                            child: Text(
-                              '変更',
-                              style: AppTextStyles.bodyTextStyle.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                            ],
+                          );
+                        },
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 

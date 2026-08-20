@@ -7,6 +7,7 @@ import '../constants/dimensions.dart';
 import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
+import 'package:shiftsleep/services/alarm_service.dart';  // ← これを追加
 import 'package:shiftsleep/screens/settings_screen.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
@@ -284,7 +285,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: AppDimensions.paddingLarge),
                     SleepButton(
                       onPressed: () async {
-                        await sleepProvider.loadLatestSleepData();
+                      // ========== Week 8 Phase 6 修正: 当日シフトから起床時刻を自動計算 ==========
+                      await _calculateAndScheduleWakeUpTime(sleepProvider);
+                      // ========================================================================
                       },
                     ),
                   ],
@@ -1310,4 +1313,112 @@ class _HomeScreenState extends State<HomeScreen> {
     DateTime now = DateTime.now();
     return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
   }
+  /// ========== Week 8 Phase 6 追加: 当日シフトから起床時刻を自動計算 ==========
+  /// 
+  /// 処理フロー:
+  /// 1. 当日（今日）のシフトを取得
+  /// 2. シフトの出勤時刻を取得
+  /// 3. AppSettings からアラーム時間を取得
+  /// 4. 起床時刻を計算: 出勤時刻 - アラーム時間
+  /// 5. SleepProvider に設定
+  /// 6. アラームをスケジュール
+  Future<void> _calculateAndScheduleWakeUpTime(SleepProvider sleepProvider) async {
+    try {
+      print('🌙 [HomeScreen] Step 1: 当日シフトを検索中...');
+      
+      // Step 1: 当日のシフトを取得
+      final today = DateTime.now();
+      final shiftsForToday = await _shiftRepository.getShiftsForDateRange(today, today);
+      
+      if (shiftsForToday.isEmpty) {
+        print('⚠️  [HomeScreen] 今日のシフトがありません');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('今日のシフトが設定されていません')),
+        );
+        return;
+      }
+
+      print('✅ [HomeScreen] Step 1完了: シフト${shiftsForToday.length}件を取得');
+
+      // Step 2: シフトパターンから出勤時刻を取得
+      print('🌙 [HomeScreen] Step 2: シフトパターンを検索中...');
+      final shift = shiftsForToday.first;
+      final patternId = shift['pattern_id'] as String;
+      final allPatterns = await _shiftRepository.getAllPatterns();
+      final pattern = allPatterns.firstWhere(
+        (p) => p.id == patternId,
+        orElse: () {
+          throw Exception('Pattern not found: $patternId');
+        },
+      );
+
+      if (pattern.startTime == null) {
+        print('⚠️  [HomeScreen] シフトパターンに出勤時刻がありません');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('出勤時刻が設定されていません')),
+        );
+        return;
+      }
+
+      print('✅ [HomeScreen] Step 2完了: 出勤時刻 ${pattern.startTime!.hour}:${pattern.startTime!.minute.toString().padLeft(2, '0')}');
+
+      // Step 3: AppSettings からアラーム時間を取得
+      print('🌙 [HomeScreen] Step 3: AppSettings を検索中...');
+      final settings = await _shiftRepository.getAppSettings('test_user');
+      final alarmMinutesBefore = settings?.alarmTimeBeforeShift ?? 30;  // デフォルト: 30分前
+
+      print('✅ [HomeScreen] Step 3完了: アラーム時間 = ${alarmMinutesBefore}分前');
+
+      // Step 4: 起床時刻を計算
+      print('🌙 [HomeScreen] Step 4: 起床時刻を計算中...');
+      final shiftStartTime = pattern.startTime!;
+      final shiftStartDateTime = DateTime(
+        today.year,
+        today.month,
+        today.day,
+        shiftStartTime.hour,
+        shiftStartTime.minute,
+      );
+
+      final wakeUpDateTime = shiftStartDateTime.subtract(Duration(minutes: alarmMinutesBefore));
+      print('✅ [HomeScreen] Step 4完了: 起床時刻 = '
+          '${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')}');
+
+      // Step 5: SleepProvider に設定
+      print('🌙 [HomeScreen] Step 5: SleepProvider に起床時刻を設定中...');
+      sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+      print('✅ [HomeScreen] Step 5完了: SleepProvider に設定されました');
+
+      // Step 6: アラームをスケジュール
+      print('🌙 [HomeScreen] Step 6: アラームをスケジュール中...');
+      await AlarmService.scheduleAlarmForShift(
+        shiftDate: today,
+        alarmTime: TimeOfDay(hour: wakeUpDateTime.hour, minute: wakeUpDateTime.minute),
+        preAlarmEnabled: false,  // 「今から寝る」時点では事前アラーム不要
+      );
+      print('✅ [HomeScreen] Step 6完了: アラームをスケジュールしました');
+
+      // 完了メッセージ
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✅ ${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')} に起床アラームをセットしました',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      print('✅✅✅ [HomeScreen] Week 8 Phase 6 完了！');
+    } catch (e) {
+      print('❌ [HomeScreen] エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('エラー: $e')),
+        );
+      }
+    }
+  }
+  // ========================================================================  
 }
