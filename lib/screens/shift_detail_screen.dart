@@ -139,7 +139,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
                      ),
                    ),
                    child: Text(
-                     'シフトを保存',
+                     'シフトを確定',
                      style: AppTextStyles.bodyTextStyle.copyWith(
                        color: Colors.white,
                        fontWeight: FontWeight.w600,
@@ -204,7 +204,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
                     ),
                   ),
                   child: Text(
-                    'シフトを保存',
+                    'シフトを確定',
                     style: AppTextStyles.bodyTextStyle.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
