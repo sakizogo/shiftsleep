@@ -442,10 +442,16 @@ const SizedBox(height: AppDimensions.paddingLarge),
                 ),
                 const SizedBox(height: 8.0),
                 GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     setState(() {
                       widget.shiftDataMap.remove(date);
                     });
+                    
+                    // ========== Week 9-2 追加: アラームをキャンセル ==========
+                    await AlarmService.cancelAlarm(date);
+                    print('🔔 アラームキャンセル: $date');
+                    // =====================================================
+                    
                     Navigator.pop(context);
                   },
                   child: Container(
