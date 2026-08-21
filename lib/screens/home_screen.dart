@@ -17,6 +17,9 @@ import 'package:shiftsleep/screens/shift_detail_screen.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
+import 'package:shiftsleep/widgets/sleep_button.dart';
+import 'package:shiftsleep/widgets/vacation_stats_widget.dart';  // ← これを追加
 
 // Week 3 Day 5: シフト管理画面内の詳細状態管理
 enum ShiftManagementView { calendar, details }
@@ -245,9 +248,16 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             children: [
               // ========================
-              // ========== Week 10: 有給管理セクション ==========
-                            // ================================================
-              // Main Button Section with Gradient
+                      // ========== Week 10: 有給管理セクション ==========
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16.0,
+                                  vertical: 12.0,
+                                ),
+                                child: VacationStatsWidget(userId: 'test_user'),
+                              ),
+                      // ===================================================
+                      // Main Button Section with Gradient
               // ========================
               Container(
                 width: double.infinity,
