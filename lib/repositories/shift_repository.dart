@@ -171,6 +171,17 @@ class ShiftRepository {
     }
   }
 
+  /// 全シフトを削除
+  Future<void> deleteAllShifts() async {
+    try {
+      final db = await _databaseHelper.database;
+      await db.delete('shifts');
+      print('🗑️ 全シフトを削除完了');
+    } catch (e) {
+      print('Error deleting all shifts: $e');
+    }
+  }
+
   /// 期間内のシフトを取得
   Future<List<Map<String, dynamic>>> getShiftsForDateRange(
       DateTime startDate, DateTime endDate) async {

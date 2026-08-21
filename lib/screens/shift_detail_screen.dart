@@ -443,15 +443,17 @@ const SizedBox(height: AppDimensions.paddingLarge),
                 const SizedBox(height: 8.0),
                 GestureDetector(
                   onTap: () async {
+                    print('🔍 削除ボタンタップ開始 - date: $date');
+                    
                     setState(() {
                       widget.shiftDataMap.remove(date);
                     });
                     
-                    // ========== Week 9-2 追加: アラームをキャンセル ==========
+                    print('🔍 AlarmService.cancelAlarm 呼び出し前');
                     await AlarmService.cancelAlarm(date);
                     print('🔔 アラームキャンセル: $date');
-                    // =====================================================
                     
+                    print('🔍 ダイアログを閉じる');
                     Navigator.pop(context);
                   },
                   child: Container(
@@ -517,6 +519,11 @@ const SizedBox(height: AppDimensions.paddingLarge),
       for (final entry in widget.shiftDataMap.entries) {
         patternMap[entry.key] = entry.value.pattern;
       }
+
+      // ========== Week 9-2 修正: 先に全シフトを削除 ==========
+      await _shiftRepository.deleteAllShifts();
+      print('🗑️ 既存シフトをすべて削除');
+      // =====================================================
 
       // DB に保存
       await _shiftRepository.createShifts(patternMap);
