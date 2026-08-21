@@ -245,6 +245,8 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             children: [
               // ========================
+              // ========== Week 10: 有給管理セクション ==========
+                            // ================================================
               // Main Button Section with Gradient
               // ========================
               Container(

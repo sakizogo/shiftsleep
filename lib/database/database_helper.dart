@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 10,  // ← 9 から 10 に変更（Week 7 Phase 3: 課金機能）
+      version: 11,  // ← 10 から 11 に変更（Week 10: 有給管理機能）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -196,6 +196,43 @@ class DatabaseHelper {
           }
         }
         // ====================================================================
+                
+        // ========== Week 10: vacation_settings & vacation_usage テーブル追加 ==========
+        if (oldVersion < 11) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+          try {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS vacation_settings (
+                user_id TEXT PRIMARY KEY,
+                hired_date TEXT NOT NULL,
+                annual_days INTEGER NOT NULL,
+                manual_override INTEGER DEFAULT 0,
+                last_calculation_date TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS vacation_usage (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                usage_date TEXT NOT NULL,
+                days_used REAL NOT NULL,
+                reason TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE INDEX IF NOT EXISTS idx_vacation_usage_user_date
+              ON vacation_usage(user_id, usage_date)
+            ''');
+            print('✅ Database upgrade complete: vacation_settings & vacation_usage tables created');
+          } catch (e) {
+            print('⚠️ Failed to create vacation tables: $e');
+          }
+        }
+        // ========================================================================
       },
     );
   }
@@ -301,6 +338,36 @@ class DatabaseHelper {
       )
     ''');
     // ================================================================
+
+    
+    // ========== Week 10: vacation_settings & vacation_usage テーブル追加 ==========
+    await db.execute('''
+      CREATE TABLE vacation_settings (
+        user_id TEXT PRIMARY KEY,
+        hired_date TEXT NOT NULL,
+        annual_days INTEGER NOT NULL,
+        manual_override INTEGER DEFAULT 0,
+        last_calculation_date TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE vacation_usage (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        usage_date TEXT NOT NULL,
+        days_used REAL NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE INDEX idx_vacation_usage_user_date
+      ON vacation_usage(user_id, usage_date)
+    ''');
+    // ========================================================================
   }
 
   // Close database
