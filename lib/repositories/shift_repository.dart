@@ -46,6 +46,42 @@ class ShiftRepository {
     }
   }
 
+  /// ========== Week 8 Phase 7 追加: pattern_id から ShiftPatternModel を取得 ==========
+  /// パターンID で単一のシフトパターンを取得（settings_screen の起床時刻計算用）
+  Future<ShiftPatternModel?> getPatternById(String patternId) async {
+    try {
+      final db = await _databaseHelper.database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        _tableName,
+        where: 'id = ?',
+        whereArgs: [patternId],
+      );
+
+      if (maps.isEmpty) {
+        print('⚠️ Pattern not found: $patternId');
+        return null;
+      }
+
+      final map = maps.first;
+      return ShiftPatternModel(
+        id: map['id'] as String,
+        patternName: map['pattern_name'] as String,
+        patternType: _stringToShiftType(map['pattern_type'] as String),
+        startTime: map['start_time'] != null
+            ? _parseTimeOfDay(map['start_time'] as String)
+            : null,
+        endTime: map['end_time'] != null
+            ? _parseTimeOfDay(map['end_time'] as String)
+            : null,
+        colorIndex: map['color_index'] as int,
+      );
+    } catch (e) {
+      print('❌ Error getting pattern by ID: $e');
+      return null;
+    }
+  }
+  // ===============================================================================
+
   /// パターンを作成（複数）
   Future<void> createPatterns(List<ShiftPatternModel> patterns) async {
     try {
