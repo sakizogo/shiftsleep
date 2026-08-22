@@ -356,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _alarmTimeBeforeShift = value;
                             });
                             // ========== Week 8 Phase 7 追加: アラームバッファ変更時に起床時刻をリアルタイム更新 ==========
-                            _updateWakeUpTimeInProvider();
+                            // _updateWakeUpTimeInProvider();
                           }
                         },
                       ),
@@ -801,57 +801,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ========== Week 8 Phase 7 追加: アラームバッファ変更時に起床時刻をリアルタイム更新 ==========
   /// アラームバッファ変更時に、SleepProvider の起床時刻を更新
-  Future<void> _updateWakeUpTimeInProvider() async {
-    try {
-      // 次のシフトを取得
-      final shifts = await _shiftRepository.getShifts('test_user');
-      
-      if (shifts.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('シフトが登録されていません'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-        return;
-      }
-
-      // 次のシフト（最初の1件）を取得
-      final nextShift = shifts.first;
-      
-      // シフトの出勤時刻から、アラームバッファを引いて起床時刻を計算
-      final shiftStartTime = nextShift.startTime;
-      final wakeUpDateTime = shiftStartTime.subtract(
-        Duration(minutes: _alarmTimeBeforeShift),
-      );
-      
-      // SleepProvider に反映
-      if (mounted) {
-        final sleepProvider = context.read<SleepProvider>();
-        sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-        
-        final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
-        final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
-        final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
-        final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
-        
-        print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
-      }
-    } catch (e) {
-      print('❌ 起床時刻更新エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('起床時刻計算エラー: $e'),
-            backgroundColor: AppColors.warningRed,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
-  }
+  // Future<void> _updateWakeUpTimeInProvider() async {
+  //   try {
+  //     // 次のシフトを取得
+  //     final shifts = await _shiftRepository.getShiftsForDateRange(
+  //       DateTime.now(),
+  //       DateTime.now().add(const Duration(days: 1)),
+  //     );
+  //     
+  //     if (shifts.isEmpty) {
+  //       if (mounted) {
+  //         ScaffoldMessenger.of(context).showSnackBar(
+  //           const SnackBar(
+  //             content: Text('シフトが登録されていません'),
+  //             backgroundColor: Colors.orange,
+  //             duration: Duration(seconds: 2),
+  //           ),
+  //         );
+  //       }
+  //       return;
+  //     }
+  //
+  //     // 次のシフト（最初の1件）を取得
+  //     final nextShift = shifts.first;
+  //     
+  //     // シフトの出勤時刻から、アラームバッファを引いて起床時刻を計算
+  //     final shiftStartTime = nextShift.startTime;
+  //     // final wakeUpDateTime = shiftStartTime.subtract(
+  //     //   Duration(minutes: _alarmTimeBeforeShift),
+  //     // );
+  //     
+  //     // SleepProvider に反映
+  //     if (mounted) {
+  //       final sleepProvider = context.read<SleepProvider>();
+  //       sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+  //       
+  //       // final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
+  //       // final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
+  //       // final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
+  //       // final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
+  //       
+  //       print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
+  //     }
+  //   } catch (e) {
+  //     print('❌ 起床時刻更新エラー: $e');
+  //     if (mounted)
   // ===============================================================================
 }

@@ -24,8 +24,8 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   bool _showAddForm = false;
   bool _isLoading = true;
 
-  double _totalUsedThisYear = 0.0;
-  double _remainingThisYear = 0.0;
+  double _totalRemainingDays = 0.0;  // 🌟 変更：正確な残日数
+  VacationSummary? _summary;         // 🌟 新規：サマリー情報
   List<VacationUsage> _usageList = [];
 
   @override
@@ -47,8 +47,10 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   // データを読み込む
   Future<void> _loadData() async {
     try {
-      final totalUsed = await _repository.getTotalDaysUsedThisYear(widget.userId);
-      final remaining = await _repository.getRemainingDaysThisYear(widget.userId);
+      // 🌟 変更：calculateRemainingDays() で正確に計算
+      final remaining = await _repository.calculateRemainingDays(widget.userId);
+      final summary = await _repository.getAccrualSummary(widget.userId);
+      
       final now = DateTime.now();
       final usageList = await _repository.getVacationUsageInRange(
         widget.userId,
@@ -57,8 +59,8 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       );
 
       setState(() {
-        _totalUsedThisYear = totalUsed;
-        _remainingThisYear = remaining;
+        _totalRemainingDays = remaining;
+        _summary = summary;
         _usageList = usageList;
         _isLoading = false;
       });
@@ -70,12 +72,12 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     }
   }
 
-  // 使用日をピッカーで選択
+  // 使用日をピッカーで選択（過去日付も選択可能に）
   Future<void> _selectUsageDate() async {
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedUsageDate ?? DateTime.now(),
-      firstDate: DateTime(DateTime.now().year, 1, 1),
+      firstDate: DateTime(DateTime.now().year - 3, 1, 1),  // 🌟 変更：過去3年まで選択可能
       lastDate: DateTime.now(),
     );
 
@@ -193,25 +195,42 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '📊 今年の有給統計',
+                      '📊 有給統計',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 16),
+                    
+                    // 🌟 メインの残日数表示（新ロジック）
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('使用日数',
+                            const Text('累計付与日数',
                                 style: TextStyle(color: Colors.grey)),
                             Text(
-                              '${_totalUsedThisYear.toStringAsFixed(1)}日',
+                              '${_summary?.totalGranted ?? 0}日',
                               style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('累計使用日数',
+                                style: TextStyle(color: Colors.grey)),
+                            Text(
+                              '${_summary?.totalUsed.toStringAsFixed(1) ?? '0'}日',
+                              style: const TextStyle(
+                                fontSize: 16,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.red,
                               ),
@@ -224,7 +243,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                             const Text('残日数',
                                 style: TextStyle(color: Colors.grey)),
                             Text(
-                              '${_remainingThisYear.toStringAsFixed(1)}日',
+                              '${_totalRemainingDays.toStringAsFixed(1)}日',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -240,6 +259,38 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
               ),
             ),
           ),
+
+          // 🌟 失効予定の警告セクション（新規追加）
+          if (_summary != null && _summary!.expiryWarningMessage != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Container(
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning, color: Colors.orange.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _summary!.expiryWarningMessage!,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 16),
 
           // ➕ フォーム（展開可能）
           if (_showAddForm)
@@ -260,6 +311,15 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '💡 過去の有給使用も登録できます（けが・病欠など）',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontStyle: FontStyle.italic,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -295,7 +355,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                         controller: _reasonController,
                         decoration: InputDecoration(
                           labelText: '使用理由（任意）',
-                          hintText: '例: 個人の用事、医者の予約',
+                          hintText: '例: 個人の用事、医者の予約、けが',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
@@ -324,6 +384,8 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                 ),
               ),
             ),
+
+          const SizedBox(height: 16),
 
           // 📝 使用履歴一覧
           Expanded(

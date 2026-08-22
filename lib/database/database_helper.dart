@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 11,  // ← 10 から 11 に変更（Week 10: 有給管理機能）
+      version: 12,  // ← 11 から 12 に変更（Week 12: 有給付与管理機能）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -197,7 +197,7 @@ class DatabaseHelper {
         }
         // ====================================================================
                 
-        // ========== Week 10: vacation_settings & vacation_usage テーブル追加 ==========
+        // ========== Week 11: vacation_settings & vacation_usage テーブル追加 ==========
         if (oldVersion < 11) {
           print('🔧 Database upgrade: v$oldVersion → v$newVersion');
           try {
@@ -230,6 +230,38 @@ class DatabaseHelper {
             print('✅ Database upgrade complete: vacation_settings & vacation_usage tables created');
           } catch (e) {
             print('⚠️ Failed to create vacation tables: $e');
+          }
+        }
+        // ========================================================================
+
+        // ========== Week 12: vacation_accruals テーブル追加 ==========
+        // バージョン 11 → 12 への更新：有給付与履歴管理テーブルを追加
+        if (oldVersion < 12) {
+          print('🔧 Database upgrade: v$oldVersion → v$newVersion');
+          try {
+            // 有給付与履歴テーブル（6ヶ月ごとの付与を記録）
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS vacation_accruals (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                accrual_date TEXT NOT NULL,
+                days_granted INTEGER NOT NULL,
+                expiry_date TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+              )
+            ''');
+            
+            // クエリ高速化用インデックス
+            await db.execute('''
+              CREATE INDEX IF NOT EXISTS idx_vacation_accruals_user_expiry
+              ON vacation_accruals(user_id, expiry_date)
+            ''');
+            
+            print('✅ Database upgrade complete: vacation_accruals table created');
+          } catch (e) {
+            print('⚠️ Failed to create vacation_accruals table: $e');
           }
         }
         // ========================================================================
@@ -340,7 +372,7 @@ class DatabaseHelper {
     // ================================================================
 
     
-    // ========== Week 10: vacation_settings & vacation_usage テーブル追加 ==========
+    // ========== Week 11: vacation_settings & vacation_usage テーブル追加 ==========
     await db.execute('''
       CREATE TABLE vacation_settings (
         user_id TEXT PRIMARY KEY,
@@ -366,6 +398,28 @@ class DatabaseHelper {
     await db.execute('''
       CREATE INDEX idx_vacation_usage_user_date
       ON vacation_usage(user_id, usage_date)
+    ''');
+    // ========================================================================
+
+    // ========== Week 12: vacation_accruals テーブル追加 ==========
+    // 有給付与履歴（6ヶ月ごとの付与を記録）
+    await db.execute('''
+      CREATE TABLE vacation_accruals (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        accrual_date TEXT NOT NULL,
+        days_granted INTEGER NOT NULL,
+        expiry_date TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    
+    // クエリ高速化用インデックス
+    await db.execute('''
+      CREATE INDEX idx_vacation_accruals_user_expiry
+      ON vacation_accruals(user_id, expiry_date)
     ''');
     // ========================================================================
   }

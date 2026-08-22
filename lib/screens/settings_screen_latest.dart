@@ -804,7 +804,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _updateWakeUpTimeInProvider() async {
     try {
       // 次のシフトを取得
-      final shifts = await _shiftRepository.getShifts('test_user');
+      final shifts = await _shiftRepository.getShiftsForDateRange(
+        DateTime.now(),
+        DateTime.now().add(const Duration(days: 1)),  // 明日までのシフト
+      );
       
       if (shifts.isEmpty) {
         if (mounted) {
@@ -821,10 +824,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // 次のシフト（最初の1件）を取得
       final nextShift = shifts.first;
-      
-      // シフトの出勤時刻から、アラームバッファを引いて起床時刻を計算
-      final shiftStartTime = nextShift.startTime;
-      final wakeUpDateTime = shiftStartTime.subtract(
+
+      // shiftStartTime は "HH:mm" 形式の文字列（例："08:00"）
+      final startTimeStr = nextShift['start_time'] as String;
+      final timeParts = startTimeStr.split(':');
+      final startHour = int.parse(timeParts[0]);
+      final startMin = int.parse(timeParts[1]);
+
+      // 明日のシフト開始時刻を DateTime に変換
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      final shiftStartDateTime = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, startHour, startMin);
+
+      // アラームバッファを引いて起床時刻を計算
+      final wakeUpDateTime = shiftStartDateTime.subtract(
         Duration(minutes: _alarmTimeBeforeShift),
       );
       
@@ -833,12 +845,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final sleepProvider = context.read<SleepProvider>();
         sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
         
-        final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
-        final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
-        final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
-        final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
+        // final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
+        // final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
+        // final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
+        // final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
         
-        print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
+        // print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
       }
     } catch (e) {
       print('❌ 起床時刻更新エラー: $e');

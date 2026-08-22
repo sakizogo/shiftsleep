@@ -3,7 +3,7 @@ import 'package:uuid/uuid.dart';
 class VacationSettings {
   final String userId;
   final DateTime hiredDate;      // 入社日
-  final int annualDays;          // 今年の付与日数
+  final int annualDays;          // デフォルト付与日数（使用していない、後方互換性のため）
   final bool manualOverride;     // 手入力フラグ
   final DateTime? lastCalculationDate;  // 最後に自動計算した日
   final DateTime createdAt;
@@ -59,6 +59,94 @@ class VacationSettings {
   }
 }
 
+class VacationAccrual {
+  final String id;
+  final String userId;
+  final DateTime accrualDate;    // 付与日（例：2024-10-01）
+  final int daysGranted;         // 付与日数（例：10）
+  final DateTime expiryDate;     // 失効日（付与から2年後）
+  final String? notes;           // 備考（例：「初回付与」「昇進による追加」）
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  VacationAccrual({
+    required this.id,
+    required this.userId,
+    required this.accrualDate,
+    required this.daysGranted,
+    required this.expiryDate,
+    this.notes,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  /// 新規作成用ファクトリ（失効日は自動計算）
+  factory VacationAccrual.create({
+    required String userId,
+    required DateTime accrualDate,
+    required int daysGranted,
+    String? notes,
+  }) {
+    final now = DateTime.now();
+    // 付与日から2年後が失効日
+    final expiryDate = accrualDate.add(Duration(days: 730));
+    
+    return VacationAccrual(
+      id: const Uuid().v4(),
+      userId: userId,
+      accrualDate: accrualDate,
+      daysGranted: daysGranted,
+      expiryDate: expiryDate,
+      notes: notes,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
+  /// この付与がまだ有効か（失効前）を判定
+  bool get isValid {
+    return DateTime.now().isBefore(expiryDate);
+  }
+
+  /// 失効まであと何日か
+  int get daysUntilExpiry {
+    final diff = expiryDate.difference(DateTime.now()).inDays;
+    return diff > 0 ? diff : 0;
+  }
+
+  /// 失効日を日本語フォーマットで取得（例：「2026年9月30日」）
+  String get expiryDateFormatted {
+    return '${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日';
+  }
+
+  /// JSON 変換
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'accrual_date': accrualDate.toIso8601String(),
+      'days_granted': daysGranted,
+      'expiry_date': expiryDate.toIso8601String(),
+      'notes': notes,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
+
+  factory VacationAccrual.fromMap(Map<String, dynamic> map) {
+    return VacationAccrual(
+      id: map['id'],
+      userId: map['user_id'],
+      accrualDate: DateTime.parse(map['accrual_date']),
+      daysGranted: map['days_granted'],
+      expiryDate: DateTime.parse(map['expiry_date']),
+      notes: map['notes'],
+      createdAt: DateTime.parse(map['created_at']),
+      updatedAt: DateTime.parse(map['updated_at']),
+    );
+  }
+}
+
 class VacationUsage {
   final String id;
   final String userId;
@@ -66,6 +154,7 @@ class VacationUsage {
   final double daysUsed;         // 使用日数（0.5 = 半日）
   final String? reason;          // 使用理由
   final DateTime createdAt;
+  final DateTime updatedAt;
 
   VacationUsage({
     required this.id,
@@ -74,6 +163,7 @@ class VacationUsage {
     required this.daysUsed,
     this.reason,
     required this.createdAt,
+    required this.updatedAt,
   });
 
   /// JSON 変換
@@ -85,6 +175,7 @@ class VacationUsage {
       'days_used': daysUsed,
       'reason': reason,
       'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
     };
   }
 
@@ -96,6 +187,7 @@ class VacationUsage {
       daysUsed: (map['days_used'] as num).toDouble(),
       reason: map['reason'],
       createdAt: DateTime.parse(map['created_at']),
+      updatedAt: DateTime.parse(map['updated_at']),
     );
   }
 
@@ -106,13 +198,15 @@ class VacationUsage {
     required double daysUsed,
     String? reason,
   }) {
+    final now = DateTime.now();
     return VacationUsage(
       id: const Uuid().v4(),
       userId: userId,
       usageDate: usageDate,
       daysUsed: daysUsed,
       reason: reason,
-      createdAt: DateTime.now(),
+      createdAt: now,
+      updatedAt: now,
     );
   }
 }
