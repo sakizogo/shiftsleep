@@ -8,6 +8,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
+import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 
 class ShiftData {
   final DateTime date;
@@ -445,142 +446,26 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   ],
                 );
               },
+                          ),
 
-              // ========== Fix B Week 5 Day 4：selectedBuilder にシフト色分け追加 ==========
-              
-              selectedBuilder: (context, date, focusedDay) {
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3.0),
-                      child: Text(
-                        '${date.day}',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2.0),
-                    Expanded(
-                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4.0),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
-                              child: Text(
-                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: _calendarEvents
-                            .where((e) {
-                              final eventDate = e.eventDate is String 
-                                  ? DateTime.parse(e.eventDate as String)
-                                  : e.eventDate as DateTime;
-                              return isSameDay(eventDate, date);
-                            })
-                            .map((e) => Text(
-                              _getEventEmoji(e.eventType),
-                              style: const TextStyle(fontSize: 11),
-                            ))
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                );
-              },
 
               // ========== Fix B Week 5 Day 4：todayBuilder にシフト色分け追加 ==========
               
-              todayBuilder: (context, date, focusedDay) {
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3.0),
-                      child: Text(
-                        '${date.day}',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2.0),
-                    Expanded(
-                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4.0),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
-                              child: Text(
-                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: _calendarEvents
-                            .where((e) {
-                              final eventDate = e.eventDate is String 
-                                  ? DateTime.parse(e.eventDate as String)
-                                  : e.eventDate as DateTime;
-                              return isSameDay(eventDate, date);
-                            })
-                            .map((e) => Text(
-                              _getEventEmoji(e.eventType),
-                              style: const TextStyle(fontSize: 11),
-                            ))
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                );
-              },
+              
             ),
-            headerStyle: HeaderStyle(
-              formatButtonVisible: false,
-              titleCentered: false,
-              decoration: const BoxDecoration(color: Colors.transparent),
-            ),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekdayStyle: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
-              weekendStyle: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
+            
+            
           ),
+         // ========== Week 11: 有給管理セクション ==========
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16.0,
+            vertical: 12.0,
+          ),
+          child: VacationStatsWidget(userId: 'test_user'),
         ),
+        // ===================================================         
+
         const SizedBox(height: AppDimensions.paddingMedium),
         // ========== Week 6 Fix D: カレンダー下にシフト保存ボタンを配置 ==========
         SizedBox(

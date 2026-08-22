@@ -249,13 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // ========================
                       // ========== Week 10: 有給管理セクション ==========
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0,
-                                  vertical: 12.0,
-                                ),
-                                child: VacationStatsWidget(userId: 'test_user'),
-                              ),
+                              
                       // ===================================================
                       // Main Button Section with Gradient
               // ========================
