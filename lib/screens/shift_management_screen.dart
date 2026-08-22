@@ -374,17 +374,89 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
               ),
               markerDecoration: BoxDecoration(
-                color: AppColors.starYellow,
+                color: Colors.transparent,
                 shape: BoxShape.circle,
               ),
               outsideTextStyle: const TextStyle(color: Colors.grey),
-              defaultTextStyle: const TextStyle(color: Colors.transparent),
-              selectedTextStyle: const TextStyle(color: Colors.transparent),
-              todayTextStyle: const TextStyle(color: Colors.transparent),
+              defaultTextStyle: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13),
+              selectedTextStyle: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13),
+              todayTextStyle: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13),
             ),
             calendarBuilders: CalendarBuilders(
               // ========== Fix B Week 5 Day 4：defaultBuilder にシフト色分け追加 ==========
-              
+
+              selectedBuilder: (context, date, focusedDay) {
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3.0),
+                      child: Text(
+                        '${date.day}',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2.0),
+                    // ========== Fix Week 11：シフトパターン名表示 ==========
+                    SizedBox(
+                      height: 20,
+                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.0),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
+                              child: Text(
+                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    // ================================================================
+                    
+                    // ========== Fix Week 11：イベント絵文字表示のみ（●マーカー削除） ==========
+                    if (_calendarEvents.any((e) {
+                      final eventDate = e.eventDate is String
+                          ? DateTime.parse(e.eventDate as String)
+                          : e.eventDate as DateTime;
+                      return isSameDay(eventDate, date);
+                    }))
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: _calendarEvents
+                            .where((e) {
+                              final eventDate = e.eventDate is String
+                                  ? DateTime.parse(e.eventDate as String)
+                                  : e.eventDate as DateTime;
+                              return isSameDay(eventDate, date);
+                            })
+                            .map((e) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                              child: Text(
+                                _getEventEmoji(e.eventType),
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                            ))
+                            .toList(),
+                      ),
+                    // ================================================================
+                  ],
+                );
+              },
               defaultBuilder: (context, date, focusedDay) {
                 return Column(
                   mainAxisAlignment: MainAxisAlignment.start,
@@ -402,19 +474,20 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                       ),
                     ),
                     const SizedBox(height: 2.0),
-                    // シフトパターン名表示（背景色付き - Fix B）
-                    Expanded(
+                    // ========== Fix Week 11：シフトパターン名表示 ==========
+                    SizedBox(
+                      height: 20,
                       child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
                           ? Container(
                               decoration: BoxDecoration(
                                 color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(4.0),
                               ),
-                              padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+                              padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
                               child: Text(
                                 _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 9,
                                   fontWeight: FontWeight.w600,
                                   color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
                                 ),
@@ -425,24 +498,33 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                             )
                           : const SizedBox.shrink(),
                     ),
-                    // イベント絵文字表示
-                    Expanded(
-                      child: Row(
+                    // ================================================================
+                    // ========== Fix Week 11：イベント絵文字表示のみ（●マーカー削除） ==========
+                    if (_calendarEvents.any((e) {
+                      final eventDate = e.eventDate is String
+                          ? DateTime.parse(e.eventDate as String)
+                          : e.eventDate as DateTime;
+                      return isSameDay(eventDate, date);
+                    }))
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: _calendarEvents
                             .where((e) {
-                              final eventDate = e.eventDate is String 
+                              final eventDate = e.eventDate is String
                                   ? DateTime.parse(e.eventDate as String)
                                   : e.eventDate as DateTime;
                               return isSameDay(eventDate, date);
                             })
-                            .map((e) => Text(
-                              _getEventEmoji(e.eventType),
-                              style: const TextStyle(fontSize: 11),
+                            .map((e) => Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                              child: Text(
+                                _getEventEmoji(e.eventType),
+                                style: const TextStyle(fontSize: 10),
+                              ),
                             ))
                             .toList(),
                       ),
-                    ),
+                    // ================================================================
                   ],
                 );
               },
