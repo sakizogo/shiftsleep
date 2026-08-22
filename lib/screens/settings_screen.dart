@@ -10,6 +10,8 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/screens/vacation_settings_screen.dart';
+import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -477,7 +479,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
 
                       const SizedBox(height: AppDimensions.paddingLarge),
+                      const SizedBox(height: AppDimensions.paddingLarge),
 
+                      Text(
+                        '📋 有給管理',
+                        style: AppTextStyles.sectionTitleStyle,
+                      ),
+                      const SizedBox(height: AppDimensions.paddingMedium),
+
+                      Container(
+                        padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: AppColors.borderDefault),
+                          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+                        ),
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => VacationSettingsScreen(
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryGradientStart,
+                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+                                  ),
+                                ),
+                                child: Text(
+                                  '⚙️ 有給設定（入社日・付与日数）',
+                                  style: AppTextStyles.bodyTextStyle.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppDimensions.paddingMedium),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => VacationUsageScreen(
+                                        userId: widget.userId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryGradientStart,
+                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+                                  ),
+                                ),
+                                child: Text(
+                                  '📝 有給使用記録',
+                                  style: AppTextStyles.bodyTextStyle.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       Text(
                         '💡 改善アドバイス表示設定',
                         style: AppTextStyles.bodyTextStyle.copyWith(
