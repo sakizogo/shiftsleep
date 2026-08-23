@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 12,  // ← 11 から 12 に変更（Week 12: 有給付与管理機能）
+      version: 14,  // ← 12 から 14 に変更（Week 13: 付与日カスタマイズ＆持ち越し有休追跡 + 持ち越し有休数 DB保存）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -264,7 +264,24 @@ class DatabaseHelper {
             print('⚠️ Failed to create vacation_accruals table: $e');
           }
         }
-        // ========================================================================
+
+        // ========== Week 13追加: v14 へのマイグレーション（持ち越し有休数を DB保存） ==========
+        if (oldVersion < 14) {
+          try {
+            print('🔧 Database upgrade: v13 → v14');
+
+            // app_settings テーブルに carried_over_days カラムを追加
+            await db.execute('''
+              ALTER TABLE app_settings ADD COLUMN carried_over_days INTEGER DEFAULT 0
+            ''');
+            print('✅ Added carried_over_days to app_settings');
+
+            print('✅ Database upgrade complete: v14 migration done');
+          } catch (e) {
+            print('⚠️ Failed to upgrade to v14: $e');
+          }
+        }
+        // ===============================================================================
       },
     );
   }
@@ -335,6 +352,7 @@ class DatabaseHelper {
         selected_alarm_sound TEXT DEFAULT 'default',
         advice_promo_visible INTEGER DEFAULT 1,
         is_premium_user INTEGER DEFAULT 0,
+        carried_over_days INTEGER DEFAULT 0,  // ========== Week 13追加: 持ち越し有休数 ==========
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

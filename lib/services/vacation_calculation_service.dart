@@ -71,6 +71,68 @@ class VacationCalculationService {
     return 20;
   }
 
+  /// 入社日から指定日時点での付与日数を計算（日本法律ベース・Week 13追加）
+  /// 
+  /// 6ヶ月後から最初の付与があり、その後の勤続年数に応じて増加します
+  /// ユーザーの会社独自ルールに対応するため、手入力で修正可能な設計です
+  /// 
+  /// 付与スケジュール：
+  /// - 入社6ヶ月後（1年目）： 10日
+  /// - 入社1年6ヶ月後（2年目）： 11日
+  /// - 入社2年6ヶ月後（3年目）： 12日
+  /// - 入社3年6ヶ月後（4年目）： 14日
+  /// - 入社4年6ヶ月後（5年目）： 16日
+  /// - 入社5年6ヶ月後（6年目）： 18日
+  /// - 入社6年6ヶ月以上（7年目以降）： 20日（MAX）
+  static int calculateAccrualDaysFromHireDate(DateTime hiredDate, [DateTime? referenceDate]) {
+    final checkDate = referenceDate ?? DateTime.now();
+    
+    // 入社からの月数を計算
+    final monthsElapsed = _calculateMonthsElapsed(hiredDate, checkDate);
+    
+    // 最初の付与は6ヶ月後から
+    if (monthsElapsed < 6) {
+      return 0; // まだ有休なし
+    }
+    
+    // 勤続月数に基づいて付与日数を決定
+    if (monthsElapsed < 18) return 10;    // 6ヶ月～1年5ヶ月：10日
+    if (monthsElapsed < 30) return 11;    // 1年6ヶ月～2年5ヶ月：11日
+    if (monthsElapsed < 42) return 12;    // 2年6ヶ月～3年5ヶ月：12日
+    if (monthsElapsed < 54) return 14;    // 3年6ヶ月～4年5ヶ月：14日
+    if (monthsElapsed < 66) return 16;    // 4年6ヶ月～5年5ヶ月：16日
+    if (monthsElapsed < 78) return 18;    // 5年6ヶ月～6年5ヶ月：18日
+    return 20; // 6年6ヶ月以上：20日（MAX）
+  }
+
+  /// 入社からの月数を計算
+  static int _calculateMonthsElapsed(DateTime hiredDate, DateTime checkDate) {
+    int months = (checkDate.year - hiredDate.year) * 12;
+    months += (checkDate.month - hiredDate.month);
+    return months;
+  }
+
+  /// 付与日を計算（カスタマイズ可能）
+  /// 
+  /// デフォルトは"10/01"（10月1日）ですが、
+  /// 会社によって異なるため、app_settings から取得した値を使用します
+  static DateTime calculateAccrualDateForYear(int year, String accrualDateStr) {
+    // accrualDateStr = "10/01" 形式
+    final parts = accrualDateStr.split('/');
+    final month = int.parse(parts[0]);
+    final day = int.parse(parts[1]);
+    return DateTime(year, month, day);
+  }
+
+  /// 消滅日時を計算（付与日の前年同日 23:59）
+  /// 
+  /// 例）2025年10月1日付与分 → 2026年9月30日 23:59に消滅
+  static DateTime calculateExpirationDate(DateTime accrualDate, {int yearsToExpire = 2}) {
+    // 付与日から指定年数後のその前日 23:59
+    final expiryDate = accrualDate.add(Duration(days: 365 * yearsToExpire - 1));
+    return DateTime(expiryDate.year, expiryDate.month, expiryDate.day, 23, 59, 59);
+  }
+
   /// 付与日数が増える「3年ごと」のマイルストーン日を計算
   /// 
   /// 6年目と12年目の付与日数が増える日を予測

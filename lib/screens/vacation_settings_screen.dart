@@ -18,8 +18,10 @@ class VacationSettingsScreen extends StatefulWidget {
 }
 
 class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
+  late GlobalKey<FormState> _formKey;
   late VacationRepository _repository;
   late TextEditingController _annualDaysController;
+  late TextEditingController _carriedOverDaysController;  // ========== Week 13 追加 ==========
   
   DateTime? _selectedHiredDate;
   VacationSettings? _settings;
@@ -29,14 +31,17 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _formKey = GlobalKey<FormState>();
     _repository = VacationRepository();
     _annualDaysController = TextEditingController();
+    _carriedOverDaysController = TextEditingController();  // ========== Week 13 追加 ==========
     _loadSettings();
   }
 
   @override
   void dispose() {
     _annualDaysController.dispose();
+    _carriedOverDaysController.dispose();  // ========== Week 13 追加 ==========
     super.dispose();
   }
 
@@ -45,12 +50,24 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     final settings = await _repository.getVacationSettings(widget.userId);
     final summary = await _repository.getAccrualSummary(widget.userId);
     
+    // ========== Week 13追加: 持ち越し有休数を読み込む ==========
+    final carriedOverDays = await _repository.getCarriedOverDays(widget.userId);
+    // ===============================================================================
+    
     setState(() {
       _settings = settings;
       _summary = summary;
       if (settings != null) {
         _selectedHiredDate = settings.hiredDate;
         _annualDaysController.text = settings.annualDays.toString();
+        
+        // ========== Week 13追加: 持ち越し有休数を入力欄に反映 ==========
+        if (carriedOverDays != null && carriedOverDays > 0) {
+          _carriedOverDaysController.text = carriedOverDays.toStringAsFixed(0);
+        } else {
+          _carriedOverDaysController.text = '';  // 持ち越しがなければ空
+        }
+        // ===============================================================================
       }
       _isLoading = false;
     });
@@ -178,21 +195,12 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
 
   // 設定を保存
   Future<void> _saveVacationSettings() async {
-    if (_selectedHiredDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 入社日を選択してください')),
-      );
-      return;
-    }
-
-    if (_annualDaysController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 付与日数を入力してください')),
-      );
+    if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
       return;
     }
 
     final annualDays = int.tryParse(_annualDaysController.text);
+
     if (annualDays == null || annualDays < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('⚠️ 付与日数は0以上の整数を入力してください')),
@@ -200,11 +208,25 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
       return;
     }
 
+    // ========== Week 13 追加: 持ち越し有休数を取得 ==========
+    final carriedOverDays = int.tryParse(_carriedOverDaysController.text) ?? 0;
+    if (carriedOverDays < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 持ち越し有休数は0以上の整数を入力してください')),
+      );
+      return;
+    }
+    // ===============================================================================
+
     await _repository.saveVacationSettings(
       widget.userId,
       _selectedHiredDate!,
       annualDays,
     );
+
+    // ========== Week 13 追加: 持ち越し有休数を DB に保存 ==========
+    await _repository.saveCarriedOverDays(widget.userId, carriedOverDays);
+    // ===============================================================================
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -492,6 +514,30 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
                         suffixIcon: const Icon(Icons.today),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    
+                    // ========== Week 13 追加: 持ち越し有休数入力欄 ==========
+                    TextField(
+                      controller: _carriedOverDaysController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: '前年度持ち越し有休数（日）',
+                        hintText: '例: 5',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        suffixIcon: const Icon(Icons.history),
+                      ),
+                    ),
+                    const SizedBox(height: 8.0),
+                    Text(
+                      '※ 前年度から持ち越した有休がある場合は入力してください。\n入力しない場合は持ち越し有休は 0 日として計算されます。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    // ===============================================================================
                   ],
                 ),
               ),

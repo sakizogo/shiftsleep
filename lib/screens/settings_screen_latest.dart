@@ -32,6 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _advicePromoVisible = true;
   bool _isPremiumUser = false;  // ========== Week 7 Phase 3 追加 ==========
   bool _isLoading = false;  // ========== Week 7 Phase 3 追加: 課金処理中フラグ ==========
+  String? _vacationAccrualDate;  // ========== Week 13 追加: 有給付与日 ==========
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
@@ -61,6 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
           _isPremiumUser = settings.isPremiumUser;  // ========== Week 7 Phase 3 追加 ==========
+          // _vacationAccrualDate = settings.vacationAccrualDate ?? '10/01';  // ========== Week 13 追加（モデル対応後） ==========
         });
       }
     } catch (e) {
@@ -449,34 +451,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
+                      const SizedBox(height: AppDimensions.paddingLarge),
 
-                const SizedBox(height: AppDimensions.paddingLarge),
-
-                // ========================
-                // テスト & 改善アドバイス設定セクション
-                // ========================
-                Text(
-                  '🔊 テスト',
-                  style: AppTextStyles.sectionTitleStyle,
-                ),
-                const SizedBox(height: AppDimensions.paddingMedium),
-
-                Container(
-                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.borderDefault),
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // テストアラームボタン（テキスト修正）
+                      // ========== Week 13 UI改善: テストボタンをアラームカードに統合 ==========
+                      // テストアラームボタン
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -493,10 +471,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
+                      // ===============================================================================
+                    ],
+                  ),
+                ),
 
+                const SizedBox(height: AppDimensions.paddingLarge),
+                const SizedBox(height: AppDimensions.paddingLarge),
+
+                // ========================
+                // 有給管理セクション
+                // ========================
+                Text(
+                  '💼 有給管理',
+                  style: AppTextStyles.sectionTitleStyle,
+                ),
+                const SizedBox(height: AppDimensions.paddingMedium),
+
+                Container(
+                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: AppColors.borderDefault),
+                    borderRadius: BorderRadius.circular(
+                      AppDimensions.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ========== Week 13 追加: 付与日設定 ==========
+                      Text(
+                        '付与日の設定',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4.0),
+                      Text(
+                        '有給休暇が付与される日付を設定します（月/日）',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      TextFormField(
+                        initialValue: _vacationAccrualDate ?? '10/01',
+                        decoration: InputDecoration(
+                          hintText: '月/日 例: 10/01',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _vacationAccrualDate = value;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return '月/日を入力してください';
+                          final parts = value.split('/');
+                          if (parts.length != 2) return '月/日の形式で入力してください';
+                          final month = int.tryParse(parts[0]);
+                          final day = int.tryParse(parts[1]);
+                          if (month == null || day == null) return '数字を入力してください';
+                          if (month < 1 || month > 12) return '月は1～12で入力してください';
+                          if (day < 1 || day > 31) return '日は1～31で入力してください';
+                          return null;
+                        },
+                      ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 
-                      // 改善アドバイス表示設定（移動）
+                      // ========== Week 13 追加: 改善アドバイス表示設定を統合 ==========
                       Text(
                         '💡 改善アドバイス表示設定',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -543,8 +592,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
-                const SizedBox(height: AppDimensions.paddingLarge),
-                const SizedBox(height: AppDimensions.paddingLarge),
+              
 
                 // ========================
                 // 保存ボタン

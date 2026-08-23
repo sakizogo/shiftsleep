@@ -365,6 +365,152 @@ class VacationRepository {
           : null,
     );
   }
+
+  // ========== Week 13 追加: 持ち越し有休関連のヘルパーメソッド ==========
+  /// 昨年度の持ち越し有休数を取得
+  /// 
+  /// 2024年度分の有休が2025年度に持ち越されている場合の日数を返す
+  /// 持ち越し有休数を app_settings から取得
+  Future<double?> getCarriedOverDays(String userId) async {
+    try {
+      final db = await _dbHelper.database;
+      
+      // ========== Week 13修正: app_settings から直接取得（vacation_accruals ではない） ==========
+      final results = await db.query(
+        'app_settings',  // ← 正しいテーブル
+        columns: ['carried_over_days'],
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      
+      if (results.isEmpty) {
+        print('⚠️ getCarriedOverDays: app_settings レコードなし (userId=$userId)');
+        return 0.0;
+      }
+      
+      final carriedOverDays = results.first['carried_over_days'] as int? ?? 0;
+      print('✅ getCarriedOverDays: $carriedOverDays日 取得成功 (userId=$userId)');
+      return carriedOverDays.toDouble();
+      // ===============================================================================
+    } catch (e) {
+      print('❌ Error getting carried over days: $e');
+      return null;
+    }
+  }
+
+  /// 今年度に消滅予定の日数を計算
+  /// 
+  /// 昨年度から持ち越された有休で、今年度中に失効する分の日数
+  Future<double?> getDaysExpiringThisYear(String userId) async {
+    try {
+      final db = await _dbHelper.database;
+      final currentYear = DateTime.now().year;
+      
+      // 昨年度から持ち越された、失効日が今年度のデータを取得
+      final results = await db.query(
+        'vacation_accruals',
+        where: 'user_id = ? AND is_carried_over = 1 AND strftime("%Y", expiry_date) = ?',
+        whereArgs: [userId, currentYear.toString()],
+      );
+      
+      if (results.isEmpty) return 0.0;
+      
+      // 失効予定の日数を計算
+      double totalExpiring = 0.0;
+      for (final record in results) {
+        totalExpiring += (record['days_granted'] as int).toDouble();
+      }
+      
+      return totalExpiring;
+    } catch (e) {
+      print('❌ Error getting days expiring this year: $e');
+      return null;
+    }
+  }
+
+  /// 今年度の消滅予定日を取得
+  /// 
+  /// 最も早い失効日を返す
+  Future<DateTime?> getExpirationDate(String userId) async {
+    try {
+      final db = await _dbHelper.database;
+      final currentYear = DateTime.now().year;
+      
+      // 昨年度から持ち越された、失効日が今年度の最も早い失効日を取得
+      final results = await db.query(
+        'vacation_accruals',
+        where: 'user_id = ? AND is_carried_over = 1 AND strftime("%Y", expiry_date) = ?',
+        whereArgs: [userId, currentYear.toString()],
+        orderBy: 'expiry_date ASC',
+        limit: 1,
+      );
+      
+      if (results.isEmpty) return null;
+      
+      final expiryDateStr = results.first['expiry_date'] as String?;
+      if (expiryDateStr == null) return null;
+      
+      return DateTime.parse(expiryDateStr);
+    } catch (e) {
+      print('❌ Error getting expiration date: $e');
+      return null;
+    }
+  }
+    // ========== Week 13追加: 持ち越し有休数を保存 ==========
+  /// 持ち越し有休数を app_settings に保存
+  // ========== Week 13追加: 持ち越し有休数を保存 ==========
+  /// 持ち越し有休数を app_settings に保存
+  /// 重要：app_settings にレコードがない場合は INSERT、ある場合は UPDATE を行う
+  // ========== Week 13追加: 持ち越し有休数を保存 ==========
+  /// 持ち越し有休数を app_settings に保存
+  /// 重要：app_settings にレコードがない場合は INSERT、ある場合は UPDATE を行う
+  Future<void> saveCarriedOverDays(String userId, int carriedOverDays) async {
+    try {
+      final db = await _dbHelper.database;
+      
+      // app_settings のレコード存在確認
+      final results = await db.query(
+        'app_settings',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      
+      if (results.isEmpty) {
+        // ========== レコードがない場合は INSERT（デフォルト値を含める） ==========
+        await db.insert(
+          'app_settings',
+          {
+            'user_id': userId,
+            'alarm_time_before_shift': 30,  // デフォルト値
+            'wake_up_time': '07:00',  // デフォルト値
+            'selected_alarm_sound': 'default',  // デフォルト値
+            'advice_promo_visible': 1,  // デフォルト値
+            'is_premium_user': 0,  // デフォルト値
+            'carried_over_days': carriedOverDays,  // ← Week 13 追加
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        print('✅ app_settings を新規作成（持ち越し有休: $carriedOverDays日）');
+      } else {
+        // ========== レコードがある場合は UPDATE ==========
+        await db.update(
+          'app_settings',
+          {
+            'carried_over_days': carriedOverDays,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'user_id = ?',
+          whereArgs: [userId],
+        );
+        print('✅ 持ち越し有休数を更新: $carriedOverDays日');
+      }
+    } catch (e) {
+      print('❌ Error saving carried over days: $e');
+    }
+  }
+  // ===============================================================================
 }
 
 /// 付与サマリー（UI表示用）
