@@ -324,6 +324,26 @@ class DatabaseHelper {
         updated_at TEXT NOT NULL
       )
     ''');
+
+    // ========== Week 14 追加：デフォルトシフトパターンを挿入 ==========
+    // 初回生成時に「休日」「有休」「半休」をデフォルトパターンとして追加
+    try {
+      final now = DateTime.now().toIso8601String();
+      
+      await db.execute('''
+        INSERT INTO shift_patterns 
+          (id, user_id, pattern_name, pattern_type, start_time, end_time, color_index, created_at, updated_at)
+        VALUES
+          ('default_off_day', 'default_user', '休日', 'off_day', NULL, NULL, 2, '$now', '$now'),
+          ('default_vacation_1day', 'default_user', '有休', 'vacation', NULL, NULL, 3, '$now', '$now'),
+          ('default_vacation_half', 'default_user', '半休', 'half_vacation', NULL, NULL, 4, '$now', '$now')
+      ''');
+      print('✅ Default shift patterns inserted (off_day, vacation, half_vacation)');
+    } catch (e) {
+      print('⚠️ Default patterns might already exist: $e');
+    }
+    // ========================================================================
+
     // ================================================
     // shifts テーブル - Week 3 Day 6-2 版（pattern_id を使用）
     await db.execute('''
@@ -352,7 +372,7 @@ class DatabaseHelper {
         selected_alarm_sound TEXT DEFAULT 'default',
         advice_promo_visible INTEGER DEFAULT 1,
         is_premium_user INTEGER DEFAULT 0,
-        carried_over_days INTEGER DEFAULT 0,  // ========== Week 13追加: 持ち越し有休数 ==========
+        carried_over_days INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -440,6 +460,8 @@ class DatabaseHelper {
       ON vacation_accruals(user_id, expiry_date)
     ''');
     // ========================================================================
+
+
   }
 
   // Close database

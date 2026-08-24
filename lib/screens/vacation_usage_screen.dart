@@ -18,14 +18,14 @@ class VacationUsageScreen extends StatefulWidget {
 class _VacationUsageScreenState extends State<VacationUsageScreen> {
   late VacationRepository _repository;
   late TextEditingController _reasonController;
-  late TextEditingController _daysUsedController;
 
   DateTime? _selectedUsageDate;
+  double? _selectedDaysUsed;  // ========== Week 14 追加：選択された使用日数（1.0 or 0.5） ==========
   bool _showAddForm = false;
   bool _isLoading = true;
 
-  double _totalRemainingDays = 0.0;  // 🌟 変更：正確な残日数
-  VacationSummary? _summary;         // 🌟 新規：サマリー情報
+  double _totalRemainingDays = 0.0;
+  VacationSummary? _summary;
   List<VacationUsage> _usageList = [];
 
   @override
@@ -33,21 +33,18 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     super.initState();
     _repository = VacationRepository();
     _reasonController = TextEditingController();
-    _daysUsedController = TextEditingController();
     _loadData();
   }
 
   @override
   void dispose() {
     _reasonController.dispose();
-    _daysUsedController.dispose();
     super.dispose();
   }
 
   // データを読み込む
   Future<void> _loadData() async {
     try {
-      // 🌟 変更：calculateRemainingDays() で正確に計算
       final remaining = await _repository.calculateRemainingDays(widget.userId);
       final summary = await _repository.getAccrualSummary(widget.userId);
       
@@ -72,12 +69,12 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     }
   }
 
-  // 使用日をピッカーで選択（過去日付も選択可能に）
+  // 使用日をピッカーで選択
   Future<void> _selectUsageDate() async {
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedUsageDate ?? DateTime.now(),
-      firstDate: DateTime(DateTime.now().year - 3, 1, 1),  // 🌟 変更：過去3年まで選択可能
+      firstDate: DateTime(DateTime.now().year - 3, 1, 1),
       lastDate: DateTime.now(),
     );
 
@@ -97,17 +94,10 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       return;
     }
 
-    if (_daysUsedController.text.isEmpty) {
+    // ========== Week 14 修正：_selectedDaysUsed をチェック ==========
+    if (_selectedDaysUsed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 使用日数を入力してください')),
-      );
-      return;
-    }
-
-    final daysUsed = double.tryParse(_daysUsedController.text);
-    if (daysUsed == null || daysUsed <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 使用日数は0より大きい数値を入力してください')),
+        const SnackBar(content: Text('⚠️ 使用日数を選択してください')),
       );
       return;
     }
@@ -115,13 +105,13 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     await _repository.recordVacationUsage(
       widget.userId,
       _selectedUsageDate!,
-      daysUsed,
+      _selectedDaysUsed!,  // ボタンで選択した 1.0 or 0.5 を使う
       _reasonController.text.isEmpty ? null : _reasonController.text,
     );
 
     setState(() {
       _reasonController.clear();
-      _daysUsedController.clear();
+      _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
       _selectedUsageDate = null;
       _showAddForm = false;
     });
@@ -203,7 +193,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // 🌟 メインの残日数表示（新ロジック）
+                    // メインの残日数表示
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -260,7 +250,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
             ),
           ),
 
-          // 🌟 失効予定の警告セクション（新規追加）
+          // 失効予定の警告セクション
           if (_summary != null && _summary!.expiryWarningMessage != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -337,19 +327,86 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: _daysUsedController,
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: '使用日数（日）',
-                          hintText: '例: 1 または 0.5（半日）',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                      
+                      // ========== Week 14 追加：ボタングループで使用日数を選択 ==========
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '使用日数を選択',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                          suffixIcon: const Icon(Icons.today),
-                        ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              // 「1日」ボタン
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedDaysUsed = 1.0;
+                                    });
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _selectedDaysUsed == 1.0
+                                        ? Colors.blue
+                                        : Colors.grey[300],
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '🏖️ 1日',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _selectedDaysUsed == 1.0
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 「半休」ボタン
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedDaysUsed = 0.5;
+                                    });
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _selectedDaysUsed == 0.5
+                                        ? Colors.blue
+                                        : Colors.grey[300],
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '🌤️ 半休',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: _selectedDaysUsed == 0.5
+                                          ? Colors.white
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
+                      // ========== Week 14 追加ここまで ==========
+
                       const SizedBox(height: 12),
                       TextField(
                         controller: _reasonController,
@@ -484,6 +541,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                 setState(() {
                   _showAddForm = true;
                   _selectedUsageDate = null;
+                  _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
                 });
               },
               icon: const Icon(Icons.add),
@@ -494,7 +552,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                 setState(() {
                   _showAddForm = false;
                   _reasonController.clear();
-                  _daysUsedController.clear();
+                  _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
                   _selectedUsageDate = null;
                 });
               },

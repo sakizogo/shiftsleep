@@ -270,6 +270,22 @@ class VacationRepository {
 
     print('✅ VacationUsage deleted: usageId=$usageId');
   }
+  
+    /// 指定した日付の有給使用を削除（カレンダーからキャンセルした時など）
+  /// ========== Week 14 追加 ==========
+  Future<void> deleteVacationUsageByDate(String userId, DateTime usageDate) async {
+    final db = await _dbHelper.database;
+    final dateString = usageDate.toIso8601String().split('T')[0];
+
+    await db.delete(
+      'vacation_usage',
+      where: 'user_id = ? AND usage_date = ?',
+      whereArgs: [userId, dateString],
+    );
+
+    print('[VacationRepository] ✅ 有給使用を削除: $userId の${usageDate.month}月${usageDate.day}日分');
+  }
+  // ====================================================================
 
   /// ========== 🌟 メイン計算ロジック ==========
 

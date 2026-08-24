@@ -20,6 +20,12 @@ enum ShiftType {
 
   /// 休日
   dayOff,
+
+  /// 有休
+  vacation,        // ========== Week 14 追加 ==========
+
+  /// 半休
+  halfVacation,    // ========== Week 14 追加 ==========
 }
 
 /// アラームモード
@@ -150,6 +156,10 @@ extension ShiftTypeExtension on ShiftType {
         return '出勤';
       case ShiftType.dayOff:
         return '休日';
+      case ShiftType.vacation:        // ========== Week 14 追加 ==========
+        return '有休';
+      case ShiftType.halfVacation:    // ========== Week 14 追加 ==========
+        return '半休';  
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shiftsleep/database/database_helper.dart';
@@ -12,7 +13,7 @@ const String REVENUECAT_API_KEY = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  try {
+    try {
     await Purchases.configure(
       PurchasesConfiguration(
         REVENUECAT_API_KEY,
@@ -29,6 +30,15 @@ void main() async {
   } catch (e) {
     print('[main] ❌ AlarmService initialization failed: $e');
   }
+
+  // ========== Week 14 追加：日本語ロケール初期化 ==========
+  try {
+    await initializeDateFormatting('ja_JP');
+    print('[main] ✅ DateFormatting initialized for ja_JP');
+  } catch (e) {
+    print('[main] ⚠️ DateFormatting initialization failed: $e');
+  }
+  // ================================================================
   
   runApp(const MyApp());
 }
