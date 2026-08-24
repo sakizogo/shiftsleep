@@ -101,7 +101,7 @@ class VacationRepository {
   Future<void> recordVacationAccrual(
     String userId,
     DateTime accrualDate,
-    int daysGranted, {
+    double daysGranted, {
     String? notes,
   }) async {
     final db = await _dbHelper.database;
@@ -363,7 +363,7 @@ class VacationRepository {
     final accruals = await getVacationAccrualsByUser(userId);
     if (accruals.isEmpty) return null;
 
-    final totalGranted = accruals.fold<int>(
+    final totalGranted = accruals.fold<double>(
       0,
       (sum, accrual) => sum + accrual.daysGranted,
     );
@@ -531,7 +531,7 @@ class VacationRepository {
 
 /// 付与サマリー（UI表示用）
 class VacationSummary {
-  final int totalGranted;        // 累計付与日数
+  final double totalGranted;        // 累計付与日数
   final double totalUsed;        // 累計使用日数
   final double totalRemaining;   // 累計残日数
   final int expiringCount;       // 失効予定数

@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 14,  // ← 12 から 14 に変更（Week 13: 付与日カスタマイズ＆持ち越し有休追跡 + 持ち越し有休数 DB保存）
+      version: 15,  // v15 に更新
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -282,6 +282,21 @@ class DatabaseHelper {
           }
         }
         // ===============================================================================
+        // ========== Week 14: vacation_accruals に is_carried_over カラムを追加 ==========
+        if (oldVersion < 15) {
+          // vacation_accruals テーブルに is_carried_over カラムを追加
+          try {
+            await db.execute('''
+              ALTER TABLE vacation_accruals
+              ADD COLUMN is_carried_over INTEGER DEFAULT 0
+            ''');
+            print('✅ DB v15 Migration: Added is_carried_over column to vacation_accruals');
+          } catch (e) {
+            // カラムが既に存在する場合はエラーを無視
+            print('⚠️ is_carried_over column may already exist: $e');
+          }
+        }
+        // ========================================================================
       },
     );
   }

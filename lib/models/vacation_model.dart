@@ -63,7 +63,7 @@ class VacationAccrual {
   final String id;
   final String userId;
   final DateTime accrualDate;    // 付与日（例：2024-10-01）
-  final int daysGranted;         // 付与日数（例：10）
+  final double daysGranted;      // ✅ Week 14 修正：int → double（0.5日対応）
   final DateTime expiryDate;     // 失効日（付与から2年後）
   final String? notes;           // 備考（例：「初回付与」「昇進による追加」）
   final DateTime createdAt;
@@ -73,7 +73,7 @@ class VacationAccrual {
     required this.id,
     required this.userId,
     required this.accrualDate,
-    required this.daysGranted,
+    required this.daysGranted,   // ✅ 型が double に変わった
     required this.expiryDate,
     this.notes,
     required this.createdAt,
@@ -84,7 +84,7 @@ class VacationAccrual {
   factory VacationAccrual.create({
     required String userId,
     required DateTime accrualDate,
-    required int daysGranted,
+    required double daysGranted,  // ✅ 型が double に変わった
     String? notes,
   }) {
     final now = DateTime.now();
@@ -125,7 +125,7 @@ class VacationAccrual {
       'id': id,
       'user_id': userId,
       'accrual_date': accrualDate.toIso8601String(),
-      'days_granted': daysGranted,
+      'days_granted': daysGranted,  // ✅ double 型のまま保存（DBはREAL型）
       'expiry_date': expiryDate.toIso8601String(),
       'notes': notes,
       'created_at': createdAt.toIso8601String(),
@@ -138,7 +138,7 @@ class VacationAccrual {
       id: map['id'],
       userId: map['user_id'],
       accrualDate: DateTime.parse(map['accrual_date']),
-      daysGranted: map['days_granted'],
+      daysGranted: (map['days_granted'] as num).toDouble(),  // ✅ DB値を double に変換
       expiryDate: DateTime.parse(map['expiry_date']),
       notes: map['notes'],
       createdAt: DateTime.parse(map['created_at']),

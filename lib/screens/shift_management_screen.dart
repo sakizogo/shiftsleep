@@ -911,7 +911,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           final normalized = DateTime(date.year, date.month, date.day);
           ShiftPatternModel? matchingPattern;
           if (patternId != null) {
-            matchingPattern = widget.patterns.firstWhere(
+            matchingPattern = _patterns.firstWhere(
               (p) => p.id == patternId,
               orElse: () => _defaultDayOffPattern,
             );

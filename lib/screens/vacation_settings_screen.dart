@@ -168,7 +168,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
         await _repository.recordVacationAccrual(
           widget.userId,
           item.accrualDate,
-          item.daysGranted,
+          item.daysGranted.toDouble(),
           notes: '自動生成：勤続${item.yearsAtAccrual}年',
         );
       }
