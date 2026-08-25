@@ -108,7 +108,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                       children: [
                         const Text('残日数', style: TextStyle(color: Colors.grey, fontSize: 12)),
                         Text(
-                          '${(_remaining + _carriedOverDays).toStringAsFixed(1)}日',
+                          '${_remaining.toStringAsFixed(1)}日',
                           style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -117,7 +117,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                         ),
                         if (_carriedOverDays > 0)
                           Text(
-                            '(今年: ${_remaining.toStringAsFixed(1)}日 + 持ち越し: ${_carriedOverDays.toStringAsFixed(1)}日)',
+                            '(内訳: 付与20日 + 持ち越し${_carriedOverDays.toStringAsFixed(0)}日 - 使用${_totalUsed.toStringAsFixed(1)}日)',
                             style: TextStyle(fontSize: 10, color: Colors.grey[600]),
                           ),
                       ],
