@@ -37,15 +37,19 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
       
       // Week 13: 持ち越し有休関連を取得
       final carriedOverDays = await _repository.getCarriedOverDays(widget.userId) ?? 0.0;
-      final daysExpiring = await _repository.getDaysExpiringThisYear(widget.userId) ?? 0.0;
-      final expirationDate = await _repository.getExpirationDate(widget.userId);
+      // ========== Week 15 Step 2：以下をコメントアウト ==========
+      // is_carried_over カラムが存在しないため、エラーが出ている
+      // VacationStatsWidget では使用されていないので、呼び出しを削除
+      // final daysExpiring = await _repository.getDaysExpiringThisYear(widget.userId) ?? 0.0;
+      // final expirationDate = await _repository.getExpirationDate(widget.userId);
+      // ========================================================
 
       setState(() {
         _totalUsed = totalUsed;
         _remaining = remaining;
         _carriedOverDays = carriedOverDays;
-        _daysExpiring = daysExpiring;
-        _expirationDate = expirationDate;
+        _daysExpiring = 0.0;  // ← デフォルト値
+        _expirationDate = null;  // ← デフォルト値
         _isLoading = false;
       });
     } catch (e) {
