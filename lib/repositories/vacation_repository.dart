@@ -227,13 +227,41 @@ class VacationRepository {
     return result.map((map) => VacationUsage.fromMap(map)).toList();
   }
 
-  /// 今年の使用日数合計を計算
+  /// ========== 今年の使用日数合計を計算 ==========
+  /// ✅ 【修正版：ステップ1～3のデバッグログ付き】
   Future<double> getTotalDaysUsedThisYear(String userId) async {
+    print('🔍 [DEBUG] getTotalDaysUsedThisYear() 開始');
+    print('🔍 [DEBUG] userId=$userId');
+    
     final db = await _dbHelper.database;
     final now = DateTime.now();
     final startOfYear = DateTime(now.year, 1, 1);
     final endOfYear = DateTime(now.year, 12, 31);
 
+    print('📅 [DEBUG] 検索範囲: ${startOfYear.toIso8601String()} ～ ${endOfYear.toIso8601String()}');
+
+    // ========== ステップ1：全件データを確認 ==========
+    print('🔍 [DEBUG] ステップ1：vacation_usage テーブル全件表示');
+    final allUsage = await db.query('vacation_usage');
+    print('📊 [DEBUG] vacation_usage 全件数: ${allUsage.length}件');
+    for (final row in allUsage) {
+      print('📊 [DEBUG]   - user_id=${row['user_id']}, usage_date=${row['usage_date']}, days_used=${row['days_used']}');
+    }
+
+    // ========== ステップ2：WHERE 条件で抽出 ==========
+    print('🔍 [DEBUG] ステップ2：WHERE 条件で抽出（userId=$userId で絞り込み）');
+    final filteredUsage = await db.query(
+      'vacation_usage',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    print('📊 [DEBUG] user_id=$userId の件数: ${filteredUsage.length}件');
+    for (final row in filteredUsage) {
+      print('📊 [DEBUG]   - usage_date=${row['usage_date']}, days_used=${row['days_used']}');
+    }
+
+    // ========== ステップ3：SUM でデータベース集計 ==========
+    print('🔍 [DEBUG] ステップ3：rawQuery で SUM(days_used) を計算');
     final result = await db.rawQuery(
       'SELECT SUM(days_used) as total FROM vacation_usage WHERE user_id = ? AND usage_date BETWEEN ? AND ?',
       [
@@ -243,20 +271,46 @@ class VacationRepository {
       ],
     );
 
+    print('📊 [DEBUG] rawQuery 結果: $result');
+
     if (result.isEmpty || result.first['total'] == null) {
+      print('⚠️  [DEBUG] 使用日数 = 0.0（レコードなしまたは NULL）');
       return 0.0;
     }
 
-    return (result.first['total'] as num).toDouble();
+    final usedDays = (result.first['total'] as num).toDouble();
+    print('✅ [DEBUG] 使用日数 = $usedDays 日');
+    
+    return usedDays;
   }
 
-  /// 今年の残日数を計算（後方互換性のため）
+  /// ========== 有給残日数を計算（持ち越し対応版）==========
   Future<double> getRemainingDaysThisYear(String userId) async {
+    print('🔍 [DEBUG] getRemainingDaysThisYear() 開始 (userId=$userId)');
+    
+    // ステップ1：今年の付与日数を取得
     final settings = await getVacationSettings(userId);
-    if (settings == null) return 0.0;
+    if (settings == null) {
+      print('⚠️ [DEBUG] VacationSettings not found for userId=$userId');
+      return 0.0;
+    }
+    print('📊 [DEBUG] 今年の付与日数: ${settings.annualDays}日');
 
+    // ステップ2：使用日数を取得
     final usedDays = await getTotalDaysUsedThisYear(userId);
-    return (settings.annualDays - usedDays).toDouble();
+    print('📊 [DEBUG] 使用日数: $usedDays日');
+
+    // ステップ3：持ち越し有休を取得
+    final carriedOverDays = await getCarriedOverDays(userId) ?? 0.0;
+    print('📊 [DEBUG] 持ち越し有休: $carriedOverDays日');
+
+    // ステップ4：残日数を計算（正しい式）
+    // 残日数 = (今年の付与 + 持ち越し) - 使用日数
+    final remaining = (settings.annualDays + carriedOverDays - usedDays).toDouble();
+    print('📊 [DEBUG] 計算式: (${settings.annualDays} + $carriedOverDays) - $usedDays = $remaining');
+    print('✅ getRemainingDaysThisYear() 完了 → remaining=$remaining日');
+    
+    return remaining;
   }
 
   /// 使用履歴を削除
@@ -271,7 +325,7 @@ class VacationRepository {
     print('✅ VacationUsage deleted: usageId=$usageId');
   }
   
-    /// 指定した日付の有給使用を削除（カレンダーからキャンセルした時など）
+  /// 指定した日付の有給使用を削除（カレンダーからキャンセルした時など）
   /// ========== Week 14 追加 ==========
   Future<void> deleteVacationUsageByDate(String userId, DateTime usageDate) async {
     final db = await _dbHelper.database;
@@ -285,7 +339,6 @@ class VacationRepository {
 
     print('[VacationRepository] ✅ 有給使用を削除: $userId の${usageDate.month}月${usageDate.day}日分');
   }
-  // ====================================================================
 
   /// ========== 🌟 メイン計算ロジック ==========
 
@@ -383,6 +436,7 @@ class VacationRepository {
   }
 
   // ========== Week 13 追加: 持ち越し有休関連のヘルパーメソッド ==========
+  
   /// 昨年度の持ち越し有休数を取得
   /// 
   /// 2024年度分の有休が2025年度に持ち越されている場合の日数を返す
@@ -391,9 +445,9 @@ class VacationRepository {
     try {
       final db = await _dbHelper.database;
       
-      // ========== Week 13修正: app_settings から直接取得（vacation_accruals ではない） ==========
+      // app_settings から直接取得
       final results = await db.query(
-        'app_settings',  // ← 正しいテーブル
+        'app_settings',
         columns: ['carried_over_days'],
         where: 'user_id = ?',
         whereArgs: [userId],
@@ -407,7 +461,6 @@ class VacationRepository {
       final carriedOverDays = results.first['carried_over_days'] as int? ?? 0;
       print('✅ getCarriedOverDays: $carriedOverDays日 取得成功 (userId=$userId)');
       return carriedOverDays.toDouble();
-      // ===============================================================================
     } catch (e) {
       print('❌ Error getting carried over days: $e');
       return null;
@@ -472,12 +525,7 @@ class VacationRepository {
       return null;
     }
   }
-    // ========== Week 13追加: 持ち越し有休数を保存 ==========
-  /// 持ち越し有休数を app_settings に保存
-  // ========== Week 13追加: 持ち越し有休数を保存 ==========
-  /// 持ち越し有休数を app_settings に保存
-  /// 重要：app_settings にレコードがない場合は INSERT、ある場合は UPDATE を行う
-  // ========== Week 13追加: 持ち越し有休数を保存 ==========
+
   /// 持ち越し有休数を app_settings に保存
   /// 重要：app_settings にレコードがない場合は INSERT、ある場合は UPDATE を行う
   Future<void> saveCarriedOverDays(String userId, int carriedOverDays) async {
@@ -492,7 +540,7 @@ class VacationRepository {
       );
       
       if (results.isEmpty) {
-        // ========== レコードがない場合は INSERT（デフォルト値を含める） ==========
+        // レコードがない場合は INSERT（デフォルト値を含める）
         await db.insert(
           'app_settings',
           {
@@ -502,7 +550,7 @@ class VacationRepository {
             'selected_alarm_sound': 'default',  // デフォルト値
             'advice_promo_visible': 1,  // デフォルト値
             'is_premium_user': 0,  // デフォルト値
-            'carried_over_days': carriedOverDays,  // ← Week 13 追加
+            'carried_over_days': carriedOverDays,
             'created_at': DateTime.now().toIso8601String(),
             'updated_at': DateTime.now().toIso8601String(),
           },
@@ -510,7 +558,7 @@ class VacationRepository {
         );
         print('✅ app_settings を新規作成（持ち越し有休: $carriedOverDays日）');
       } else {
-        // ========== レコードがある場合は UPDATE ==========
+        // レコードがある場合は UPDATE
         await db.update(
           'app_settings',
           {
@@ -526,7 +574,6 @@ class VacationRepository {
       print('❌ Error saving carried over days: $e');
     }
   }
-  // ===============================================================================
 }
 
 /// 付与サマリー（UI表示用）
