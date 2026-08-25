@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';  // ← これを追加！
 import 'package:table_calendar/table_calendar.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
@@ -374,7 +375,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               // ========== Week 14 追加：有休・半休の場合は vacation_usage にも記録 ==========
               if (_selectedPattern?.patternType == ShiftType.vacation) {
                 await _vacationRepository.recordVacationUsage(
-                  'default_user',  // TODO: 実ユーザーIDに変更
+                  'test_user',  // ← 引用符が正しく閉じている
                   selectedDay,
                   1.0,
                   'カレンダーから登録（有休）',
@@ -382,7 +383,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 print('[ShiftManagementScreen] ✅ 有休を登録: ${selectedDay.month}月${selectedDay.day}日');
               } else if (_selectedPattern?.patternType == ShiftType.halfVacation) {
                 await _vacationRepository.recordVacationUsage(
-                  'default_user',  // TODO: 実ユーザーIDに変更
+                  'test_user',  // TODO: 実ユーザーIDに変更
                   selectedDay,
                   0.5,
                   'カレンダーから登録（半休）',
@@ -834,14 +835,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         // ========== Week 14 追加：有休・半休の場合は vacation_usage にも記録 ==========
         if (_selectedPattern!.patternType == ShiftType.vacation) {
           await _vacationRepository.recordVacationUsage(
-            'default_user',  // TODO: 実ユーザーIDに変更
+            'test_user',  // TODO: 実ユーザーIDに変更
             normalized,
             1.0,
             'カレンダーから登録（有休）',
           );
         } else if (_selectedPattern!.patternType == ShiftType.halfVacation) {
           await _vacationRepository.recordVacationUsage(
-            'default_user',  // TODO: 実ユーザーIDに変更
+            'test_user',  // TODO: 実ユーザーIDに変更
             normalized,
             0.5,
             'カレンダーから登録（半休）',
@@ -886,7 +887,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     if (shiftData?.pattern?.patternType == ShiftType.vacation ||
         shiftData?.pattern?.patternType == ShiftType.halfVacation) {
       await _vacationRepository.deleteVacationUsageByDate(
-        'default_user',  // TODO: 実ユーザーIDに変更
+        'test_user',  // TODO: 実ユーザーIDに変更
         dateKey,
       );
       print('[ShiftManagementScreen] ✅ 有休・半休をキャンセル: ${dateKey.month}月${dateKey.day}日');
