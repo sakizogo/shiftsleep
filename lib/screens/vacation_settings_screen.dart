@@ -22,6 +22,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   late VacationRepository _repository;
   late TextEditingController _annualDaysController;
   late TextEditingController _carriedOverDaysController;  // ========== Week 13 追加 ==========
+  late TextEditingController _firstAccrualDateController;  // ========== Week 16 追加 ==========
   
   DateTime? _selectedHiredDate;
   VacationSettings? _settings;
@@ -35,6 +36,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     _repository = VacationRepository();
     _annualDaysController = TextEditingController();
     _carriedOverDaysController = TextEditingController();  // ========== Week 13 追加 ==========
+    _firstAccrualDateController = TextEditingController();  // ========== Week 16 追加 ==========
     _loadSettings();
   }
 
@@ -42,6 +44,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   void dispose() {
     _annualDaysController.dispose();
     _carriedOverDaysController.dispose();  // ========== Week 13 追加 ==========
+    _firstAccrualDateController.dispose();  // ========== Week 16 追加 ==========
     super.dispose();
   }
 
@@ -52,6 +55,10 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     
     // ========== Week 13追加: 持ち越し有休数を読み込む ==========
     final carriedOverDays = await _repository.getCarriedOverDays(widget.userId);
+    // ===============================================================================
+    
+    // ========== Week 16追加: 初回付与日を読み込む ==========
+    final firstAccrualDate = await _repository.getFirstAccrualDate(widget.userId);
     // ===============================================================================
     
     setState(() {
@@ -66,6 +73,12 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
           _carriedOverDaysController.text = carriedOverDays.toStringAsFixed(0);
         } else {
           _carriedOverDaysController.text = '';  // 持ち越しがなければ空
+        }
+        // ===============================================================================
+        
+        // ========== Week 16追加: 初回付与日を入力欄に反映 ==========
+        if (firstAccrualDate != null) {
+          _firstAccrualDateController.text = DateFormat('yyyy年M月d日').format(firstAccrualDate);
         }
         // ===============================================================================
       }
@@ -90,109 +103,114 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   }
 
   // 🌟 付与スケジュールを自動計算して DB に保存
-  Future<void> _generateAccrualSchedule() async {
-    if (_selectedHiredDate == null) {
+Future<void> _generateAccrualSchedule() async {
+  if (_selectedHiredDate == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('⚠️ 入社日を選択してください')),
+    );
+    return;
+  }
+
+  if (_firstAccrualDateController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('⚠️ 初回付与日を入力してください')),
+    );
+    return;
+  }
+
+  try {
+    // 初回付与日をパース
+    final format = DateFormat('yyyy年M月d日');
+    final firstAccrualDate = format.parse(_firstAccrualDateController.text);
+
+    // 付与スケジュール情報を生成（DB保存なし、確認用）
+    List<String> scheduleList = [];
+    for (int i = 0; i < 5; i++) {
+      final accrualDate = DateTime(
+        firstAccrualDate.year + i,
+        firstAccrualDate.month,
+        firstAccrualDate.day,
+      );
+      
+      final daysGranted = VacationRepository.calculateDaysGranted(
+        _selectedHiredDate!,
+        accrualDate,
+      );
+
+      if (daysGranted > 0) {
+        scheduleList.add('📅 ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日に${daysGranted}日付与');
+      }
+    }
+
+    if (scheduleList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 入社日を選択してください')),
+        const SnackBar(content: Text('⚠️ 付与スケジュールが見つかりません')),
       );
       return;
     }
 
-    try {
-      // 計算サービスで付与スケジュールを自動計算
-      final schedule = VacationCalculationService.calculateAccrualSchedule(
-        _selectedHiredDate!,
-      );
-
-      if (schedule.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('⚠️ 付与スケジュールが見つかりません')),
-        );
-        return;
-      }
-
-      // ダイアログで確認を取る
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('付与スケジュール自動生成'),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '以下の付与スケジュールを生成します：',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                ...schedule.take(5).map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '📅 ${item.description}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                )),
-                if (schedule.length > 5)
-                  Text(
-                    '... 他 ${schedule.length - 5} 件',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-              ],
-            ),
+    // ダイアログで確認を取る
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('付与スケジュール自動生成'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '以下の付与スケジュールを生成します：',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ...scheduleList.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(item, style: const TextStyle(fontSize: 12)),
+              )),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('キャンセル'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('生成', style: TextStyle(color: Colors.blue)),
-            ),
-          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('生成', style: TextStyle(color: Colors.blue)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // autoGenerateAccruals() を呼び出して DB に保存
+    await _repository.autoGenerateAccruals(
+      widget.userId,
+      _selectedHiredDate!,
+      firstAccrualDate,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ 付与スケジュールを自動生成しました'),
+          duration: Duration(seconds: 2),
         ),
       );
-
-      if (confirmed != true) return;
-
-      // 既存の付与スケジュールを削除（重複を避けるため）
-      // ※ 実際にはマイグレーション処理を別途実装してください
-      print('💡 Note: 既存の付与スケジュールは手動削除が必要です');
-
-      // 計算結果を DB に記録
-      for (final item in schedule) {
-        await _repository.recordVacationAccrual(
-          widget.userId,
-          item.accrualDate,
-          item.daysGranted.toDouble(),
-          notes: '自動生成：勤続${item.yearsAtAccrual}年',
-        );
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ ${schedule.length} 件の付与スケジュールを生成しました',
-            ),
-          ),
-        );
-        _loadSettings();
-      }
-    } catch (e) {
-      print('❌ Error generating accrual schedule: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ エラー: $e')),
-        );
-      }
+      _loadSettings();
+    }
+  } catch (e) {
+    print('❌ Error generating accruals: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ エラー: $e')),
+      );
     }
   }
-
+}
   // 設定を保存
   Future<void> _saveVacationSettings() async {
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
@@ -225,7 +243,23 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     );
 
     // ========== Week 13 追加: 持ち越し有休数を DB に保存 ==========
+        // ========== Week 13 追加: 持ち越し有休数を DB に保存 ==========
     await _repository.saveCarriedOverDays(widget.userId, carriedOverDays);
+    // ===============================================================================
+
+    // ========== Week 16 追加: 初回付与日を DB に保存 ==========
+    if (_firstAccrualDateController.text.isNotEmpty) {
+      try {
+        final firstAccrualDateStr = _firstAccrualDateController.text;
+        // 「2026年10月1日」形式から DateTime に変換
+        final format = DateFormat('yyyy年M月d日');
+        final firstAccrualDate = format.parse(firstAccrualDateStr);
+        
+        await _repository.saveFirstAccrualDate(widget.userId, firstAccrualDate);
+      } catch (e) {
+        print('❌ Error parsing first accrual date: $e');
+      }
+    }
     // ===============================================================================
 
     if (mounted) {
@@ -517,7 +551,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
                     const SizedBox(height: 16),
                     
                     // ========== Week 13 追加: 持ち越し有休数入力欄 ==========
-                    TextField(
+                     TextField(
                       controller: _carriedOverDaysController,
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
@@ -532,6 +566,43 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
                     const SizedBox(height: 8.0),
                     Text(
                       '※ 前年度から持ち越した有休がある場合は入力してください。\n入力しない場合は持ち越し有休は 0 日として計算されます。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    // ===============================================================================
+                    
+                    // ========== Week 16 追加: 初回付与日入力欄 ==========
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        
+                        if (pickedDate != null) {
+                          setState(() {
+                            _firstAccrualDateController.text = DateFormat('yyyy年M月d日').format(pickedDate);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_today),
+                      label: Text(
+                        _firstAccrualDateController.text.isEmpty
+                            ? '初回付与日を選択'
+                            : _firstAccrualDateController.text,
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                    ),
+                    const SizedBox(height: 8.0),
+                    Text(
+                      '※ 入社6ヶ月後の初回付与日を選択してください。\n以降は毎年同月同日に1年ごとに付与されます。',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],

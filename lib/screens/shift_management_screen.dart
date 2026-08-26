@@ -962,4 +962,62 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       _selectedDay = now;
     });
   }
+        /// ========== Week 15 Step 3 追加：シフト削除ダイアログ ==========
+        void _showDeleteShiftDialog(DateTime selectedDay, ShiftData shiftData) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('${selectedDay.month}月${selectedDay.day}日'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('登録内容: ${shiftData.pattern?.patternName ?? "不明"}'),
+                    const SizedBox(height: 8),
+                    const Text('このシフトを削除しますか？'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('キャンセル'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+
+                      // シフトを削除
+                      final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);  // ========== Week 16 修正 ==========
+                      setState(() {
+                        _shiftMap.remove(dateKey);  // ========== Week 16 修正：shiftMap → _shiftMap ==========
+                      });
+
+                      // vacation_usage からも削除（有休の場合）
+                      if (shiftData.pattern?.patternType == ShiftType.vacation ||  // ========== Week 16 修正：type → patternType ==========
+                          shiftData.pattern?.patternType == ShiftType.halfVacation) {  // ========== Week 16 修正 ==========
+                        _vacationRepository.deleteVacationUsageByDate(
+                          'test_user',
+                          selectedDay,
+                        );
+                      }
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ シフトを削除しました'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: const Text(
+                      '削除',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        }
+        // ======================================================================
 }

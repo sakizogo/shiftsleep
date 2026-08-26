@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 15,  // v15 に更新
+      version: 16,  // v16 に更新
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -297,6 +297,23 @@ class DatabaseHelper {
           }
         }
         // ========================================================================
+
+        // ========== Week 16: app_settings に first_accrual_date カラムを追加 ==========
+        // バージョン 15 → 16 への更新：初回付与日を app_settings に保存
+        if (oldVersion < 16) {
+          print('🔧 Database upgrade: v15 → v16');
+          try {
+            await db.execute('''
+              ALTER TABLE app_settings
+              ADD COLUMN first_accrual_date TEXT
+            ''');
+            print('✅ DB v16 Migration: Added first_accrual_date column to app_settings');
+          } catch (e) {
+            // カラムが既に存在する場合はエラーを無視
+            print('⚠️ first_accrual_date column may already exist: $e');
+          }
+        }
+        // ========================================================================
       },
     );
   }
@@ -372,7 +389,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // ========== Week 7 Phase 3 修正: app_settings テーブルに is_premium_user カラム追加 ==========
+    // ========== Week 16 修正: app_settings テーブルに first_accrual_date カラム追加 ==========
     // アラーム時間カスタマイズに対応（alarm_time_before_shift カラム追加）
     await db.execute('''
       CREATE TABLE app_settings (
@@ -388,6 +405,7 @@ class DatabaseHelper {
         advice_promo_visible INTEGER DEFAULT 1,
         is_premium_user INTEGER DEFAULT 0,
         carried_over_days INTEGER DEFAULT 0,
+        first_accrual_date TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

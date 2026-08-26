@@ -574,6 +574,372 @@ class VacationRepository {
       print('❌ Error saving carried over days: $e');
     }
   }
+
+  // ========== Week 16 追加: 初回付与日管理 ==========
+  
+  /// 初回付与日を保存（有給設定画面から）
+  /// 
+  /// 例：初回付与日が2026年10月1日の場合
+  /// - 2026年度の付与日：10月1日
+  /// - 2027年度の付与日：10月1日（1年後）
+  /// - 2028年度の付与日：10月1日（2年後）...
+  Future<void> saveFirstAccrualDate(String userId, DateTime firstAccrualDate) async {
+    try {
+      final db = await _dbHelper.database;
+      final now = DateTime.now();
+      
+      // app_settings のレコード存在確認
+      final results = await db.query(
+        'app_settings',
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      
+      if (results.isEmpty) {
+        // レコードがない場合は INSERT（デフォルト値を含める）
+        await db.insert(
+          'app_settings',
+          {
+            'user_id': userId,
+            'alarm_time_before_shift': 30,
+            'wake_up_time': '07:00',
+            'selected_alarm_sound': 'default',
+            'advice_promo_visible': 1,
+            'is_premium_user': 0,
+            'carried_over_days': 0,
+            'first_accrual_date': firstAccrualDate.toIso8601String(),
+            'created_at': now.toIso8601String(),
+            'updated_at': now.toIso8601String(),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+        print('✅ 初回付与日を新規作成: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
+      } else {
+        // レコードがある場合は UPDATE
+        await db.update(
+          'app_settings',
+          {
+            'first_accrual_date': firstAccrualDate.toIso8601String(),
+            'updated_at': now.toIso8601String(),
+          },
+          where: 'user_id = ?',
+          whereArgs: [userId],
+        );
+        print('✅ 初回付与日を更新: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
+      }
+    } catch (e) {
+      print('❌ Error saving first accrual date: $e');
+    }
+  }
+
+  /// 初回付与日を読み込み
+  Future<DateTime?> getFirstAccrualDate(String userId) async {
+    try {
+      final db = await _dbHelper.database;
+      
+      final results = await db.query(
+        'app_settings',
+        columns: ['first_accrual_date'],
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      
+      if (results.isEmpty || results.first['first_accrual_date'] == null) {
+        print('⚠️ getFirstAccrualDate: 初回付与日が未登録 (userId=$userId)');
+        return null;
+      }
+      
+      final dateStr = results.first['first_accrual_date'] as String;
+      final firstAccrualDate = DateTime.parse(dateStr);
+      print('✅ getFirstAccrualDate: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
+      return firstAccrualDate;
+    } catch (e) {
+      print('❌ Error getting first accrual date: $e');
+      return null;
+    }
+  }
+
+  /// ========== Week 16 消滅予定スケジュール ==========
+  
+  /// 【重要】全ての付与分の消滅予定を一覧表示
+  /// 
+  /// 戻り値：
+  /// [
+  ///   {
+  ///     'accrualDate': '2026-10-01',  // 付与日
+  ///     'daysGranted': 10,             // 付与日数
+  ///     'expiryDate': '2027-09-30',   // 消滅日
+  ///     'daysRemaining': 8,            // 残日数（使用後）
+  ///     'isExpired': false,            // 失効済みか
+  ///     'daysUntilExpiry': 35,        // 消滅までの日数
+  ///   },
+  ///   ...
+  /// ]
+  Future<List<Map<String, dynamic>>> getExpirationSchedule(String userId) async {
+    try {
+      final accruals = await getVacationAccrualsByUser(userId);
+      if (accruals.isEmpty) {
+        print('⚠️ getExpirationSchedule: 付与履歴がありません (userId=$userId)');
+        return [];
+      }
+
+      List<Map<String, dynamic>> schedule = [];
+      final now = DateTime.now();
+
+      for (final accrual in accruals) {
+        // この付与期間内の使用日数を計算
+        final usageInPeriod = await _getTotalDaysUsedInRange(
+          userId,
+          accrual.accrualDate,
+          accrual.expiryDate,
+        );
+
+        final isExpired = now.isAfter(accrual.expiryDate);
+        final daysUntilExpiry = accrual.expiryDate.difference(now).inDays;
+        final daysRemaining = accrual.daysGranted - usageInPeriod;
+
+        schedule.add({
+          'accrualDate': accrual.accrualDate.toIso8601String().split('T')[0],
+          'accrualMonth': accrual.accrualDate.month,
+          'accrualDay': accrual.accrualDate.day,
+          'daysGranted': accrual.daysGranted,
+          'expiryDate': accrual.expiryDate.toIso8601String().split('T')[0],
+          'expiryMonth': accrual.expiryDate.month,
+          'expiryDay': accrual.expiryDate.day,
+          'daysRemaining': daysRemaining,
+          'daysUsed': usageInPeriod,
+          'isExpired': isExpired,
+          'daysUntilExpiry': daysUntilExpiry,
+        });
+
+        print('📅 [Expiration Schedule] ${accrual.accrualDate.month}月${accrual.accrualDate.day}日付与: ${accrual.daysGranted}日 → ${accrual.expiryDate.month}月${accrual.expiryDate.day}日失効（残${daysRemaining}日）');
+      }
+
+      // 消滅日順でソート
+      schedule.sort((a, b) {
+        final expiryA = DateTime.parse(a['expiryDate'] as String);
+        final expiryB = DateTime.parse(b['expiryDate'] as String);
+        return expiryA.compareTo(expiryB);
+      });
+
+      print('✅ getExpirationSchedule: ${schedule.length}件の付与スケジュール取得');
+      return schedule;
+    } catch (e) {
+      print('❌ Error getting expiration schedule: $e');
+      return [];
+    }
+  }
+
+  /// 近い消滅予定（30日以内）を簡潔にまとめたメッセージを生成
+  /// 
+  /// 返り値例：
+  /// "8月30日までに有休10日が消滅します。\n9月30日までに有休11日が消滅します。"
+  Future<String?> getExpirationWarningMessages(String userId) async {
+    try {
+      final schedule = await getExpirationSchedule(userId);
+      if (schedule.isEmpty) return null;
+
+      final now = DateTime.now();
+      final messages = <String>[];
+
+      for (final item in schedule) {
+        final daysUntilExpiry = item['daysUntilExpiry'] as int;
+        
+        // 30日以内のみを対象
+        if (daysUntilExpiry <= 30 && daysUntilExpiry >= 0) {
+          final expiryMonth = item['expiryMonth'] as int;
+          final expiryDay = item['expiryDay'] as int;
+          final daysRemaining = item['daysRemaining'] as double;
+          
+          messages.add('${expiryMonth}月${expiryDay}日までに有休${daysRemaining.toStringAsFixed(1)}日が消滅します。');
+        }
+      }
+
+      if (messages.isEmpty) return null;
+
+      return messages.join('\n');
+    } catch (e) {
+      print('❌ Error getting expiration warning messages: $e');
+      return null;
+    }
+  }
+
+  /// ========== Week 16 付与日数の自動計算ヘルパー ==========
+  
+  /// hire_date から、経過年数に応じた付与日数を計算
+  /// 
+  /// 日本の法定最低付与日数：
+  /// - 6ヶ月後（1年目）：10日
+  /// - 1年6ヶ月後（2年目）：11日
+  /// - 2年6ヶ月後（3年目）：12日
+  /// - 3年6ヶ月後（4年目）：14日
+  /// - 4年6ヶ月後（5年目）：16日
+  /// - 5年6ヶ月後（6年目）：18日
+  /// - 6年6ヶ月以降（7年目以降）：20日（MAX）
+  static int calculateDaysGranted(DateTime hireDate, DateTime accrualDate) {
+    // hire_date から accrual_date までの月数を計算
+    final monthsSinceHire = (accrualDate.year - hireDate.year) * 12 +
+                           (accrualDate.month - hireDate.month);
+
+    // 付与日数を決定（初回6ヶ月後、以降1年ごと）
+    if (monthsSinceHire < 6) {
+      return 0;  // 6ヶ月未満は付与対象外
+    } else if (monthsSinceHire < 18) {
+      return 10;  // 6ヶ月～18ヶ月未満（初回 + 1年以内）
+    } else if (monthsSinceHire < 30) {
+      return 11;  // 18ヶ月～30ヶ月未満（初回 + 1～2年）
+    } else if (monthsSinceHire < 42) {
+      return 12;  // 30ヶ月～42ヶ月未満（初回 + 2～3年）
+    } else if (monthsSinceHire < 54) {
+      return 14;  // 42ヶ月～54ヶ月未満（初回 + 3～4年）
+    } else if (monthsSinceHire < 66) {
+      return 16;  // 54ヶ月～66ヶ月未満（初回 + 4～5年）
+    } else if (monthsSinceHire < 78) {
+      return 18;  // 66ヶ月～78ヶ月未満（初回 + 5～6年）
+    } else {
+      return 20;  // 78ヶ月以上（初回 + 6年以上）
+    }
+  }
+
+    /// ========== Week 16 修正版：hire_date と first_accrual_date から各年度の付与を自動生成 ==========
+  /// 
+  /// 修正版（1年ごとに付与）：
+  /// 例：
+  /// - hireDate: 2026年4月1日
+  /// - firstAccrualDate: 2026年10月1日（入社6ヶ月後）
+  /// 
+  /// 生成されるスケジュール：
+  /// - 2026年10月1日：10日（初回）
+  /// - 2027年10月1日：11日（1年後）
+  /// - 2028年10月1日：12日（2年後）
+  /// ...
+  Future<void> autoGenerateAccruals(
+    String userId,
+    DateTime hireDate,
+    DateTime firstAccrualDate, {
+    int yearsAhead = 5,  // デフォルト5年分を生成
+  }) async {
+    try {
+      print('🔄 autoGenerateAccruals() 開始: userId=$userId');
+      
+      // 既存の付与履歴を確認
+      final existingAccruals = await getVacationAccrualsByUser(userId);
+      print('📊 既存の付与履歴: ${existingAccruals.length}件');
+
+      // 各年度の付与日を生成（初回6ヶ月後、以降1年ごと）
+      for (int i = 0; i < yearsAhead; i++) {
+        final accrualDate = DateTime(
+          firstAccrualDate.year + i,
+          firstAccrualDate.month,
+          firstAccrualDate.day,
+        );
+
+        // この年の付与日数を計算
+        final daysGranted = calculateDaysGranted(hireDate, accrualDate);
+        
+        if (daysGranted == 0) {
+          print('⏭️  ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日：付与対象外（6ヶ月未満）');
+          continue;
+        }
+
+        // 失効日を計算（付与日の1年後の前日）
+        final expiryDate = DateTime(
+          accrualDate.year + 1,
+          accrualDate.month,
+          accrualDate.day - 1,  // 前日まで有効
+        );
+
+        // 既に同じ日付の付与があるかチェック
+        final isDuplicate = existingAccruals.any((accrual) {
+          return accrual.accrualDate.year == accrualDate.year &&
+                 accrual.accrualDate.month == accrualDate.month &&
+                 accrual.accrualDate.day == accrualDate.day;
+        });
+
+        if (isDuplicate) {
+          print('✅ スキップ（既に登録済み）：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 $daysGranted日');
+          continue;
+        }
+
+        // 付与を記録
+        await recordVacationAccrual(
+          userId,
+          accrualDate,
+          daysGranted.toDouble(),
+          notes: '自動生成：${accrualDate.year}年度付与',
+        );
+
+        print('✅ 付与を自動生成：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 → ${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日 ($daysGranted日)');
+      }
+
+      print('✅ autoGenerateAccruals() 完了');
+    } catch (e) {
+      print('❌ Error auto-generating accruals: $e');
+    }
+  }
+    /// ========== Week 16 修正版：来年度付与までに消滅する付与を取得 ==========
+  /// 
+  /// 返り値：来年度の付与日までに消滅する「1つの付与分」のデータ
+  /// null の場合は消滅予定なし
+  Future<Map<String, dynamic>?> getNextExpiringAccrual(String userId) async {
+    try {
+      final accruals = await getVacationAccrualsByUser(userId);
+      if (accruals.isEmpty) {
+        print('⚠️ getNextExpiringAccrual: 付与履歴がありません (userId=$userId)');
+        return null;
+      }
+
+      final now = DateTime.now();
+
+      // 来年度付与までに消滅する付与を探す（失効日が未来で、最も近い1件）
+      Map<String, dynamic>? nextExpiring;
+      DateTime? closestExpiryDate;
+
+      for (final accrual in accruals) {
+        // 失効日が過去か現在かチェック
+        if (now.isAfter(accrual.expiryDate)) {
+          continue;  // 既に失効済みはスキップ
+        }
+
+        // この付与期間内の使用日数を計算
+        final usageInPeriod = await _getTotalDaysUsedInRange(
+          userId,
+          accrual.accrualDate,
+          accrual.expiryDate,
+        );
+
+        final daysRemaining = accrual.daysGranted - usageInPeriod;
+        final expiryDate = accrual.expiryDate;
+
+        // 最も近い失効日を更新
+        if (closestExpiryDate == null || expiryDate.isBefore(closestExpiryDate)) {
+          closestExpiryDate = expiryDate;
+          nextExpiring = {
+            'accrualDate': accrual.accrualDate.toIso8601String().split('T')[0],
+            'accrualMonth': accrual.accrualDate.month,
+            'accrualDay': accrual.accrualDate.day,
+            'daysGranted': accrual.daysGranted,
+            'expiryDate': expiryDate.toIso8601String().split('T')[0],
+            'expiryMonth': expiryDate.month,
+            'expiryDay': expiryDate.day,
+            'daysRemaining': daysRemaining,
+            'daysUsed': usageInPeriod,
+            'isExpired': false,
+            'daysUntilExpiry': expiryDate.difference(now).inDays,
+          };
+        }
+      }
+
+      if (nextExpiring != null) {
+        print('📅 [getNextExpiringAccrual] ${nextExpiring['accrualMonth']}月${nextExpiring['accrualDay']}日付与：残${nextExpiring['daysRemaining']}日 → ${nextExpiring['expiryMonth']}月${nextExpiring['expiryDay']}日失効');
+      }
+
+      return nextExpiring;
+    } catch (e) {
+      print('❌ Error getting next expiring accrual: $e');
+      return null;
+    }
+  }
 }
 
 /// 付与サマリー（UI表示用）
