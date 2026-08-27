@@ -438,51 +438,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                     ],
+                    const SizedBox(height: 8.0),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _testAlarmSound,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.warningRed,
+                        ),
+                        child: Text(
+                          '🔊 テストアラーム',
+                          style: AppTextStyles.bodyTextStyle.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
 
                 const SizedBox(height: AppDimensions.paddingLarge),
 
                 Text(
-                  '🔊 テスト',
-                  style: AppTextStyles.sectionTitleStyle,
-                ),
-                const SizedBox(height: AppDimensions.paddingMedium),
-
-                Container(
-                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.borderDefault),
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _testAlarmSound,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.warningRed,
-                          ),
-                          child: Text(
-                            '🔊 テストアラーム',
-                            style: AppTextStyles.bodyTextStyle.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: AppDimensions.paddingLarge),
-                      const SizedBox(height: AppDimensions.paddingLarge),
-
-                      Text(
-                        '📋 有給管理',
+                  '📋 有給管理',
                         style: AppTextStyles.sectionTitleStyle,
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
