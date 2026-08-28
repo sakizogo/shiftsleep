@@ -19,8 +19,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
   double _totalUsed = 0.0;
   double _remaining = 0.0;
   double _carriedOverDays = 0.0;
-  double _daysExpiring = 0.0;
-  DateTime? _expirationDate;
+  Map<String, dynamic>? _nextExpiringAccrual;  // ========== Week 16 修正：来年度付与までに消滝する1件 ==========
   bool _isLoading = true;
 
   @override
@@ -37,19 +36,16 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
       
       // Week 13: 持ち越し有休関連を取得
       final carriedOverDays = await _repository.getCarriedOverDays(widget.userId) ?? 0.0;
-      // ========== Week 15 Step 2：以下をコメントアウト ==========
-      // is_carried_over カラムが存在しないため、エラーが出ている
-      // VacationStatsWidget では使用されていないので、呼び出しを削除
-      // final daysExpiring = await _repository.getDaysExpiringThisYear(widget.userId) ?? 0.0;
-      // final expirationDate = await _repository.getExpirationDate(widget.userId);
-      // ========================================================
+
+      // ========== Week 16 修正：来年度付与までに消滝する1件を取得 ==========
+      final nextExpiringAccrual = await _repository.getNextExpiringAccrual(widget.userId);
+      // ====================================================
 
       setState(() {
         _totalUsed = totalUsed;
         _remaining = remaining;
         _carriedOverDays = carriedOverDays;
-        _daysExpiring = 0.0;  // ← デフォルト値
-        _expirationDate = null;  // ← デフォルト値
+        _nextExpiringAccrual = nextExpiringAccrual;  // ========== Week 16 修正 ==========
         _isLoading = false;
       });
     } catch (e) {
@@ -133,44 +129,53 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
           ),
         ),
         
-        const SizedBox(height: 12),
-        
-        // ======================== Week 13: 消滅予定メッセージ ========================
-        if (_daysExpiring > 0 && _expirationDate != null)
-          Card(
-            elevation: 1,
-            color: Colors.orange.withOpacity(0.1),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${DateFormat('M月d日').format(_expirationDate!)}に前年分の有休${_daysExpiring.toStringAsFixed(0)}日が消滅します。',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.orange,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          '計画的に使いましょう！',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ],
+        // ========== Week 16 追加：昨年度消滝メッセージ ==========
+        if (_nextExpiringAccrual != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12.0),
+            child: Card(
+              elevation: 0,  // ← シャドウなし
+              color: Colors.red.withOpacity(0.05),  // ← 薄いピンク
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Colors.red, width: 1.5),  // ← 赤い枠線
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2.0),
+                      child: Icon(Icons.warning, color: Colors.red, size: 20),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '⏰ 有給消滝予定',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.red,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${_nextExpiringAccrual!['expiryMonth']}月${_nextExpiringAccrual!['expiryDay']}日までに有休${(_nextExpiringAccrual!['daysRemaining'] as double).toStringAsFixed(1)}日が消滅します',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

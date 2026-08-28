@@ -247,6 +247,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                         ),
+                      
+                      const SizedBox(height: AppDimensions.paddingMedium),
+
+                      // 💡 改善アドバイス表示設定 - プレミアム版ステータスカード内に移動
+                      Text(
+                        '💡 改善アドバイス表示設定',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'プレミアム版案内を表示',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 4.0),
+                              Text(
+                                'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Switch(
+                            value: _advicePromoVisible,
+                            onChanged: (value) {
+                              setState(() {
+                                _advicePromoVisible = value;
+                              });
+                            },
+                            activeColor: AppColors.primaryGradientStart,
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -437,14 +483,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: AppDimensions.paddingLarge),
+
+                      // テストアラームボタン - アラーム設定カード内に移動
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _testAlarmSound,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.warningRed,
+                          ),
+                          child: Text(
+                            'テストアラーム',
+                            style: AppTextStyles.bodyTextStyle.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
 
                 const SizedBox(height: AppDimensions.paddingLarge),
+                const SizedBox(height: AppDimensions.paddingLarge),
 
                 Text(
-                  '🔊 テスト',
+                  '📋 有給管理',
                   style: AppTextStyles.sectionTitleStyle,
                 ),
                 const SizedBox(height: AppDimensions.paddingMedium),
@@ -454,153 +520,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     border: Border.all(color: AppColors.borderDefault),
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
+                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _testAlarmSound,
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VacationSettingsScreen(
+                                  userId: widget.userId,
+                                ),
+                              ),
+                            );
+                          },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.warningRed,
+                            backgroundColor: AppColors.primaryGradientStart,
+                            padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+                            ),
                           ),
                           child: Text(
-                            '🔊 テストアラーム',
+                            '⚙️ 有給設定（入社日・付与日数）',
                             style: AppTextStyles.bodyTextStyle.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
+                              fontSize: 14,
                             ),
                           ),
                         ),
-                      ),
-
-                      const SizedBox(height: AppDimensions.paddingLarge),
-                      const SizedBox(height: AppDimensions.paddingLarge),
-
-                      Text(
-                        '📋 有給管理',
-                        style: AppTextStyles.sectionTitleStyle,
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
-
-                      Container(
-                        padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: AppColors.borderDefault),
-                          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                        ),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => VacationSettingsScreen(
-                                        userId: widget.userId,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                                  ),
-                                ),
-                                child: Text(
-                                  '⚙️ 有給設定（入社日・付与日数）',
-                                  style: AppTextStyles.bodyTextStyle.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VacationUsageScreen(
+                                  userId: widget.userId,
                                 ),
                               ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryGradientStart,
+                            padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
                             ),
-                            const SizedBox(height: AppDimensions.paddingMedium),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => VacationUsageScreen(
-                                        userId: widget.userId,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                                  ),
-                                ),
-                                child: Text(
-                                  '📝 有給使用記録',
-                                  style: AppTextStyles.bodyTextStyle.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
+                          ),
+                          child: Text(
+                            '📝 有給使用記録',
+                            style: AppTextStyles.bodyTextStyle.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
                             ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '💡 改善アドバイス表示設定',
-                        style: AppTextStyles.bodyTextStyle.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8.0),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'プレミアム版案内を表示',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 4.0),
-                              Text(
-                                'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ],
                           ),
-                          Switch(
-                            value: _advicePromoVisible,
-                            onChanged: (value) {
-                              setState(() {
-                                _advicePromoVisible = value;
-                              });
-                            },
-                            activeColor: AppColors.primaryGradientStart,
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
@@ -843,82 +826,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
-    Future<void> _updateWakeUpTimeInProvider() async {
-      try {
-        print('🔴 [DEBUG] _updateWakeUpTimeInProvider() が呼び出されました！');
-      
-        final startDate = DateTime.now();
-        final endDate = startDate.add(Duration(days: 30));
-        final shiftsData = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
-      
-        print('🔴 [DEBUG] shifts数: ${shiftsData.length}');
-      
-        if (shiftsData.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('シフトが登録されていません'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-          return;
-        }
 
-        final firstShiftData = shiftsData.first;
-        final patternId = firstShiftData['pattern_id'] as String;
-      
-        final allPatterns = await _shiftRepository.getAllPatterns();
-      
-        var matchingPattern;
-        for (final p in allPatterns) {
-          if (p.id == patternId) {
-            matchingPattern = p;
-            break;
-          }
-        }
-
-        if (matchingPattern == null || matchingPattern.startTime == null) {
-          print('⚠️ パターンが見つかりません: patternId=$patternId');
-          return;
-        }
-
-        final shiftDateStr = firstShiftData['shift_date'] as String;
-        final shiftDate = DateTime.parse(shiftDateStr);
-        final shiftStartTime = DateTime(
-          shiftDate.year,
-          shiftDate.month,
-          shiftDate.day,
-          matchingPattern.startTime.hour,
-          matchingPattern.startTime.minute,
-        );
-      
-        final wakeUpDateTime = shiftStartTime.subtract(Duration(minutes: _alarmTimeBeforeShift));
-      
-        if (mounted) {
-          final sleepProvider = context.read<SleepProvider>();
-          sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-        
-          final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
-          final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
-          final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
-          final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
-        
-          print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
-        }
-      } catch (e) {
-        print('❌ 起床時刻更新エラー: $e');
+  Future<void> _updateWakeUpTimeInProvider() async {
+    try {
+      print('🔴 [DEBUG] _updateWakeUpTimeInProvider() が呼び出されました！');
+    
+      final startDate = DateTime.now();
+      final endDate = startDate.add(Duration(days: 30));
+      final shiftsData = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
+    
+      print('🔴 [DEBUG] shifts数: ${shiftsData.length}');
+    
+      if (shiftsData.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('起床時刻計算エラー: $e'),
-              backgroundColor: AppColors.warningRed,
-              duration: const Duration(seconds: 2),
+            const SnackBar(
+              content: Text('シフトが登録されていません'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
             ),
           );
         }
+        return;
+      }
+
+      final firstShiftData = shiftsData.first;
+      final patternId = firstShiftData['pattern_id'] as String;
+    
+      final allPatterns = await _shiftRepository.getAllPatterns();
+    
+      var matchingPattern;
+      for (final p in allPatterns) {
+        if (p.id == patternId) {
+          matchingPattern = p;
+          break;
+        }
+      }
+
+      if (matchingPattern == null || matchingPattern.startTime == null) {
+        print('⚠️ パターンが見つかりません: patternId=$patternId');
+        return;
+      }
+
+      final shiftDateStr = firstShiftData['shift_date'] as String;
+      final shiftDate = DateTime.parse(shiftDateStr);
+      final shiftStartTime = DateTime(
+        shiftDate.year,
+        shiftDate.month,
+        shiftDate.day,
+        matchingPattern.startTime.hour,
+        matchingPattern.startTime.minute,
+      );
+    
+      final wakeUpDateTime = shiftStartTime.subtract(Duration(minutes: _alarmTimeBeforeShift));
+    
+      if (mounted) {
+        final sleepProvider = context.read<SleepProvider>();
+        sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+      
+        final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
+        final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
+        final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
+        final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
+      
+        print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
+      }
+    } catch (e) {
+      print('❌ 起床時刻更新エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('起床時刻計算エラー: $e'),
+            backgroundColor: AppColors.warningRed,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     }
- 
+  }
 }
