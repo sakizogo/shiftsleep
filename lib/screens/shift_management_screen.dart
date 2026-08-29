@@ -189,6 +189,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               _buildCalendarInputMethod()
             else if (_selectedInputMethod == 1)
               _buildRangeInputMethod()
+            else
+              _buildManualInputMethod(),
             // ========== Week 6 Fix D 改良: 下部の重複したボタンを削除（上部のみに統一） ==========
             // 削除済み：下部「シフト保存」ボタン
             // 理由：上部ボタンで十分（スクロール不要）、UI/UXをシンプルに
@@ -215,6 +217,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           Container(width: 1, height: 40, color: AppColors.borderDefault),
           Expanded(
             child: _buildTabButton(label: '範囲指定', index: 1, isSelected: _selectedInputMethod == 1),
+          ),
+          Container(width: 1, height: 40, color: AppColors.borderDefault),
+          Expanded(
+            child: _buildTabButton(label: '手入力', index: 2, isSelected: _selectedInputMethod == 2),
           ),
         ],
       ),
@@ -310,13 +316,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ],
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: AppColors.borderDefault),
-            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-          ),
-          child: TableCalendar(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),  // ========== Week 19 追加：overflow をクリップ ==========
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: AppColors.borderDefault),
+              borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+            ),
+            child: TableCalendar(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2026, 12, 31),
             focusedDay: _focusedDay,
@@ -575,6 +583,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             
             
           ),
+        ),
          // ========== Week 11: 有給管理セクション ==========
         Padding(
           padding: const EdgeInsets.symmetric(
@@ -749,6 +758,51 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
+  Widget _buildManualInputMethod() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('手入力', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 13, color: AppColors.textMuted)),
+        const SizedBox(height: AppDimensions.paddingMedium),
+        Text('選択パターン:', style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w500, fontSize: 13)),
+        const SizedBox(height: 6.0),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: AppDimensions.paddingSmall, vertical: 10.0),
+          decoration: BoxDecoration(
+            color: _selectedPattern != null ? _selectedPattern!.color.withOpacity(0.1) : AppColors.cardBgGray,
+            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+          ),
+          child: Row(
+            children: [
+              if (_selectedPattern != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: _selectedPattern!.color,
+                      border: Border.all(color: _selectedPattern!.color.withOpacity(0.5), width: 1),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  _selectedPattern?.patternName ?? 'パターンを選択してください',
+                  style: AppTextStyles.bodyTextStyle.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: _selectedPattern != null ? _selectedPattern!.color : AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildDateField({required String label, required DateTime? date, required VoidCallback onTap}) {
     return Column(
