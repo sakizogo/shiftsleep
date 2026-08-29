@@ -46,17 +46,23 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late DateTime _focusedDay;
   late DateTime _selectedDay;
   final Map<DateTime, ShiftData> _shiftMap = {};
+  late Map<DateTime, double> _vacationMap;  // Week 20: 有休/半休マップ
   final List<CalendarEvent> _calendarEvents = [];
   int _selectedInputMethod = 0;
   ShiftPatternModel? _selectedPattern;
   DateTime? _rangeStartDate;
   DateTime? _rangeEndDate;
   late ShiftPatternModel _defaultDayOffPattern;
+  // ========== Week 19 Step 2：デフォルトパターン定義 ==========
+  late ShiftPatternModel _defaultVacation1Day;
+  late ShiftPatternModel _defaultVacationHalf;
+  // ========================================================================
   late List<ShiftPatternModel> _patterns;  // ========== Week 14 追加 ==========
   
   @override
   void initState() {
     super.initState();
+    _vacationMap = {};  // Week 20: 有休/半休マップを初期化
     final now = DateTime.now();
     _focusedDay = DateTime(now.year, now.month, 1);
     _selectedDay = now;
@@ -70,39 +76,87 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
     
     // ========== Week 14 追加：patterns を初期化（有休・半休を追加） ==========
+    // ========== Week 19 Step 2：デフォルトパターンを late 変数に保存 ==========
+    _defaultVacation1Day = ShiftPatternModel(
+      id: 'default_vacation_1day',
+      patternName: '有休',
+      patternType: ShiftType.vacation,
+      startTime: null,
+      endTime: null,
+      colorIndex: 3,
+    );
+    _defaultVacationHalf = ShiftPatternModel(
+      id: 'default_vacation_half',
+      patternName: '半休',
+      patternType: ShiftType.halfVacation,
+      startTime: null,
+      endTime: null,
+      colorIndex: 4,
+    );
+    
     _patterns = [
       _defaultDayOffPattern,
-      ShiftPatternModel(
-        id: 'default_vacation_1day',
-        patternName: '有休',
-        patternType: ShiftType.vacation,
-        startTime: null,
-        endTime: null,
-        colorIndex: 3,
-      ),
-      ShiftPatternModel(
-        id: 'default_vacation_half',
-        patternName: '半休',
-        patternType: ShiftType.halfVacation,
-        startTime: null,
-        endTime: null,
-        colorIndex: 4,
-      ),
+      _defaultVacation1Day,
+      _defaultVacationHalf,
     ];
     // ========================================================================
     
     loadShifts();
+    _loadPatterns();  // Week 19 Step 2：DB パターンを読み込みしマージ
+    _loadVacationData();  // Week 20 Phase 2: 有休/半休を読み込み
     loadCalendarEvents();
   }
+  
+  // ========== Week 20 Phase 2：vacation_usage から有休/半休情報を読み込む ==========
+  Future<void> _loadVacationData() async {
+    try {
+      // Week 20：今年の有休/半休を読み込み
+      final now = DateTime.now();
+      final startOfYear = DateTime(now.year, 1, 1);
+      final endOfYear = DateTime(now.year, 12, 31);
+      
+      final vacationUsages = await _vacationRepository.getVacationUsageInRange(
+        'test_user',
+        startOfYear,
+        endOfYear,
+      );
+      
+      setState(() {
+        _vacationMap.clear();
+        for (final usage in vacationUsages) {
+          final dateKey = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
+          _vacationMap[dateKey] = usage.daysUsed;
+        }
+      });
+      print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
+    } catch (e) {
+      print('[ShiftManagementScreen] ⚠️  Error loading vacation data: $e');
+    }
+  }
+  // ========================================================================
 
-  // ========== Week 14 追加：DB から patterns を読み込む ==========
+  // ========== Week 19 Step 2 修正：DB パターンをデフォルト3つにマージ ==========
   Future<void> _loadPatterns() async {
     try {
-      final patterns = await _shiftRepository.getAllPatterns();
+      final dbPatterns = await _shiftRepository.getAllPatterns();
       setState(() {
-        _patterns = patterns;
+        // デフォルト3つ（休日、有休、半休）を常に最初に表示
+        _patterns = [
+          _defaultDayOffPattern,
+          _defaultVacation1Day,
+          _defaultVacationHalf,
+        ];
+        
+        // DB パターンを追加（ID重複を避ける）
+        for (final dbPattern in dbPatterns) {
+          if (dbPattern.id != 'default_dayoff' && 
+              dbPattern.id != 'default_vacation_1day' && 
+              dbPattern.id != 'default_vacation_half') {
+            _patterns.add(dbPattern);
+          }
+        }
       });
-      print('[ShiftManagementScreen] Loaded ${patterns.length} patterns');
+      print('[ShiftManagementScreen] Loaded ${_patterns.length} patterns (デフォルト3 + DB ${dbPatterns.length})');
     } catch (e) {
       print('[ShiftManagementScreen] Error loading patterns: $e');
     }
@@ -325,6 +379,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
             ),
             child: TableCalendar(
+            rowHeight: 75,  // Week 20：セル高さを75に増加（オーバーフロー4.0px対応）  // Week 20: セル高さを増やしてオーバーフロー対応
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2026, 12, 31),
             focusedDay: _focusedDay,
@@ -354,17 +409,69 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               return events;
             },
             onDaySelected: (selectedDay, focusedDay) async {
+              final selectedDate = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+
+              // ========== Week 20 Phase 2：半休・有休の場合は vacation_usage のみに記録 ==========
+              // シフトは登録しない（既存シフトを保持）
+              if (_selectedPattern?.patternType == ShiftType.halfVacation) {
+                await _vacationRepository.recordVacationUsage(
+                  'test_user',
+                  selectedDay,
+                  0.5,
+                  'カレンダーから登録（半休）',
+                );
+                setState(() {
+                  _selectedDay = selectedDay;
+                  _focusedDay = focusedDay;
+                  // ========== Week 20 修正：_vacationMap に直接反映 ==========
+                  final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+                  _vacationMap[dateKey] = 0.5;
+                  // ====================================================
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+                print('[ShiftManagementScreen] ✅ 半休を登録: ${selectedDay.month}月${selectedDay.day}日');
+                return;  // ← _shiftMap には入れない
+              } else if (_selectedPattern?.patternType == ShiftType.vacation) {
+                await _vacationRepository.recordVacationUsage(
+                  'test_user',
+                  selectedDay,
+                  1.0,
+                  'カレンダーから登録（有休）',
+                );
+                setState(() {
+                  _selectedDay = selectedDay;
+                  _focusedDay = focusedDay;
+                  // ========== Week 20 修正：_vacationMap に直接反映 ==========
+                  final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+                  _vacationMap[dateKey] = 1.0;
+                  // ====================================================
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+                print('[ShiftManagementScreen] ✅ 有休を登録: ${selectedDay.month}月${selectedDay.day}日');
+                return;  // ← _shiftMap には入れない
+              }
+
+              // ========== 通常シフト（半休・有休ではない）の場合のみ _shiftMap に入れる ==========
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
                 if (_selectedPattern != null) {
-                  _shiftMap[DateTime(selectedDay.year, selectedDay.month, selectedDay.day)] =
-                      ShiftData(
-                        date: selectedDay,
-                        pattern: _selectedPattern,
-                        customStartTime: null,
-                        customEndTime: null,
-                      );
+                  _shiftMap[selectedDate] = ShiftData(
+                    date: selectedDay,
+                    pattern: _selectedPattern,
+                    customStartTime: null,
+                    customEndTime: null,
+                  );
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
@@ -373,25 +480,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   );
                 }
               });
-
-              // ========== Week 14 追加：有休・半休の場合は vacation_usage にも記録 ==========
-              if (_selectedPattern?.patternType == ShiftType.vacation) {
-                await _vacationRepository.recordVacationUsage(
-                  'test_user',  // ← 引用符が正しく閉じている
-                  selectedDay,
-                  1.0,
-                  'カレンダーから登録（有休）',
-                );
-                print('[ShiftManagementScreen] ✅ 有休を登録: ${selectedDay.month}月${selectedDay.day}日');
-              } else if (_selectedPattern?.patternType == ShiftType.halfVacation) {
-                await _vacationRepository.recordVacationUsage(
-                  'test_user',  // TODO: 実ユーザーIDに変更
-                  selectedDay,
-                  0.5,
-                  'カレンダーから登録（半休）',
-                );
-                print('[ShiftManagementScreen] ✅ 半休を登録: ${selectedDay.month}月${selectedDay.day}日');
-              }
               // ========================================================================
             },
             onPageChanged: (focusedDay) => _focusedDay = focusedDay,
@@ -473,6 +561,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     ),
                     // ================================================================
                     
+                    // ========== Week 20 Phase 2：半休・有休表示 ==========
+                    SizedBox(
+                      height: 16,
+                      child: _vacationMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Text(
+                              _vacationMap[DateTime(date.year, date.month, date.day)]! == 0.5 ? '🌤️ 半休' : '🏖️ 有休',
+                              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    // ================================================================
+                    
                     // ========== Fix Week 11：イベント絵文字表示のみ（●マーカー削除） ==========
                     if (_calendarEvents.any((e) {
                       final eventDate = e.eventDate is String
@@ -496,6 +597,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                                 style: const TextStyle(fontSize: 10),
                               ),
                             ))
+                            .take(2)  // Week 20：イベントは最大2個まで
                             .toList(),
                       ),
                     // ================================================================
@@ -567,6 +669,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                                 style: const TextStyle(fontSize: 10),
                               ),
                             ))
+                            .take(2)  // Week 20：イベントは最大2個まで
                             .toList(),
                       ),
                     // ================================================================
