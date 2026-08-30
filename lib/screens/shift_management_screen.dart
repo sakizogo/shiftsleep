@@ -519,10 +519,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               // ========== Fix B Week 5 Day 4：defaultBuilder にシフト色分け追加 ==========
 
               selectedBuilder: (context, date, focusedDay) {
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
+                return GestureDetector(
+                  onLongPress: () => _showDeleteDialog(date),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
                     Padding(
                       padding: const EdgeInsets.only(top: 3.0),
                       child: Text(
@@ -602,6 +604,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                       ),
                     // ================================================================
                   ],
+                  ),
                 );
               },
               defaultBuilder: (context, date, focusedDay) {
@@ -1125,5 +1128,162 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             },
           );
         }
+
+  // ========== Week 22 Step 1: Event deletion functionality (Method A: Multi-select) ==========
+  
+  /// 日付のすべての削除対象を取得
+  Map<String, dynamic> _getDeleteTargetsForDate(DateTime date) {
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final targets = <String, dynamic>{};
+    
+    // ✅ シフトがある場合
+    if (_shiftMap.containsKey(normalizedDate)) {
+      final shiftData = _shiftMap[normalizedDate]!;
+      final patternName = shiftData.pattern?.patternName ?? '?';
+      targets['shift'] = 'シフト：$patternName';
+    }
+    
+    // ✅ 有休・半休がある場合
+    if (_vacationMap.containsKey(normalizedDate)) {
+      final daysUsed = _vacationMap[normalizedDate]!;
+      if (daysUsed == 1.0) {
+        targets['vacation_full'] = '有休（1.0日）🏖️';
+      } else if (daysUsed == 0.5) {
+        targets['vacation_half'] = '半休（0.5日）🌤️';
+      }
+    }
+    
+    // ✅ イベントがある場合
+    try {
+      final event = _calendarEvents.where((e) {
+        final eventDate = DateTime.parse(e.eventDate);
+        return isSameDay(eventDate, normalizedDate);
+      }).firstOrNull;
+      
+      if (event != null) {
+        targets['event'] = 'イベント：${event.eventName ?? '無題'} ${event.eventEmoji}';
+      }
+    } catch (e) {
+      debugPrint('Error checking events: $e');
+    }
+    
+    return targets;
+  }
+
+  /// 削除確認ダイアログを表示（複数選択対応）
+  Future<void> _showDeleteDialog(DateTime selectedDate) async {
+    final targets = _getDeleteTargetsForDate(selectedDate);
+    
+    if (targets.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('この日付には削除対象がありません'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    
+    // 選択状態を管理
+    final selectedItems = <String>{};
+    // デフォルトはすべて選択
+    selectedItems.addAll(targets.keys);
+    
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: const Text('削除確認'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: targets.entries.map((entry) {
+                  return CheckboxListTile(
+                    title: Text(entry.value as String),
+                    value: selectedItems.contains(entry.key),
+                    onChanged: (bool? isChecked) {
+                      setState(() {
+                        if (isChecked == true) {
+                          selectedItems.add(entry.key);
+                        } else {
+                          selectedItems.remove(entry.key);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('キャンセル'),
+                ),
+                TextButton(
+                  onPressed: selectedItems.isEmpty
+                      ? null
+                      : () async {
+                          await _deleteSelectedItems(selectedDate, selectedItems);
+                          if (mounted) {
+                            Navigator.pop(context);
+                            setState(() {});
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('削除しました')),
+                            );
+                          }
+                        },
+                  child: const Text('削除', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 選択されたアイテムのみを削除
+  Future<void> _deleteSelectedItems(DateTime date, Set<String> selectedItems) async {
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    const userId = 'test_user';
+    
+    try {
+      // ✅ シフト削除
+      if (selectedItems.contains('shift') && _shiftMap.containsKey(normalizedDate)) {
+        await _shiftRepository.deleteShift(normalizedDate);
+        _shiftMap.remove(normalizedDate);
+      }
+      
+      // ✅ 有休削除
+      if ((selectedItems.contains('vacation_full') || selectedItems.contains('vacation_half')) &&
+          _vacationMap.containsKey(normalizedDate)) {
+        await _vacationRepository.deleteVacationUsageByDate(userId, normalizedDate);
+        _vacationMap.remove(normalizedDate);
+      }
+      
+      // ✅ イベント削除
+      if (selectedItems.contains('event')) {
+        _calendarEvents.removeWhere((e) {
+          final eventDate = DateTime.parse(e.eventDate);
+          return isSameDay(eventDate, normalizedDate);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error deleting items: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('削除に失敗しました: $e')),
+        );
+      }
+    }
+  }
+  // ================================================================
+
         // ======================================================================
 }
