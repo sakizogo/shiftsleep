@@ -75,7 +75,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       colorIndex: 0,
     );
     
-    // ========== Week 14 追加：patterns を初期化（有休・半休を追加） ==========
     // ========== Week 19 Step 2：デフォルトパターンを late 変数に保存 ==========
     _defaultVacation1Day = ShiftPatternModel(
       id: 'default_vacation_1day',
@@ -101,12 +100,30 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     ];
     // ========================================================================
     
-    loadShifts();
-    _loadPatterns();  // Week 19 Step 2：DB パターンを読み込みしマージ
-    _loadVacationData();  // Week 20 Phase 2: 有休/半休を読み込み
-    loadCalendarEvents();
+    _initializeAllData(); 
   }
   
+  // ========== 【新規追加】非同期初期化メソッド（順序が重要！）==========
+  Future<void> _initializeAllData() async {
+    try {
+      // 🔷 Step 1: DB パターンを先に読み込む（重要！）
+      await _loadPatterns();
+      
+      // 🔷 Step 2: その後、シフト情報を読み込む（_patterns が完成した後）
+      await loadShifts();
+      
+      // 🔷 Step 3: 有休・半休情報を読み込む
+      await _loadVacationData();
+      
+      // 🔷 Step 4: カレンダーイベントを読み込む
+      await loadCalendarEvents();
+      
+      print('[ShiftManagementScreen] ✅ 全ての初期化が完了');
+    } catch (e) {
+      print('[ShiftManagementScreen] ⚠️  初期化エラー: $e');
+    }
+  }
+  // ========================================================================
   // ========== Week 20 Phase 2：vacation_usage から有休/半休情報を読み込む ==========
   Future<void> _loadVacationData() async {
     try {
@@ -708,7 +725,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             onPressed: _shiftMap.isNotEmpty
                 ? () {
                     if (widget.onNavigateToDetails != null) {
-                      widget.onNavigateToDetails!(_shiftMap, widget.patterns);
+                      final result = widget.onNavigateToDetails!(_shiftMap, widget.patterns);
+                      if (result is Future) {
+                        result.then((value) {
+                          if (value == true) {
+                            loadShifts();
+                            setState(() {});
+                          }
+                        });
+                      }
                     }
                   }
                 : null,
