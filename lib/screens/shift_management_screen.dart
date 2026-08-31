@@ -5,6 +5,7 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/event_type.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
@@ -198,7 +199,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const CalendarEventScreen(),
+                      builder: (context) => CalendarEventScreen(),
                     ),
                   ).then((result) {
                     if (result == true) {
@@ -1066,21 +1067,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
   String _getEventEmoji(String eventType) {
-    switch (eventType) {
-      case '給料日':
-        return '💰';
-      case 'ボーナス':
-        return '🎁';
-      case '慰安旅行':
-        return '✈️';
-      case '祝日':
-        return '🎉';
-      case '重要会議':
-        return '📅';
-      case '締切':
-        return '⏰';
-      default:
-        return '📌';
+    try {
+      final matchedType = eventTypes.firstWhere(
+        (type) => type.id == eventType,  // ← id に変更！
+        orElse: () => EventType(
+          id: 'unknown',
+          name: 'その他',
+          emoji: '🔔',
+        ),
+      );
+      return matchedType.emoji;
+    } catch (e) {
+      debugPrint('⚠️  イベント絵文字取得エラー: $e');
+      return '🔔';
     }
   }
 

@@ -2,19 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
+import 'package:shiftsleep/models/event_type.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 
-class EventType {
-  final String id;
-  final String name;
-  final String emoji;
 
-  EventType({
-    required this.id,
-    required this.name,
-    required this.emoji,
-  });
-}
 
 class CalendarEventScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -36,15 +27,6 @@ class CalendarEventScreenState extends State<CalendarEventScreen> {
   final TextEditingController _eventNameController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   bool _isLoading = false;
-
-  final List<EventType> _eventTypes = [
-    EventType(id: 'salary', name: '給料日', emoji: '💰'),
-    EventType(id: 'bonus', name: 'ボーナス', emoji: '🎁'),
-    EventType(id: 'trip', name: '慰安旅行', emoji: '✈️'),
-    EventType(id: 'holiday', name: '祝日', emoji: '🎉'),
-    EventType(id: 'meeting', name: '重要な会議', emoji: '📅'),
-    EventType(id: 'deadline', name: '締切', emoji: '⏰'),
-  ];
 
   @override
   void initState() {
@@ -165,7 +147,7 @@ class CalendarEventScreenState extends State<CalendarEventScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: _eventTypes.map((eventType) {
+        children: eventTypes.map((eventType) {
           final isSelected = _selectedEventType?.id == eventType.id;
           return Padding(
             padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
