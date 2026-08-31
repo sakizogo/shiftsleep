@@ -31,7 +31,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
   ShiftManagementView _shiftManagementView = ShiftManagementView.calendar;
@@ -53,6 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     
     // ========== Week 7 Phase 3: 1秒ごとに時刻を更新 ==========
     _timeUpdateTimer = Timer.periodic(
@@ -74,6 +75,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     
     _loadPatterns();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // ========== Week 22+: アプリ再開時にシフトを再ロード ==========
+      debugPrint('[HomeScreen] アプリ再開 → シフトを再ロード');
+      _shiftManagementKey.currentState?.loadShifts();
+      setState(() {});
+      // =========================================================
+    }
   }
 
   @override
