@@ -88,6 +88,32 @@ class SleepProvider extends ChangeNotifier {
   bool get isSleepingNow => _isSleepingNow;
   String? get currentSleepRecordIdNow => _currentSleepRecordIdNow;
   // ================================================================
+  // ✅ 【新規追加】
+  Future<void> setCurrentSleepRecordIdNow(String? id) async {
+    _currentSleepRecordIdNow = id;
+    notifyListeners();
+    
+    if (id != null) {
+      await _saveCurrentSleepRecordIdToPreferences(id);  // ← await 追加！
+    } else {
+      await _clearCurrentSleepRecordIdFromPreferences();  // ← await 追加！
+    }
+    
+    print('[SleepProvider] ✅ currentSleepRecordIdNow を設定しました: $id');
+  }
+
+  // ✅ 【新規追加】SharedPreferences に保存するメソッド
+  Future<void> _saveCurrentSleepRecordIdToPreferences(String id) async {
+    await SleepPreferenceService.setCurrentSleepRecordId(id);
+    print('[SleepProvider] 💾 SharedPreferences に ID を保存: $id');
+  }
+
+  // ✅ 【新規追加】SharedPreferences から削除するメソッド
+  Future<void> _clearCurrentSleepRecordIdFromPreferences() async {
+    await SleepPreferenceService.clearCurrentSleepRecordId();
+    print('[SleepProvider] 🗑️ SharedPreferences から ID をクリア');
+  }
+
 
   // ========== Week 7 A 追加: アドバイス Getter ==========
     List<SleepAdvice> get allAdvice => _allAdvice;
@@ -297,7 +323,10 @@ class SleepProvider extends ChangeNotifier {
   // コンストラクタ
   // ========================
 
-  SleepProvider(this._repository);
+  SleepProvider(this._repository) {
+    // ✅ 【追加】アプリ起動時に SharedPreferences から睡眠記録IDを復元
+    _loadCurrentSleepRecordIdFromPreferences();
+  }
 
   // ========================
   // パブリックメソッド
@@ -797,4 +826,19 @@ class SleepProvider extends ChangeNotifier {
     return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
   }
   // ================================================================
+  // ========== Week 8 追加: SharedPreferences 連携 ==========
+  
+  /// SharedPreferences から睡眠記録IDを復元
+  Future<void> _loadCurrentSleepRecordIdFromPreferences() async {
+    try {
+      final savedId = await SleepPreferenceService.getCurrentSleepRecordId();
+      if (savedId != null) {
+        _currentSleepRecordIdNow = savedId;
+        notifyListeners();
+        print('[SleepProvider] ✅ SharedPreferences から ID を復元: $savedId');
+      }
+    } catch (e) {
+      print('[SleepProvider] ⚠️  SharedPreferences からの復元に失敗: $e');
+    }
+  }
 }

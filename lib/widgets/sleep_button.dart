@@ -113,6 +113,7 @@ class _SleepButtonState extends State<SleepButton>
       // ========== Week 7 Phase 3 修正: SleepProvider にレコード挿入を依頼 ==========
       // これにより、SleepProvider が自動的に睡眠中フラグをセットする
       await sleepProvider.insertSleepRecord(sleepRecord);
+      await sleepProvider.setCurrentSleepRecordIdNow(sleepRecord.id);  // ← await 追加！  // ← 追加
       print('[SleepButton] ✅ Sleep record saved via SleepProvider: ${sleepRecord.id}');
       // ========================================================================
 
