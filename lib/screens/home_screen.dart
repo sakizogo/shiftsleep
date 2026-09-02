@@ -8,7 +8,7 @@ import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ← これを追加
-import 'package:shiftsleep/screens/settings_screen.dart';
+import 'package:shiftsleep/screens/settings_screen_latest.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
 import 'package:shiftsleep/screens/shift_pattern_screen.dart';
