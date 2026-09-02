@@ -171,11 +171,17 @@ class _SleepButtonState extends State<SleepButton>
         await _sleepRepository.updateSleepRecord(updatedRecord);
         print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
 
-        // ========== Week 7 Phase 3 追加: アラームをスケジュール ==========
-        print('[SleepButton] 🔔 アラームスケジュール処理を開始...');
-        await _scheduleAlarmForNextShift(now);
-        print('[SleepButton] ✅ アラームスケジュール処理が完了しました');
-        // ================================================================
+            // ========== Week 25+：時間帯判定ロジック ==========
+            final currentHour = DateTime.now().hour;
+            final isNightTime = currentHour >= 22 || currentHour < 7;
+            
+            if (isNightTime) {
+              print('[SleepButton] 🌙 夜間のためアラームをセット');
+              await _scheduleAlarmForNextShift(now);
+            } else {
+              print('[SleepButton] ☀️ 昼間のためアラームをセットしません');
+            }
+            // =================================================
 
         // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
         sleepProvider.endSleepingNow();
