@@ -1591,9 +1591,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           '${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')}');
 
       // Step 5: SleepProvider に設定
-      print('🌙 [HomeScreen] Step 5: SleepProvider に起床時刻を設定中...');
-      sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-      print('✅ [HomeScreen] Step 5完了: SleepProvider に設定されました');
+      // print('🌙 [HomeScreen] Step 5: SleepProvider に起床時刻を設定中...');
+      // sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+      // print('✅ [HomeScreen] Step 5完了: SleepProvider に設定されました');
 
       // Step 6: アラームをスケジュール
       print('🌙 [HomeScreen] Step 6: アラームをスケジュール中...');

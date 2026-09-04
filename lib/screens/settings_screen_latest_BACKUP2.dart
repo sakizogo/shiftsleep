@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';  // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
@@ -8,10 +8,8 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
-import 'package:shiftsleep/services/premium_service.dart';
-import 'package:shiftsleep/providers/sleep_provider.dart';
-import 'package:shiftsleep/screens/vacation_settings_screen.dart';
-import 'package:shiftsleep/screens/vacation_usage_screen.dart';
+import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:shiftsleep/providers/sleep_provider.dart';  // ========== Week 7 Phase 3 追加 ==========
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -32,11 +30,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _soundVolume = 1.0;
   int _alarmTimeBeforeShift = 30;
   bool _advicePromoVisible = true;
-  bool _isPremiumUser = false;
-  bool _isLoading = false;
+  bool _isPremiumUser = false;  // ========== Week 7 Phase 3 追加 ==========
+  bool _isLoading = false;  // ========== Week 7 Phase 3 追加: 課金処理中フラグ ==========
+  String? _vacationAccrualDate;  // ========== Week 13 追加: 有給付与日 ==========
 
   final ShiftRepository _shiftRepository = ShiftRepository();
-  final PremiumService _premiumService = PremiumService();
+  final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
 
   @override
   void initState() {
@@ -44,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
+  /// DB から設定を読み込む
   Future<void> _loadSettings() async {
     try {
       final settings = await _shiftRepository.getAppSettings('test_user');
@@ -51,6 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (settings != null && mounted) {
         print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
 
+        // wakeUpTime を "07:00" 形式から TimeOfDay に変換
         final timeParts = settings.wakeUpTime.split(':');
         final hour = int.parse(timeParts[0]);
         final minute = int.parse(timeParts[1]);
@@ -60,7 +61,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
-          _isPremiumUser = settings.isPremiumUser;
+          _isPremiumUser = settings.isPremiumUser;  // ========== Week 7 Phase 3 追加 ==========
+          // _vacationAccrualDate = settings.vacationAccrualDate ?? '10/01';  // ========== Week 13 追加（モデル対応後） ==========
         });
       }
     } catch (e) {
@@ -103,6 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ========== Week 7 Phase 3 追加: プレミアム版ステータスセクション ==========
                 Text(
                   '💳 プレミアム版ステータス',
                   style: AppTextStyles.sectionTitleStyle,
@@ -172,6 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
 
+                      // ========== プレミアム版の利点を表示 ==========
                       if (!_isPremiumUser) ...[
                         Text(
                           'プレミアム版でできることは：',
@@ -187,6 +191,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: AppDimensions.paddingMedium),
                       ],
 
+                      // ========== アップグレードボタン ==========
                       if (!_isPremiumUser)
                         SizedBox(
                           width: double.infinity,
@@ -254,6 +259,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: AppDimensions.paddingLarge),
                 const SizedBox(height: AppDimensions.paddingLarge),
 
+                // ========================
+                // アラーム設定セクション
+                // ========================
                 Text(
                   '🔔 アラーム設定',
                   style: AppTextStyles.sectionTitleStyle,
@@ -272,6 +280,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // 起床時刻設定
                       Text(
                         '起床時刻',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -281,32 +290,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 8.0),
                       const SizedBox(height: 8.0),
-                      Consumer<SleepProvider>(
-                        builder: (context, sleepProvider, _) {
-                          final displayWakeUpTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
-                          return Row(
-                            children: [
-                              Text(
-                                '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
-                                style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
+                      Row(
+                        children: [
+                          Text(
+                            '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}',
+                            style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
+                          ),
+                          const Spacer(),
+                          ElevatedButton(
+                            onPressed: () => _selectWakeUpTime(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryGradientStart,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
                               ),
-                              const Spacer(),
-                              ElevatedButton(
-                                onPressed: () => _selectWakeUpTime(context),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
-                                  ),
-                                ),
-                                child: Text('変更', style: AppTextStyles.bodyTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
-                              ),
-                            ],
-                          );
-                        },
+                            ),
+                            child: Text('変更', style: AppTextStyles.bodyTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 
+                      // 出勤前アラーム設定
                       Text(
                         '出勤前アラーム',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -347,12 +352,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             setState(() {
                               _alarmTimeBeforeShift = value;
                             });
+                            // ========== Week 8 Phase 7 追加: アラームバッファ変更時に起床時刻をリアルタイム更新 ==========
                             _updateWakeUpTimeInProvider();
                           }
                         },
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 
+                      // アラームモード選択
                       Text(
                         'アラームモード',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -378,6 +385,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 
+                      // アラーム音選択
                       Text(
                         'アラーム音',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -402,6 +410,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 
+                      // 音量調整
                       Text(
                         '音量',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -437,30 +446,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
+                      const SizedBox(height: AppDimensions.paddingLarge),
 
-                const SizedBox(height: AppDimensions.paddingLarge),
-
-                Text(
-                  '🔊 テスト',
-                  style: AppTextStyles.sectionTitleStyle,
-                ),
-                const SizedBox(height: AppDimensions.paddingMedium),
-
-                Container(
-                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.borderDefault),
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                      // ========== Week 13 UI改善: テストボタンをアラームカードに統合 ==========
+                      // テストアラームボタン
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
@@ -477,89 +466,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
+                      // ===============================================================================
+                    ],
+                  ),
+                ),
 
-                      const SizedBox(height: AppDimensions.paddingLarge),
-                      const SizedBox(height: AppDimensions.paddingLarge),
+                const SizedBox(height: AppDimensions.paddingLarge),
+                const SizedBox(height: AppDimensions.paddingLarge),
 
+                // ========================
+                // 有給管理セクション
+                // ========================
+                Text(
+                  '💼 有給管理',
+                  style: AppTextStyles.sectionTitleStyle,
+                ),
+                const SizedBox(height: AppDimensions.paddingMedium),
+
+                Container(
+                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: AppColors.borderDefault),
+                    borderRadius: BorderRadius.circular(
+                      AppDimensions.borderRadiusMedium,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ========== Week 13 追加: 付与日設定 ==========
                       Text(
-                        '📋 有給管理',
-                        style: AppTextStyles.sectionTitleStyle,
+                        '付与日の設定',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
                       ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
+                      const SizedBox(height: 4.0),
+                      Text(
+                        '有給休暇が付与される日付を設定します（月/日）',
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 8.0),
+                      TextFormField(
+                        initialValue: _vacationAccrualDate ?? '10/01',
+                        decoration: InputDecoration(
+                          hintText: '月/日 例: 10/01',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _vacationAccrualDate = value;
+                          });
+                        },
+                        validator: (value) {
+                          if (value == null || value.isEmpty) return '月/日を入力してください';
+                          final parts = value.split('/');
+                          if (parts.length != 2) return '月/日の形式で入力してください';
+                          final month = int.tryParse(parts[0]);
+                          final day = int.tryParse(parts[1]);
+                          if (month == null || day == null) return '数字を入力してください';
+                          if (month < 1 || month > 12) return '月は1～12で入力してください';
+                          if (day < 1 || day > 31) return '日は1～31で入力してください';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: AppDimensions.paddingLarge),
 
-                      Container(
-                        padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          border: Border.all(color: AppColors.borderDefault),
-                          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                        ),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => VacationSettingsScreen(
-                                        userId: widget.userId,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                                  ),
-                                ),
-                                child: Text(
-                                  '⚙️ 有給設定（入社日・付与日数）',
-                                  style: AppTextStyles.bodyTextStyle.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: AppDimensions.paddingMedium),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => VacationUsageScreen(
-                                        userId: widget.userId,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
-                                  ),
-                                ),
-                                child: Text(
-                                  '📝 有給使用記録',
-                                  style: AppTextStyles.bodyTextStyle.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      // ========== Week 13 追加: 改善アドバイス表示設定を統合 ==========
                       Text(
                         '💡 改善アドバイス表示設定',
                         style: AppTextStyles.bodyTextStyle.copyWith(
@@ -606,9 +587,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
-                const SizedBox(height: AppDimensions.paddingLarge),
-                const SizedBox(height: AppDimensions.paddingLarge),
+              
 
+                // ========================
+                // 保存ボタン
+                // ========================
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -644,6 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// ========== Week 7 Phase 3 追加: プレミアム版の利点を表示 ==========
   Widget _buildBenefitItem(String benefit) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
@@ -657,6 +641,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// ========== Week 7 Phase 3 修正: ペイウォール表示を簡略化 ==========
   Future<void> _showPaywall() async {
     try {
       setState(() {
@@ -665,20 +650,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       print('[SettingsScreen] 💳 有料版ステータスを確認中...');
 
+      // RevenueCat から直接ステータスを確認
       final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
 
       print('[SettingsScreen] ✅ 有料版ステータス確認完了: $isPremium');
 
+      // プレミアムステータスを更新
       if (mounted) {
         setState(() {
           _isPremiumUser = isPremium;
         });
 
+        // SleepProvider にも反映
         if (context.mounted) {
           final sleepProvider = context.read<SleepProvider>();
           sleepProvider.setPremiumStatus(isPremium);
         }
 
+        // ユーザーに結果を通知
         if (isPremium) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -715,7 +704,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
+  // ============================================================================================================================
 
+  /// アラームモード選択ボタン
   Widget _buildAlarmModeButton(AlarmMode mode) {
     final isSelected = _alarmMode == mode;
     return Material(
@@ -762,6 +753,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// 起床時刻選択
   Future<void> _selectWakeUpTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
@@ -784,11 +776,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// テストアラーム（即座再生 + 音量制御 + 2秒長制限）
+  /// ========== ステップB&C 修正: 音量パラメータ追加 + メッセージ更新 ==========
   Future<void> _testAlarmSound() async {
     print('🔊 テストアラーム開始...');
     await AlarmService.showTestNotification(
       selectedAlarmSound: _selectedAlarmSound,
-      volume: _soundVolume,
+      volume: _soundVolume,  // ← 音量スライダーの値を渡す
     );
 
     if (mounted) {
@@ -801,13 +795,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     }
   }
+  // =====================================================================
 
+  /// 設定を保存
   Future<void> _saveSettings() async {
     try {
       final shiftRepository = ShiftRepository();
 
+      // TimeOfDay を "HH:mm" 形式の文字列に変換
       final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
 
+      // AppSettings オブジェクトを作成して保存
       final appSettings = AppSettings(
         id: 1,
         userId: 'test_user',
@@ -815,7 +813,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         wakeUpTime: wakeUpTimeStr,
         selectedAlarmSound: _selectedAlarmSound,
         advicePromoVisible: _advicePromoVisible,
-        isPremiumUser: _isPremiumUser,
+        isPremiumUser: _isPremiumUser,  // ========== Week 7 Phase 3 追加 ==========
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -843,82 +841,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
   }
-    Future<void> _updateWakeUpTimeInProvider() async {
-      try {
-        print('🔴 [DEBUG] _updateWakeUpTimeInProvider() が呼び出されました！');
-      
-        final startDate = DateTime.now();
-        final endDate = startDate.add(Duration(days: 30));
-        final shiftsData = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
-      
-        print('🔴 [DEBUG] shifts数: ${shiftsData.length}');
-      
-        if (shiftsData.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('シフトが登録されていません'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-          return;
-        }
 
-        final firstShiftData = shiftsData.first;
-        final patternId = firstShiftData['pattern_id'] as String;
+  // ========== Week 8 Phase 7 追加: アラームバッファ変更時に起床時刻をリアルタイム更新 ==========
+  /// アラームバッファ変更時に、SleepProvider の起床時刻を更新
+  Future<void> _updateWakeUpTimeInProvider() async {
+    try {
+      // 次のシフトを取得
+      final shifts = await _shiftRepository.getShiftsForDateRange(
+        DateTime.now(),
+        DateTime.now().add(const Duration(days: 1)),  // 明日までのシフト
+      );
       
-        final allPatterns = await _shiftRepository.getAllPatterns();
-      
-        var matchingPattern;
-        for (final p in allPatterns) {
-          if (p.id == patternId) {
-            matchingPattern = p;
-            break;
-          }
-        }
-
-        if (matchingPattern == null || matchingPattern.startTime == null) {
-          print('⚠️ パターンが見つかりません: patternId=$patternId');
-          return;
-        }
-
-        final shiftDateStr = firstShiftData['shift_date'] as String;
-        final shiftDate = DateTime.parse(shiftDateStr);
-        final shiftStartTime = DateTime(
-          shiftDate.year,
-          shiftDate.month,
-          shiftDate.day,
-          matchingPattern.startTime.hour,
-          matchingPattern.startTime.minute,
-        );
-      
-        final wakeUpDateTime = shiftStartTime.subtract(Duration(minutes: _alarmTimeBeforeShift));
-      
-        if (mounted) {
-          final sleepProvider = context.read<SleepProvider>();
-          sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-        
-          final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
-          final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
-          final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
-          final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
-        
-          print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
-        }
-      } catch (e) {
-        print('❌ 起床時刻更新エラー: $e');
+      if (shifts.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('起床時刻計算エラー: $e'),
-              backgroundColor: AppColors.warningRed,
-              duration: const Duration(seconds: 2),
+            const SnackBar(
+              content: Text('シフトが登録されていません'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
             ),
           );
         }
+        return;
+      }
+
+      // 次のシフト（最初の1件）を取得
+      final nextShift = shifts.first;
+
+      // shiftStartTime は "HH:mm" 形式の文字列（例："08:00"）
+      final startTimeStr = nextShift['start_time'] as String;
+      final timeParts = startTimeStr.split(':');
+      final startHour = int.parse(timeParts[0]);
+      final startMin = int.parse(timeParts[1]);
+
+      // 明日のシフト開始時刻を DateTime に変換
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      final shiftStartDateTime = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, startHour, startMin);
+
+      // アラームバッファを引いて起床時刻を計算
+      final wakeUpDateTime = shiftStartDateTime.subtract(
+        Duration(minutes: _alarmTimeBeforeShift),
+      );
+      
+      // SleepProvider に反映
+      if (mounted) {
+        final sleepProvider = context.read<SleepProvider>();
+        sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+        
+        // final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
+        // final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
+        // final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
+        // final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
+        
+        // print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
+      }
+    } catch (e) {
+      print('❌ 起床時刻更新エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('起床時刻計算エラー: $e'),
+            backgroundColor: AppColors.warningRed,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     }
- 
+  }
+  // ===============================================================================
 }
