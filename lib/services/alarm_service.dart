@@ -154,6 +154,7 @@ class AlarmService {
       scheduledDate: mainAlarmDateTime,
       title: '出勤時間です',
       body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+      selectedAlarmSound: selectedAlarmSound,
     );
 
     // 事前アラーム
@@ -174,6 +175,7 @@ class AlarmService {
         scheduledDate: preAlarmDateTime,
         title: '出勤${preAlarmMinutes}分前です',
         body: '準備をお始めください',
+        selectedAlarmSound: selectedAlarmSound,
       );
     }
   }
@@ -248,11 +250,13 @@ class AlarmService {
     required DateTime scheduledDate,
     required String title,
     required String body,
+    String selectedAlarmSound = 'default',
   }) async {
     try {
       print('⏰ AlarmManager スケジュール開始');
       print('⏰ アラーム ID: $alarmId');
       print('⏰ スケジュール時刻: $scheduledDate');
+      print('🔊 アラーム音: $selectedAlarmSound');
 
       // MillisecondsSinceEpoch でタイムスタンプを取得
       final timestampMs = scheduledDate.millisecondsSinceEpoch;
@@ -265,6 +269,7 @@ class AlarmService {
           'alarmId': alarmId,
           'title': title,
           'body': body,
+          'selectedAlarmSound': selectedAlarmSound,
         },
       );
 

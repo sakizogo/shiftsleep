@@ -11,8 +11,11 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     companion object {
-        // MethodChannel の名前（Dart 側と一致させる必要があります）
+        // MethodChannel の名前（Dart 側と一致させる必須）
         private const val CHANNEL = "com.sakizoapps.shiftsleep/alarm"
+        
+        // ★ AlarmManager が使用するアクション（これだけ1つ残す）
+        private const val ALARM_ACTION = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
     }
 
     private val alarmManager: AlarmManager by lazy {
@@ -32,17 +35,19 @@ class MainActivity : FlutterActivity() {
                         val alarmId = call.argument<Int>("alarmId")
                         val title = call.argument<String>("title")
                         val body = call.argument<String>("body")
+                        val selectedAlarmSound = call.argument<String>("selectedAlarmSound") ?: "default"
 
                         if (timestampMs != null && alarmId != null && title != null && body != null) {
                             scheduleAlarmWithAlarmManager(
                                 timestampMs = timestampMs,
                                 alarmId = alarmId,
                                 title = title,
-                                body = body
+                                body = body,
+                                selectedAlarmSound = selectedAlarmSound
                             )
                             result.success("✅ AlarmManager でスケジュール完了")
                         } else {
-                            result.error("INVALID_ARGS", "必須パラメータが不足しています", null)
+                            result.error("INVALID_ARGS", "必要なパラメータが不足しています", null)
                         }
                     }
 
@@ -52,7 +57,7 @@ class MainActivity : FlutterActivity() {
                             cancelAlarmWithAlarmManager(alarmId)
                             result.success("✅ AlarmManager のアラーム削除完了")
                         } else {
-                            result.error("INVALID_ARGS", "alarmId が必須です", null)
+                            result.error("INVALID_ARGS", "alarmId が不足です", null)
                         }
                     }
 
@@ -68,36 +73,45 @@ class MainActivity : FlutterActivity() {
      * デバイススリープ中でも確実に発火します
      *
      * @param timestampMs - アラーム時刻（ミリ秒）
-     * @param alarmId - アラーム ID（一意）
+     * @param alarmId - アラーム ID（ユニーク）
      * @param title - 通知タイトル
      * @param body - 通知本文
+     * @param selectedAlarmSound - アラーム音の種類（'default', 'gentle', 'harsh'）
      */
     private fun scheduleAlarmWithAlarmManager(
         timestampMs: Long,
         alarmId: Int,
         title: String,
-        body: String
+        body: String,
+        selectedAlarmSound: String
     ) {
         try {
-            // Intent を作成（AlarmReceiver にデータを渡す）
+            // ★ Intent を作成・ALARM_ACTION を明示的に設定
             val intent = Intent(this, AlarmReceiver::class.java).apply {
+                action = ALARM_ACTION  // ★ ここが重要！
                 putExtra("alarmId", alarmId)
                 putExtra("title", title)
                 putExtra("body", body)
+                putExtra("selectedAlarmSound", selectedAlarmSound)
             }
 
-            // PendingIntent を作成（FLAG_UPDATE_CURRENT で既存を上書き）
+            // PendingIntent を作成・FLAG_UPDATE_CURRENT で既存を更新
             val pendingIntent = PendingIntent.getBroadcast(
                 this,
-                alarmId,  // requestCode = alarmId（一意性確保）
+                alarmId,  // requestCode = alarmId（ユニーク確保）
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            android.util.Log.d(
+                "MainActivity",
+                "🔍 PendingIntent 作成完了: alarmId=$alarmId, action=$ALARM_ACTION"
+            )
+
             // AlarmManager.setAndAllowWhileIdle() でセット
-            // （デバイススリープ中でも実行される）
+            // （デバイススリープ中でも発火します）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // Android 12+ では scheduleExactAlarm 権限チェックが必要
+                // Android 12+ では scheduleExactAlarm 権限をチェック
                 if (alarmManager.canScheduleExactAlarms()) {
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
@@ -106,10 +120,10 @@ class MainActivity : FlutterActivity() {
                     )
                     android.util.Log.d(
                         "MainActivity",
-                        "✅ setAndAllowWhileIdle 実行（正確時刻）: $timestampMs"
+                        "✅ setAndAllowWhileIdle 実行中（正確時刻）: $timestampMs"
                     )
                 } else {
-                    // 権限がない場合は setAndAllowWhileIdle（不正確）を使用
+                    // 権限がない場合は setAndAllowWhileIdle（不正確モード）を使用
                     alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         timestampMs,
@@ -117,7 +131,7 @@ class MainActivity : FlutterActivity() {
                     )
                     android.util.Log.w(
                         "MainActivity",
-                        "⚠️ 正確なアラーム権限がありません。不正確モードで実行"
+                        "⚠️ 正確なアラーム権限がありません。不正確モードで実行します"
                     )
                 }
             } else {
@@ -127,7 +141,7 @@ class MainActivity : FlutterActivity() {
                     timestampMs,
                     pendingIntent
                 )
-                android.util.Log.d("MainActivity", "✅ setAndAllowWhileIdle 実行: $timestampMs")
+                android.util.Log.d("MainActivity", "✅ setAndAllowWhileIdle 実行完了 $timestampMs")
             }
 
         } catch (e: Exception) {
@@ -140,7 +154,9 @@ class MainActivity : FlutterActivity() {
      */
     private fun cancelAlarmWithAlarmManager(alarmId: Int) {
         try {
-            val intent = Intent(this, AlarmReceiver::class.java)
+            val intent = Intent(this, AlarmReceiver::class.java).apply {
+                action = ALARM_ACTION  // ★ ここも同じアクションを使用
+            }
             val pendingIntent = PendingIntent.getBroadcast(
                 this,
                 alarmId,
@@ -148,7 +164,7 @@ class MainActivity : FlutterActivity() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             alarmManager.cancel(pendingIntent)
-            android.util.Log.d("MainActivity", "✅ AlarmManager キャンセル完了: $alarmId")
+            android.util.Log.d("MainActivity", "✅ AlarmManager キャンセル完了 $alarmId")
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "❌ キャンセル エラー: ${e.message}", e)
         }

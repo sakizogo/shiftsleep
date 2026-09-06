@@ -302,11 +302,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: AppDimensions.paddingLarge),
                     SleepButton(
-                      onPressed: () async {
-                      // ========== Week 8 Phase 6 修正: 当日シフトから起床時刻を自動計算 ==========
-                      await _calculateAndScheduleWakeUpTime(sleepProvider);
-                      // ========================================================================
-                      },
+                      onPressed: null,  // または () {} で何もしない
                     ),
                   ],
                 ),
@@ -1530,26 +1526,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// 6. アラームをスケジュール
   Future<void> _calculateAndScheduleWakeUpTime(SleepProvider sleepProvider) async {
     try {
-      print('🌙 [HomeScreen] Step 1: 当日シフトを検索中...');
+      print('🌙 [HomeScreen] Step 1: シフトを検索中...');
       
-      // Step 1: 当日のシフトを取得
+      // Step 1: 当日～30日後のシフトを検索（当日がなければ明日以降）
       final today = DateTime.now();
-      final shiftsForToday = await _shiftRepository.getShiftsForDateRange(today, today);
+      final futureDate = today.add(const Duration(days: 30));
+      final shiftsInRange = await _shiftRepository.getShiftsForDateRange(today, futureDate);
       
-      if (shiftsForToday.isEmpty) {
-        print('⚠️  [HomeScreen] 今日のシフトがありません');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('今日のシフトが設定されていません')),
-        );
+      if (shiftsInRange.isEmpty) {
+        print('⚠️  [HomeScreen] 30日以内のシフトがありません');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('30日以内にシフトが設定されていません')),
+          );
+        }
         return;
       }
 
-      print('✅ [HomeScreen] Step 1完了: シフト${shiftsForToday.length}件を取得');
+      print('✅ [HomeScreen] Step 1完了: シフト${shiftsInRange.length}件を取得');
 
-      // Step 2: シフトパターンから出勤時刻を取得
-      print('🌙 [HomeScreen] Step 2: シフトパターンを検索中...');
-      final shift = shiftsForToday.first;
-      final patternId = shift['pattern_id'] as String;
+      // Step 2: 最初の「work」シフト（休日/有休/半休を除外）を見つける
+      print('🌙 [HomeScreen] Step 2: work シフトを検索中...');
+      Map<String, dynamic>? targetShift;
+      DateTime? targetDate;
+      
+      for (int i = 0; i < shiftsInRange.length; i++) {
+        final shift = shiftsInRange[i] as Map<String, dynamic>;
+        final patternId = shift['pattern_id'] as String?;
+        
+        // 休日・有休・半休を除外
+        if (patternId == 'default_dayoff' || 
+            patternId == 'default_vacation_1day' || 
+            patternId == 'default_vacation_half') {
+          print('ℹ️  スキップ: $patternId は休日/有休/半休');
+          continue;
+        }
+        
+        targetShift = shift;
+        targetDate = today.add(Duration(days: i));
+        print('✅ [HomeScreen] Step 2完了: work シフトを見つけました (日付: ${targetDate?.toIso8601String()})');
+        break;
+      }
+      
+      if (targetShift == null || targetDate == null) {
+        print('⚠️  [HomeScreen] 30日以内に work シフトがありません');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('30日以内に通常シフトが見つかりません')),
+          );
+        }
+        return;
+      }
+
+      // Step 3: シフトパターンから出勤時刻を取得
+      print('🌙 [HomeScreen] Step 3: シフトパターンを検索中...');
+      final patternId = targetShift['pattern_id'] as String;
       final allPatterns = await _shiftRepository.getAllPatterns();
       final pattern = allPatterns.firstWhere(
         (p) => p.id == patternId,
@@ -1560,47 +1591,73 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       if (pattern.startTime == null) {
         print('⚠️  [HomeScreen] シフトパターンに出勤時刻がありません');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('出勤時刻が設定されていません')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('出勤時刻が設定されていません')),
+          );
+        }
         return;
       }
 
-      print('✅ [HomeScreen] Step 2完了: 出勤時刻 ${pattern.startTime!.hour}:${pattern.startTime!.minute.toString().padLeft(2, '0')}');
+      print('✅ [HomeScreen] Step 3完了: 出勤時刻 ${pattern.startTime!.hour}:${pattern.startTime!.minute.toString().padLeft(2, '0')}');
 
-      // Step 3: AppSettings からアラーム時間を取得
-      print('🌙 [HomeScreen] Step 3: AppSettings を検索中...');
+      // Step 4: AppSettings からアラーム時間を取得
+      print('🌙 [HomeScreen] Step 4: AppSettings を検索中...');
       final settings = await _shiftRepository.getAppSettings('test_user');
-      final alarmMinutesBefore = settings?.alarmTimeBeforeShift ?? 30;  // デフォルト: 30分前
+      final alarmMinutesBefore = settings?.alarmTimeBeforeShift ?? 30;
 
-      print('✅ [HomeScreen] Step 3完了: アラーム時間 = ${alarmMinutesBefore}分前');
+      print('✅ [HomeScreen] Step 4完了: アラーム時間 = ${alarmMinutesBefore}分前');
 
-      // Step 4: 起床時刻を計算
-      print('🌙 [HomeScreen] Step 4: 起床時刻を計算中...');
+      // Step 5: 起床時刻を計算
+      print('🌙 [HomeScreen] Step 5: 起床時刻を計算中...');
       final shiftStartTime = pattern.startTime!;
       final shiftStartDateTime = DateTime(
-        today.year,
-        today.month,
-        today.day,
+        targetDate.year,
+        targetDate.month,
+        targetDate.day,
         shiftStartTime.hour,
         shiftStartTime.minute,
       );
 
       final wakeUpDateTime = shiftStartDateTime.subtract(Duration(minutes: alarmMinutesBefore));
-      print('✅ [HomeScreen] Step 4完了: 起床時刻 = '
-          '${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')}');
-
-      // Step 5: SleepProvider に設定
-      // print('🌙 [HomeScreen] Step 5: SleepProvider に起床時刻を設定中...');
-      // sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-      // print('✅ [HomeScreen] Step 5完了: SleepProvider に設定されました');
+      
+      // ★ アラーム時刻が過去の場合は翌日にする
+      DateTime alarmDateTime = DateTime(
+        targetDate.year,
+        targetDate.month,
+        targetDate.day,
+        shiftStartTime.hour,
+        shiftStartTime.minute,
+      ).subtract(Duration(minutes: alarmMinutesBefore));
+      
+      if (alarmDateTime.isBefore(DateTime.now())) {
+        print('[HomeScreen] ℹ️ アラーム時刻が過去のため、翌日に変更します');
+        targetDate = today.add(const Duration(days: 1));
+        alarmDateTime = DateTime(
+          targetDate.year,
+          targetDate.month,
+          targetDate.day,
+          shiftStartTime.hour,
+          shiftStartTime.minute,
+        ).subtract(Duration(minutes: alarmMinutesBefore));
+      }
+      
+      print('[HomeScreen] ✅ アラーム時刻が未来です。登録を続行します。');
+      print('[HomeScreen] 📅 アラーム予定日: ${targetDate.toIso8601String()}');
+      
+      print('[HomeScreen] ✅ アラーム時刻が未来です。登録を続行します。');
+      print('[HomeScreen] 📅 アラーム予定日: ${targetDate.toIso8601String()}');
+      
+      print('✅ [HomeScreen] Step 5完了: 起床時刻 = '
+          '${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')} '
+          '(日付: ${targetDate.toIso8601String()})');
 
       // Step 6: アラームをスケジュール
       print('🌙 [HomeScreen] Step 6: アラームをスケジュール中...');
       await AlarmService.scheduleAlarmForShift(
-        shiftDate: today,
+        shiftDate: targetDate,
         alarmTime: TimeOfDay(hour: wakeUpDateTime.hour, minute: wakeUpDateTime.minute),
-        preAlarmEnabled: false,  // 「今から寝る」時点では事前アラーム不要
+        preAlarmEnabled: false,
       );
       print('✅ [HomeScreen] Step 6完了: アラームをスケジュールしました');
 
@@ -1609,7 +1666,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✅ ${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')} に起床アラームをセットしました',
+              '✅ ${wakeUpDateTime.month}/${wakeUpDateTime.day} '
+              '${wakeUpDateTime.hour}:${wakeUpDateTime.minute.toString().padLeft(2, '0')} '
+              'に起床アラームをセットしました',
             ),
             duration: const Duration(seconds: 3),
           ),
@@ -1626,5 +1685,4 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
   }
-  // ========================================================================  
 }
