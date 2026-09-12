@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';  // ← CupertinoSwitch 用
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -34,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _alarmTimeBeforeShift = 30;
   bool _advicePromoVisible = true;
   bool _isPremiumUser = false;
+  bool _isAlarmEnabled = true;  // ✨ 🆕 追加：デフォルト true
   bool _isLoading = false;
   String? _vacationAccrualDate;
   // ========== Week 25+ 新規追加：毎日設定チェックボックス ==========
@@ -48,7 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
-    _loadDailyWakeUpSetting();
+    // _loadDailyWakeUpSetting();
+    // _loadAlarmEnabledSetting();  // ✨ 🆕 追加
     // ============================================================
   }
 
@@ -60,7 +63,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (settings != null && mounted) {
         print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
 
-        // wakeUpTime を "07:00" 形式から TimeOfDay に変換
+        // ✨ ここを追加：wakeUpTime を "07:00" 形式から TimeOfDay に変換
         final timeParts = settings.wakeUpTime.split(':');
         final hour = int.parse(timeParts[0]);
         final minute = int.parse(timeParts[1]);
@@ -71,6 +74,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
           _isPremiumUser = settings.isPremiumUser;
+          // isAlarmEnabled は削除
         });
       }
     } catch (e) {
@@ -78,31 +82,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
-  /// SharedPreferences から「毎日この設定を使用する」チェックボックスの状態を読み込み
-  Future<void> _loadDailyWakeUpSetting() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      setState(() {
-        _useDailyWakeUpSetting = prefs.getBool('daily_wake_up_enabled') ?? false;
-      });
-      print('✅ チェックボックス設定を読み込み: $_useDailyWakeUpSetting');
-    } catch (e) {
-      print('⚠️ チェックボックス読み込みエラー: $e');
+    // ========== 🆕 新規追加：SharedPreferences から アラーム有効フラグを読み込み ==========
+    /// SharedPreferences から「アラーム有効」フラグを読み込み
+    Future<void> _loadAlarmEnabledSetting() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        setState(() {
+          _isAlarmEnabled = prefs.getBool('is_alarm_enabled') ?? true;
+        });
+        print('✅ アラーム有効フラグを読み込み: $_isAlarmEnabled');
+      } catch (e) {
+        print('⚠️ アラーム有効フラグ読み込みエラー: $e');
+      }
     }
-  }
 
-  /// SharedPreferences にチェックボックス状態を保存
-  Future<void> _saveDailyWakeUpSetting(bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('daily_wake_up_enabled', value);
-      print('✅ チェックボックス設定を保存: $value');
-    } catch (e) {
-      print('⚠️ チェックボックス保存エラー: $e');
+    /// SharedPreferences にアラーム有効フラグを保存
+    Future<void> _saveAlarmEnabledSetting(bool value) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('is_alarm_enabled', value);
+        print('✅ アラーム有効フラグを保存: $value');
+      } catch (e) {
+        print('⚠️ アラーム有効フラグ保存エラー: $e');
+      }
     }
-  }
-  // ============================================================
+    // ===========================================================================================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -368,11 +372,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           final displayWakeUpTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
                           return Row(
                             children: [
+                              // ✨ 🆕 追加：Toggle Switch
+                              CupertinoSwitch(
+                                value: _isAlarmEnabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _isAlarmEnabled = value;
+                                    _saveAlarmEnabledSetting(value);  // 保存
+                                  });
+                                  print('[Settings] アラーム有効: $value');
+                                },
+                              ),
+                              const SizedBox(width: 12),
+                              
+                              // 時刻表示
                               Text(
                                 '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
                                 style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
                               ),
                               const Spacer(),
+                              
+                              // 変更ボタン
                               ElevatedButton(
                                 onPressed: () => _selectWakeUpTime(context),
                                 style: ElevatedButton.styleFrom(
@@ -381,7 +401,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
                                   ),
                                 ),
-                                child: Text('変更', style: AppTextStyles.bodyTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                                child: const Text(
+                                  '変更',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ],
                           );
@@ -417,7 +443,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _useDailyWakeUpSetting = value;
                               });
                               // SharedPreferences に保存
-                              _saveDailyWakeUpSetting(value);
+                              
                               
                               print('[SettingsScreen] 📌 毎日設定チェックボックス: ${value ? "✅ ON" : "❌ OFF"}');
                               
@@ -926,6 +952,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _wakeUpTime = picked;
       });
+      await _saveSettings();  // ✨ 🆕 追加：ここで DB に保存
     }
   }
 

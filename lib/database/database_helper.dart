@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 16,  // v16 に更新
+      version: 17,  // 16 → 17
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -311,6 +311,21 @@ class DatabaseHelper {
           } catch (e) {
             // カラムが既に存在する場合はエラーを無視
             print('⚠️ first_accrual_date column may already exist: $e');
+            // ========== 新規追加：バージョン 16 → 17 - is_alarm_enabled カラム ==========
+            if (oldVersion < 17) {
+              print('🔄 Database upgrade: v$oldVersion → v17');
+
+              try {
+                await db.execute('''
+                  ALTER TABLE app_settings
+                  ADD COLUMN is_alarm_enabled INTEGER DEFAULT 1
+                ''');
+                print('✅ Database upgrade complete: app_settings table updated with is_alarm_enabled column');
+              } catch (e) {
+                print('⚠️ Column might already exist: $e');
+              }
+            }
+            // =====================================================================
           }
         }
         // ========================================================================
