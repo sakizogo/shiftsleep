@@ -8,6 +8,7 @@ import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'screens/home_screen.dart';
 
+
 const String REVENUECAT_API_KEY = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
 
 void main() async {
@@ -70,7 +71,8 @@ class MyApp extends StatelessWidget {
           primarySwatch: Colors.blue,
           useMaterial3: true,
         ),
-        home: const _HomeScreenWrapper(),  // ← ホーム画面をラッパーに
+        home: const _HomeScreenWrapper(),  // ← 元に戻す
+        // home: const _HomeScreenWrapper(),  // ← 元の画面（コメントアウト）
         debugShowCheckedModeBanner: false,
       ),
     );

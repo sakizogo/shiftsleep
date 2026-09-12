@@ -1654,12 +1654,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // Step 6: アラームをスケジュール
       print('🌙 [HomeScreen] Step 6: アラームをスケジュール中...');
-      await AlarmService.scheduleAlarmForShift(
-        shiftDate: targetDate,
-        alarmTime: TimeOfDay(hour: wakeUpDateTime.hour, minute: wakeUpDateTime.minute),
-        preAlarmEnabled: false,
-      );
-      print('✅ [HomeScreen] Step 6完了: アラームをスケジュールしました');
+
 
       // 完了メッセージ
       if (mounted) {
