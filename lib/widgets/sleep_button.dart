@@ -346,12 +346,17 @@ class _SleepButtonState extends State<SleepButton>
     return Consumer<SleepProvider>(
       builder: (context, sleepProvider, child) {
         final isSleeping = sleepProvider.isSleepingNow;
+        final isAlarmSet = sleepProvider.isAlarmSet;
 
         return GestureDetector(
           onTapDown: _onTapDown,
           onTapUp: _onTapUp,
           onTapCancel: _onTapCancel,
-          child: ScaleTransition(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleTransition(
             scale: _scaleAnimation,
             child: Container(
               width: 100,
@@ -385,7 +390,20 @@ class _SleepButtonState extends State<SleepButton>
                   ),
                 ),
               ),
+              ),
             ),
+              if (isAlarmSet) ...[
+                const SizedBox(height: 12),
+                Text(
+                  '🔔 アラーム設定中',
+                  style: AppTextStyles.buttonTextStyle.copyWith(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ],
           ),
         );
       },

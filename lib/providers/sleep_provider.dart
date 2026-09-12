@@ -54,6 +54,10 @@ class SleepProvider extends ChangeNotifier {
   String? _currentSleepRecordIdNow;      // 睡眠中のレコード ID
   // ========================================================================
 
+  // ========== Week 26+ 追加: アラーム設定中フラグ ==========
+  bool _isAlarmSet = false;             // 🔔 アラーム設定中フラグ
+  // ======================================================
+
   // ========== Week 8 Phase 4 追加: 睡眠状態の永続化用 ==========
   DateTime? _sleepStartTime;            // 睡眠開始時刻
   int? _currentShiftId;                 // 関連するシフトID
@@ -88,6 +92,10 @@ class SleepProvider extends ChangeNotifier {
   bool get isSleepingNow => _isSleepingNow;
   String? get currentSleepRecordIdNow => _currentSleepRecordIdNow;
   // ================================================================
+
+  // ========== Week 26+ 追加: アラーム設定中フラグの Getter ==========
+  bool get isAlarmSet => _isAlarmSet;
+  // ==================================================================
   // ✅ 【新規追加】
   Future<void> setCurrentSleepRecordIdNow(String? id) async {
     _currentSleepRecordIdNow = id;
@@ -113,6 +121,15 @@ class SleepProvider extends ChangeNotifier {
     await SleepPreferenceService.clearCurrentSleepRecordId();
     print('[SleepProvider] 🗑️ SharedPreferences から ID をクリア');
   }
+
+  // ========== Week 26+ 追加: アラーム設定中フラグを制御 ==========
+  /// アラーム設定状態を設定（SleepButton が寝る時に true、起きる時に false）
+  void setAlarmSet(bool isSet) {
+    _isAlarmSet = isSet;
+    notifyListeners();
+    print('[SleepProvider] 🔔 isAlarmSet を設定: $_isAlarmSet');
+  }
+  // ============================================================
 
 
   // ========== Week 7 A 追加: アドバイス Getter ==========
