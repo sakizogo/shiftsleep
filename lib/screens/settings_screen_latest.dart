@@ -952,7 +952,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _wakeUpTime = picked;
       });
-      await _saveSettings();  // ✨ 🆕 追加：ここで DB に保存
+      
+      // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
+      await _saveSettings();
     }
   }
 
@@ -974,12 +976,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  // ========== 🆕 Week 26+ Step 6：完全な _saveSettings() 実装 ==========
   Future<void> _saveSettings() async {
     try {
-      // ... 既存コード ...
-      print('✅ 設定を保存:...');
+      // ========== Step 1️⃣：既存の設定を取得（id と createdAt を保持するため） ==========
+      print('[Settings] 💾 Step 1️⃣ 既存設定を読み込み中...');
+      
+      final currentSettings = await _shiftRepository.getAppSettings('test_user');
+      
+      if (currentSettings == null) {
+        print('[Settings] ⚠️ 既存設定が見つかりません。デフォルト値を使用します。');
+      }
+      
+      // ========== Step 2️⃣：新しい AppSettings オブジェクトを作成（起床時刻を更新） ==========
+      print('[Settings] 🔄 Step 2️⃣ 新しい AppSettings を構築中...');
+      print('[Settings] 📌 起床時刻=${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')}');
+      
+      final now = DateTime.now();
+      final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
+      
+      final updatedSettings = AppSettings(
+        id: currentSettings?.id ?? 1,                              // ← 既存の id を保持（ない場合は 1）
+        userId: 'test_user',
+        alarmTimeBeforeShift: _alarmTimeBeforeShift,
+        wakeUpTime: wakeUpTimeStr,                                 // ← 新しい起床時刻
+        selectedAlarmSound: _selectedAlarmSound,
+        advicePromoVisible: _advicePromoVisible,
+        isPremiumUser: currentSettings?.isPremiumUser ?? false,
+        createdAt: currentSettings?.createdAt ?? now,              // ← 既存の createdAt を保持
+        updatedAt: now,                                             // ← 新しい updatedAt
+      );
+      
+      print('[Settings] 📤 新しい AppSettings: $updatedSettings');
+      
+      // ========== Step 3️⃣：DB に保存 ==========
+      print('[Settings] 💾 Step 3️⃣ DB に保存中...');
+      
+      await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
+      
+      print('✅ Step 3️⃣ DB 保存完了！');
+      
     } catch (e) {
-      print('❌ 設定保存エラー（catch ブロック）: $e');
+      print('❌ Step 1-3 実行エラー: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -988,22 +1026,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
-      return;  // ← catch ブロックを終わらせる
+      return;
     }
     
-    // ✅ ここからは catch ブロックの外（try が成功したときだけ到達）
-    print('[Settings] 剥 DEBUG: sleepProvider.isSleepingNow check...');
-    
-    final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
-    print('[Settings] 剥 DEBUG: sleepProvider.isSleepingNow = ${sleepProvider.isSleepingNow}');
-    
-    if (sleepProvider.isSleepingNow) {
-      print('[Settings] 💤 就寝中です。アラーム再登録を開始...');
-      await _reScheduleAlarmDuringSleep(sleepProvider);
-    } else {
-      print('[Settings] ℹ️ 就寝していません。アラーム再登録はスキップします。');
+    try {
+      // ========== Step 4️⃣：SleepProvider に起床時刻を更新 ==========
+      print('[Settings] 🔄 Step 4️⃣ プロバイダーを更新...');
+      
+      final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
+      
+      // 新しい起床時刻の DateTime を作成
+      final now = DateTime.now();
+      final wakeUpDateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        _wakeUpTime.hour,
+        _wakeUpTime.minute,
+      );
+      
+      // Provider に設定
+      sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
+      
+      print('✅ Step 4️⃣ プロバイダー更新完了！');
+      print('[Settings] 📌 Provider の autoWakeUpTimeOfDay = ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')}');
+      
+    } catch (e) {
+      print('❌ Step 4 実行エラー: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ プロバイダー更新エラー: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
     }
-  }  // ← _saveSettings() の終わり（1つだけ）
+    
+    try {
+      // ========== Step 5️⃣：就寝中の場合、アラーム再登録 ==========
+      print('[Settings] 🔍 Step 5️⃣ 就寝状態を確認...');
+      
+      final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
+      print('[Settings] 🔍 isSleepingNow = ${sleepProvider.isSleepingNow}');
+      
+      if (sleepProvider.isSleepingNow) {
+        print('[Settings] 💤 就寝中です。アラーム再登録を開始...');
+        await _reScheduleAlarmDuringSleep(sleepProvider);
+      } else {
+        print('[Settings] ℹ️ 就寝していません。アラーム再登録はスキップ。');
+      }
+      
+    } catch (e) {
+      print('❌ Step 5 実行エラー: $e');
+      // ここではユーザーに通知しない（アラーム再登録は非同期タスク）
+    }
+    
+    // ========== Step 6️⃣：ユーザーに成功を通知 ==========
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+    
+    print('✅ Step 6️⃣ すべて完了！');
+  }
+  // ============================================================================
+  
   // ✅ 就寝中のアラーム再登録
     Future<void> _reScheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
       try {
