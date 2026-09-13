@@ -976,45 +976,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _saveSettings() async {
     try {
-      final shiftRepository = ShiftRepository();
-
-      final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
-
-      final appSettings = AppSettings(
-        id: 1,
-        userId: 'test_user',
-        alarmTimeBeforeShift: _alarmTimeBeforeShift,
-        wakeUpTime: wakeUpTimeStr,
-        selectedAlarmSound: _selectedAlarmSound,
-        advicePromoVisible: _advicePromoVisible,
-        isPremiumUser: _isPremiumUser,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      await shiftRepository.createOrUpdateAppSettings(appSettings);
+      // ... 既存コード ...
+      print('✅ 設定を保存:...');
+    } catch (e) {
+      print('❌ 設定保存エラー（catch ブロック）: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('設定を保存しました'),
-            backgroundColor: AppColors.primaryGradientStart,
-            duration: const Duration(seconds: 2),
+            content: Text('❌ エラー: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
-      print('✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前, promoVisible=$_advicePromoVisible, isPremium=$_isPremiumUser, dailyWakeUp=$_useDailyWakeUpSetting');
-    } catch (e) {
-      print('❌ 設定保存エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('エラー: $e'),
-            backgroundColor: AppColors.warningRed,
-          ),
+      return;  // ← catch ブロックを終わらせる
+    }
+    
+    // ✅ ここからは catch ブロックの外（try が成功したときだけ到達）
+    print('[Settings] 剥 DEBUG: sleepProvider.isSleepingNow check...');
+    
+    final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
+    print('[Settings] 剥 DEBUG: sleepProvider.isSleepingNow = ${sleepProvider.isSleepingNow}');
+    
+    if (sleepProvider.isSleepingNow) {
+      print('[Settings] 💤 就寝中です。アラーム再登録を開始...');
+      await _reScheduleAlarmDuringSleep(sleepProvider);
+    } else {
+      print('[Settings] ℹ️ 就寝していません。アラーム再登録はスキップします。');
+    }
+  }  // ← _saveSettings() の終わり（1つだけ）
+  // ✅ 就寝中のアラーム再登録
+    Future<void> _reScheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
+      try {
+        print('[Settings] 🔄 アラーム再登録処理を開始...');
+        
+        final now = DateTime.now();
+        final alarmTime = _wakeUpTime;
+        final alarmTimeBeforeShift = _alarmTimeBeforeShift;
+        final selectedAlarmSound = _selectedAlarmSound;
+
+        final hour = alarmTime.hour;
+        final minute = alarmTime.minute;
+
+        final todayWakeUp = DateTime(now.year, now.month, now.day, hour, minute);
+        final shiftDate = todayWakeUp.isAfter(now)
+            ? DateTime(now.year, now.month, now.day)
+            : DateTime(now.year, now.month, now.day + 1);
+
+        print('[Settings] 🛑 古いアラームをキャンセル中...');
+        // ✅ 古いアラームをキャンセル
+        await AlarmService.cancelAlarm(now);
+        print('[Settings] ✅ 古いアラームキャンセル完了');
+
+        print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');
+
+        // ✅ 新しいアラームを登録
+        await AlarmService.scheduleAlarmForShift(
+          shiftDate: shiftDate,
+          alarmTime: alarmTime,
+          preAlarmEnabled: true,
+          preAlarmMinutes: alarmTimeBeforeShift,
+          selectedAlarmSound: selectedAlarmSound,
         );
+
+        print('[Settings] ✅ 新しいアラーム登録完了！');
+      } catch (e) {
+        print('[Settings] ❌ アラーム再登録エラー: $e');
       }
     }
-  }
 
   Future<void> _updateWakeUpTimeInProvider() async {
     try {
