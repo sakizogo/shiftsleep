@@ -1098,7 +1098,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
   // ============================================================================
   
-  // ✅ 就寝中のアラーム再登録
+  // ✅ 就寝中のアラーム再登録（過去の時刻は登録しない）
     Future<void> _reScheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
       try {
         print('[Settings] 🔄 アラーム再登録処理を開始...');
@@ -1116,6 +1116,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? DateTime(now.year, now.month, now.day)
             : DateTime(now.year, now.month, now.day + 1);
 
+        // ========== 🆕 修正：起床時刻が現在より後かどうかをチェック ==========
+        final actualWakeUpTime = DateTime(
+          shiftDate.year,
+          shiftDate.month,
+          shiftDate.day,
+          hour,
+          minute,
+        );
+
+        if (actualWakeUpTime.isBefore(now)) {
+          print('[Settings] ⚠️ 起床時刻 ${hour}:${minute.toString().padLeft(2, '0')} は既に過去です。登録をスキップします。');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ 起床時刻は現在より後の時刻を設定してください'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          return;
+        }
+        // ========== ここまで ==========
+
         print('[Settings] 🛑 古いアラームをキャンセル中...');
         // ✅ 古いアラームをキャンセル
         await AlarmService.cancelAlarm(now);
@@ -1123,16 +1147,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
         print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');
 
-        // ✅ 新しいアラームを登録
+        // ✅ 新しいアラームを登録（起床時刻のみ、出勤前アラームは無視）
         await AlarmService.scheduleAlarmForShift(
           shiftDate: shiftDate,
           alarmTime: alarmTime,
-          preAlarmEnabled: true,
+          preAlarmEnabled: false,  // ← 🆕 修正：出勤前アラームは登録しない
           preAlarmMinutes: alarmTimeBeforeShift,
           selectedAlarmSound: selectedAlarmSound,
         );
 
-        print('[Settings] ✅ 新しいアラーム登録完了！');
+        print('[Settings] ✅ 新しいアラーム登録完了（起床時刻のみ）！');
       } catch (e) {
         print('[Settings] ❌ アラーム再登録エラー: $e');
       }

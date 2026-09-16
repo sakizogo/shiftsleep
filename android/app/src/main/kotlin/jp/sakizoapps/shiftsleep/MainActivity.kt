@@ -16,7 +16,6 @@ class MainActivity: FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         
-        // ✅ Notification Channel を作成（Android 8.0+）
         createNotificationChannel()
         
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
@@ -28,9 +27,8 @@ class MainActivity: FlutterActivity() {
                     val selectedAlarmSound = call.argument<String>("selectedAlarmSound") ?: "default"
                     
                     setAlarm(alarmId, timestampMs, label, selectedAlarmSound)
-                    result.success("✅ アラームセット成功")
+                    result.success("アラームセット成功")
                 }
-                // ✅ Week 26+ 新規追加：scheduleAlarmWithAlarmManager
                 "scheduleAlarmWithAlarmManager" -> {
                     val timestampMs = call.argument<Long>("timestampMs") ?: 0L
                     val alarmId = call.argument<Int>("alarmId") ?: 0
@@ -39,33 +37,31 @@ class MainActivity: FlutterActivity() {
                     val selectedAlarmSound = call.argument<String>("selectedAlarmSound") ?: "default"
                     
                     scheduleAlarmWithAlarmManager(timestampMs, alarmId, title, body, selectedAlarmSound)
-                    result.success("✅ AlarmManager スケジュール成功")
+                    result.success("AlarmManager スケジュール成功")
                 }
-                // ✅ Week 26+ 新規追加：cancelAlarmWithAlarmManager
                 "cancelAlarmWithAlarmManager" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
                     cancelAlarmWithAlarmManager(alarmId)
-                    result.success("✅ AlarmManager キャンセル成功")
+                    result.success("AlarmManager キャンセル成功")
                 }
                 "cancelAlarm" -> {
                     val alarmId = call.argument<String>("alarmId") ?: ""
                     cancelAlarm(alarmId)
-                    result.success("✅ キャンセル成功")
+                    result.success("キャンセル成功")
                 }
                 "cancelAllAlarms" -> {
                     cancelAllAlarms()
-                    result.success("✅ 全キャンセル成功")
+                    result.success("全キャンセル成功")
                 }
                 "stopAlarm" -> {
                     stopAlarm()
-                    result.success("✅ アラーム停止")
+                    result.success("アラーム停止")
                 }
                 else -> result.notImplemented()
             }
         }
     }
 
-    // ✅ Notification Channel 作成メソッド
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "アラーム"
@@ -83,7 +79,6 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // ✅ Week 26+ 新規追加：AlarmManager でスケジュール（デバイススリープ中対応）
     private fun scheduleAlarmWithAlarmManager(
         timestampMs: Long,
         alarmId: Int,
@@ -119,7 +114,6 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    // ✅ Week 26+ 新規追加：AlarmManager でキャンセル
     private fun cancelAlarmWithAlarmManager(alarmId: Int) {
         try {
             Log.d("MainActivity", "🔴 cancelAlarmWithAlarmManager: id=$alarmId")
@@ -187,7 +181,7 @@ class MainActivity: FlutterActivity() {
     private fun stopAlarm() {
         try {
             Log.d("MainActivity", "🛑 stopAlarm 呼び出し")
-            AlarmReceiver.ringtone?.stop()
+            AlarmReceiver.mediaPlayer?.stop()
             Log.d("MainActivity", "✅ アラーム停止完了")
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ アラーム停止エラー: ${e.message}")

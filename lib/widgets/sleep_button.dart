@@ -242,6 +242,9 @@ class _SleepButtonState extends State<SleepButton>
         // cancelAlarm(DateTime date) は日付を指定してキャンセル
         print('[SleepButton] 🛑 アラームをキャンセル中（日付: ${now}）...');
         await AlarmService.cancelAlarm(now);
+        // ✅ 現在再生中のアラーム音を停止
+        await AlarmService.stopAlarmSound();
+        print('[SleepButton] 🛑 アラーム音停止完了');
         print('[SleepButton] ✅ アラームキャンセル完了！');
 
         sleepProvider.setAlarmSet(false);

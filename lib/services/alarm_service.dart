@@ -397,4 +397,14 @@ class AlarmService {
       print('[AlarmService] ❌ テスト音再生エラー: $e');
     }
   }
+  
+  /// 🆕 追加：既に鳴っている AlarmReceiver の音声を停止
+  static Future<void> stopAlarmSound() async {
+    try {
+      final result = await _methodChannel.invokeMethod('stopAlarm');
+      print('✅ stopAlarmSound 呼び出し成功: $result');
+    } catch (e) {
+      print('❌ stopAlarmSound エラー: $e');
+    }
+  }
 }
