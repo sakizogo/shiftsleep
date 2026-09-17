@@ -1,5 +1,4 @@
 package jp.sakizoapps.shiftsleep
-
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -9,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import jp.sakizoapps.shiftsleep.AlarmReceiver  // ← 🆕 追加
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.sakizoapps.shiftsleep/alarm"
@@ -180,11 +180,19 @@ class MainActivity: FlutterActivity() {
 
     private fun stopAlarm() {
         try {
-            Log.d("MainActivity", "🛑 stopAlarm 呼び出し")
-            AlarmReceiver.mediaPlayer?.stop()
-            Log.d("MainActivity", "✅ アラーム停止完了")
+        Log.d("MainActivity", "🔴 stopAlarm 呼び出し")
+
+        // 🆕 companion object の変数に直接アクセス
+        AlarmReceiver.isAlarmPlaying = false
+        AlarmReceiver.mediaPlayer?.stop()
+        AlarmReceiver.mediaPlayer?.release()
+        AlarmReceiver.mediaPlayer = null
+        AlarmReceiver.alarmHandler?.removeCallbacksAndMessages(null)
+        AlarmReceiver.alarmHandler = null
+
+        Log.d("MainActivity", "✅ アラーム停止完了")
         } catch (e: Exception) {
-            Log.e("MainActivity", "❌ アラーム停止エラー: ${e.message}")
+        Log.e("MainActivity", "❌ アラーム停止エラー: ${e.message}")
         }
     }
 }

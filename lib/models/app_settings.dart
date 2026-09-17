@@ -13,6 +13,7 @@ class AppSettings {
   final String selectedAlarmSound;  // （'default', 'gentle', 'harsh'）
   final bool advicePromoVisible;  // ← Week 7 A で追加：有料版プロモーション表示フラグ
   final bool isPremiumUser;  // ← Week 7 Phase 3 追加：有料ユーザーフラグ
+  final bool isAlarmEnabled;  // ← 🆕 ここに追加！
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -24,6 +25,7 @@ class AppSettings {
     this.selectedAlarmSound = 'default',
     this.advicePromoVisible = true,  // ← Week 7 A：デフォルト true（表示する）
     this.isPremiumUser = false,  // ← Week 7 Phase 3：デフォルト false（無料ユーザー）
+    this.isAlarmEnabled = true,  // ← 🆕 ここに追加！
     required this.createdAt,
     required this.updatedAt,
   });
@@ -39,6 +41,7 @@ class AppSettings {
       final userId = map['user_id'] as String? ?? 'unknown';
       final alarmTime = _safeIntCast(map['alarm_time_before_shift']) ?? 30;
       final createdAt = DateTime.parse(map['created_at'] as String);
+      final isAlarmEnabled = map['is_alarm_enabled'] as bool? ?? true;
       final updatedAt = DateTime.parse(map['updated_at'] as String);
       final wakeUpTime = map['wake_up_time'] as String? ?? '07:00';
       final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';
@@ -84,6 +87,7 @@ class AppSettings {
   /// AppSettingsをMapに変換（DB保存用）
   Map<String, dynamic> toMap() {
     return {
+      'is_alarm_enabled': isAlarmEnabled,
       'id': id,
       'user_id': userId,
       'alarm_time_before_shift': alarmTimeBeforeShift,
@@ -98,6 +102,7 @@ class AppSettings {
 
   /// AppSettingsをコピーして部分更新（新しいインスタンスを生成）
   AppSettings copyWith({
+    bool? isAlarmEnabled,
     int? id,
     String? userId,
     int? alarmTimeBeforeShift,
@@ -116,6 +121,7 @@ class AppSettings {
       selectedAlarmSound: selectedAlarmSound ?? this.selectedAlarmSound,
       advicePromoVisible: advicePromoVisible ?? this.advicePromoVisible,
       isPremiumUser: isPremiumUser ?? this.isPremiumUser,  // ← Week 7 Phase 3 追加
+      isAlarmEnabled: isAlarmEnabled ?? this.isAlarmEnabled,  // ← ここに移動！
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

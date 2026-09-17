@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:purchases_flutter/purchases_flutter.dart'; // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
@@ -8,8 +8,8 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
-import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
-import 'package:shiftsleep/providers/sleep_provider.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:shiftsleep/services/premium_service.dart'; // ========== Week 7 Phase 3 追加 ==========
+import 'package:shiftsleep/providers/sleep_provider.dart'; // ========== Week 7 Phase 3 追加 ==========
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -30,11 +30,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _soundVolume = 1.0;
   int _alarmTimeBeforeShift = 30;
   bool _advicePromoVisible = true;
-  bool _isPremiumUser = false;  // ========== Week 7 Phase 3 追加 ==========
-  bool _isLoading = false;  // ========== Week 7 Phase 3 追加: 課金処理中フラグ ==========
+  bool _isPremiumUser = false; // ========== Week 7 Phase 3 追加 ==========
+  bool _isLoading = false; // ========== Week 7 Phase 3 追加: 課金処理中フラグ ==========
 
   final ShiftRepository _shiftRepository = ShiftRepository();
-  final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
+  final PremiumService _premiumService =
+      PremiumService(); // ========== Week 7 Phase 3 追加 ==========
 
   @override
   void initState() {
@@ -48,7 +49,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final settings = await _shiftRepository.getAppSettings('test_user');
 
       if (settings != null && mounted) {
-        print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
+        print(
+            '✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
 
         // wakeUpTime を "07:00" 形式から TimeOfDay に変換
         final timeParts = settings.wakeUpTime.split(':');
@@ -60,7 +62,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
-          _isPremiumUser = settings.isPremiumUser;  // ========== Week 7 Phase 3 追加 ==========
+          _isPremiumUser =
+              settings.isPremiumUser; // ========== Week 7 Phase 3 追加 ==========
         });
       }
     } catch (e) {
@@ -166,7 +169,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                           Icon(
                             _isPremiumUser ? Icons.check_circle : Icons.info,
-                            color: _isPremiumUser ? Colors.green : AppColors.textMuted,
+                            color: _isPremiumUser
+                                ? Colors.green
+                                : AppColors.textMuted,
                             size: 40,
                           ),
                         ],
@@ -290,23 +295,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 8.0),
                       Consumer<SleepProvider>(
                         builder: (context, sleepProvider, _) {
-                          final displayWakeUpTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
+                          final displayWakeUpTime =
+                              sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
                           return Row(
                             children: [
                               Text(
                                 '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
-                                style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
+                                style: AppTextStyles.largeNumberStyle
+                                    .copyWith(fontSize: 32),
                               ),
                               const Spacer(),
                               ElevatedButton(
                                 onPressed: () => _selectWakeUpTime(context),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
+                                  backgroundColor:
+                                      AppColors.primaryGradientStart,
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                                    borderRadius: BorderRadius.circular(
+                                        AppDimensions.borderRadiusSmall),
                                   ),
                                 ),
-                                child: Text('変更', style: AppTextStyles.bodyTextStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w600)),
+                                child: Text('変更',
+                                    style: AppTextStyles.bodyTextStyle.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
                               ),
                             ],
                           );
@@ -401,8 +413,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         value: _selectedAlarmSound,
                         isExpanded: true,
                         items: const [
-                          DropdownMenuItem(value: 'default', child: Text('デフォルト音')),
-                          DropdownMenuItem(value: 'gentle', child: Text('やさしい音')),
+                          DropdownMenuItem(
+                              value: 'default', child: Text('デフォルト音')),
+                          DropdownMenuItem(
+                              value: 'gentle', child: Text('やさしい音')),
                           DropdownMenuItem(value: 'harsh', child: Text('強めの音')),
                         ],
                         onChanged: (value) {
@@ -438,8 +452,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   _soundVolume = value;
                                 });
                               },
-                              activeColor:
-                                  AppColors.primaryGradientStart,
+                              activeColor: AppColors.primaryGradientStart,
                               inactiveColor: AppColors.borderDefault,
                             ),
                           ),
@@ -608,7 +621,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[SettingsScreen] 💳 有料版ステータスを確認中...');
 
       // RevenueCat から直接ステータスを確認
-      final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
+      final isPremium =
+          await _premiumService.checkPremiumStatus(userId: 'test_user');
 
       print('[SettingsScreen] ✅ 有料版ステータス確認完了: $isPremium');
 
@@ -674,8 +688,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _alarmMode = mode;
           });
         },
-        borderRadius:
-            BorderRadius.circular(AppDimensions.borderRadiusSmall),
+        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
         child: Container(
           padding: const EdgeInsets.symmetric(
             vertical: 10.0,
@@ -739,7 +752,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     print('🔊 テストアラーム開始...');
     await AlarmService.showTestNotification(
       selectedAlarmSound: _selectedAlarmSound,
-      volume: _soundVolume,  // ← 音量スライダーの値を渡す
+      volume: _soundVolume, // ← 音量スライダーの値を渡す
     );
 
     if (mounted) {
@@ -760,7 +773,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final shiftRepository = ShiftRepository();
 
       // TimeOfDay を "HH:mm" 形式の文字列に変換
-      final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
+      final wakeUpTimeStr =
+          '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
 
       // AppSettings オブジェクトを作成して保存
       final appSettings = AppSettings(
@@ -770,7 +784,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         wakeUpTime: wakeUpTimeStr,
         selectedAlarmSound: _selectedAlarmSound,
         advicePromoVisible: _advicePromoVisible,
-        isPremiumUser: _isPremiumUser,  // ========== Week 7 Phase 3 追加 ==========
+        isPremiumUser:
+            _isPremiumUser, // ========== Week 7 Phase 3 追加 ==========
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -785,7 +800,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
-      print('✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前, promoVisible=$_advicePromoVisible, isPremium=$_isPremiumUser');
+      print(
+          '✅ 設定を保存: 起床時刻=$wakeUpTimeStr, アラーム時間=$_alarmTimeBeforeShift分前, promoVisible=$_advicePromoVisible, isPremium=$_isPremiumUser');
     } catch (e) {
       print('❌ 設定保存エラー: $e');
       if (mounted) {
@@ -808,7 +824,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   //       DateTime.now(),
   //       DateTime.now().add(const Duration(days: 1)),
   //     );
-  //     
+  //
   //     if (shifts.isEmpty) {
   //       if (mounted) {
   //         ScaffoldMessenger.of(context).showSnackBar(
@@ -824,23 +840,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   //
   //     // 次のシフト（最初の1件）を取得
   //     final nextShift = shifts.first;
-  //     
+  //
   //     // シフトの出勤時刻から、アラームバッファを引いて起床時刻を計算
   //     final shiftStartTime = nextShift.startTime;
   //     // final wakeUpDateTime = shiftStartTime.subtract(
   //     //   Duration(minutes: _alarmTimeBeforeShift),
   //     // );
-  //     
+  //
   //     // SleepProvider に反映
   //     if (mounted) {
   //       final sleepProvider = context.read<SleepProvider>();
   //       sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
-  //       
+  //
   //       // final wakeUpHour = wakeUpDateTime.hour.toString().padLeft(2, '0');
   //       // final wakeUpMin = wakeUpDateTime.minute.toString().padLeft(2, '0');
   //       // final shiftHour = shiftStartTime.hour.toString().padLeft(2, '0');
   //       // final shiftMin = shiftStartTime.minute.toString().padLeft(2, '0');
-  //       
+  //
   //       print('✅ 起床時刻を更新: $wakeUpHour:$wakeUpMin (シフト開始 $shiftHour:$shiftMin - ${_alarmTimeBeforeShift}分)');
   //     }
   //   } catch (e) {
