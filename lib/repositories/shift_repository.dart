@@ -451,10 +451,10 @@ class ShiftRepository {
     try {
       final db = await _databaseHelper.database;
       final now = DateTime.now().toIso8601String();
-
-      // AppSettings の toMap() を使用
+      
       final map = settings.toMap();
       map.remove('id');
+      map.remove('is_alarm_enabled');  // ← 追加：DB に保存しない
       map['updated_at'] = now;
       map['name'] = null;
       map['age'] = null;
@@ -462,15 +462,27 @@ class ShiftRepository {
       map['shift_pattern'] = null;
       map['language'] = 'ja';
 
-      await db.insert(
+      final existing = await db.query(
         'app_settings',
-        map,
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        where: 'user_id = ?',
+        whereArgs: [settings.userId],
       );
 
-      print('✅ App settings saved: ${settings.userId}');
+      if (existing.isNotEmpty) {
+        await db.update(
+          'app_settings',
+          map,
+          where: 'user_id = ?',
+          whereArgs: [settings.userId],
+        );
+        print('✅ AppSettings更新: userId=${settings.userId}, sound=${settings.selectedAlarmSound}');
+      } else {
+        await db.insert('app_settings', map);
+        print('✅ AppSettings新規作成: userId=${settings.userId}, sound=${settings.selectedAlarmSound}');
+      }
     } catch (e) {
-      print('❌ Error saving app settings: $e');
+      print('❌ Error: $e');
+      rethrow;
     }
   }
 

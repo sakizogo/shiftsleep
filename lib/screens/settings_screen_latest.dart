@@ -44,10 +44,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   final PremiumService _premiumService = PremiumService();
+  AppSettings? _currentSettings;  // ← 追加：現在の設定を保持
+
+  /// _currentSettings を デフォルト値で初期化
+  void _initializeCurrentSettings() {
+    _currentSettings ??= AppSettings(
+      id: 1,
+      userId: 'test_user',
+      alarmTimeBeforeShift: 30,
+      wakeUpTime: '07:00',
+      selectedAlarmSound: 'default',
+      advicePromoVisible: true,
+      isPremiumUser: false,
+      isAlarmEnabled: true,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    _initializeCurrentSettings();  // ← 追加
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
     // _loadDailyWakeUpSetting();
@@ -69,6 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final minute = int.parse(timeParts[1]);
 
         setState(() {
+          _currentSettings = settings;  // ← 追加：現在の設定を保存
           _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
@@ -565,6 +584,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             _selectedAlarmSound = value!;
                           });
                         },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ✅ アラーム音保存ボタン（単独）
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            try {
+                              if (_currentSettings == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('❌ 設定が読み込まれていません')),
+                                );
+                                return;
+                              }
+
+                              // selectedAlarmSound のみ更新
+                              final updatedSettings = _currentSettings!.copyWith(
+                                selectedAlarmSound: _selectedAlarmSound,
+                              );
+                              
+                              await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
+                              
+                              setState(() {
+                                _currentSettings = updatedSettings;
+                              });
+                              
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('✅ アラーム音を保存しました'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ 保存に失敗しました: $e'),
+                                    backgroundColor: Colors.red,
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                              print('❌ [Error] 保存エラー: $e');
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryGradientStart,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: const Text(
+                            '🔊 アラーム音を保存',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: AppDimensions.paddingLarge),
 

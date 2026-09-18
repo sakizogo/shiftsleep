@@ -24,6 +24,22 @@ class AlarmReceiver : BroadcastReceiver() {
     const val AUTO_STOP_DURATION_MS = 60000L
     const val PLAY_DURATION_MS = 500L
     const val SILENCE_DURATION_MS = 200L
+
+    fun stopAlarmSound() {
+    try {
+      isAlarmPlaying = false
+      mediaPlayer?.stop()
+      mediaPlayer?.release()
+      mediaPlayer = null
+      alarmHandler?.removeCallbacksAndMessages(null)
+      alarmHandler = null
+      
+      Log.d("AlarmReceiver", "🛑 アラーム停止完了")
+    } catch (e: Exception) {
+      Log.e("AlarmReceiver", "❌ アラーム停止エラー: ${e.message}")
+    }
+  }
+  // ✅ ここまで追加
   }
 
   override fun onReceive(context: Context, intent: Intent?) {
