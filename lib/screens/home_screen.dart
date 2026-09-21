@@ -397,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           const SizedBox(width: 12.0),
                                           Expanded(
                                             child: Text(
-                                              'ボタンの押し忘れはありませんか？',
+                                              '昨日、ボタンを押し忘れていませんか？',
                                               style: AppTextStyles.bodyTextStyle.copyWith(
                                                 fontSize: 12.0,
                                                 color: Colors.black87,
