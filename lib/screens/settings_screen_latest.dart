@@ -1153,9 +1153,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       if (sleepProvider.isSleepingNow) {
         print('[Settings] 💤 就寝中です。アラーム再登録を開始...');
-        await _reScheduleAlarmDuringSleep(sleepProvider);
+        await _rescheduleAlarmDuringSleep(sleepProvider);
       } else {
-        print('[Settings] ℹ️ 就寝していません。アラーム再登録はスキップ。');
+        print('[Settings] ℹ️ 就寝していません。アラーム再登録を実行...');
+        // ✅ 同じメソッドを呼ぶ（就寝状態に関わらず常にアラーム更新）
+        await _rescheduleAlarmDuringSleep(sleepProvider);
       }
       
     } catch (e) {
@@ -1290,6 +1292,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
+    }
+  }
+    /// 就寝中のアラーム再登録（古いアラーム削除→新規登録）
+  Future<void> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
+    try {
+      print('[Settings] 🔄 アラーム再登録処理を開始...');
+
+      final now = DateTime.now();
+      final alarmTime = _wakeUpTime;
+      final alarmTimeBeforeShift = _currentSettings?.alarmTimeBeforeShift ?? 30;
+      final selectedAlarmSound = _selectedAlarmSound;
+
+      final hour = alarmTime.hour;
+      final minute = alarmTime.minute;
+
+      final todayWakeUp = DateTime(now.year, now.month, now.day, hour, minute);
+      final shiftDate = todayWakeUp.isAfter(now)
+          ? DateTime(now.year, now.month, now.day)
+          : DateTime(now.year, now.month, now.day + 1);
+
+      print('[Settings] 🛑 古いアラームをキャンセル中...');
+      await AlarmService.cancelAlarm(shiftDate);
+      print('[Settings] ✅ 古いアラームキャンセル完了');
+
+      print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');
+      await AlarmService.scheduleAlarmForShift(
+        shiftDate: shiftDate,
+        alarmTime: alarmTime,
+        preAlarmEnabled: false,
+        preAlarmMinutes: alarmTimeBeforeShift,
+        selectedAlarmSound: selectedAlarmSound,
+      );
+
+      print('[Settings] ✅ 新しいアラーム登録完了（起床時刻のみ）！');
+    } catch (e) {
+      print('[Settings] ❌ アラーム再登録エラー: $e');
     }
   }
 }
