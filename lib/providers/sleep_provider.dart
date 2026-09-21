@@ -165,6 +165,21 @@ class SleepProvider extends ChangeNotifier {
     return '${duration.inHours}h ${duration.inMinutes % 60}m';
   }
 
+  
+  /// 昨夜の睡眠時間（Duration）- 警告判定用
+  Duration get lastSleepDuration {
+    if (_latestRecord == null) return Duration.zero;
+    
+    final duration = _latestRecord!.wakeTime.difference(_latestRecord!.bedtime);
+    
+    // 翌日にまたがる場合
+    if (duration.isNegative) {
+      return duration + Duration(days: 1);
+    }
+    
+    return duration;
+  }
+
   /// 昨夜の入眠時刻（HH:MM 形式）
   String get lastBedtimeFormatted {
     if (_latestRecord == null) return '--:--';

@@ -380,6 +380,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(
                                 height: AppDimensions.paddingMedium),
+                                if (sleepProvider.lastSleepDuration.inMinutes < 60 ||
+                                    sleepProvider.lastSleepDuration.inHours > 20)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: AppDimensions.paddingMedium),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(AppDimensions.paddingSmall),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF9E6),
+                                        border: Border.all(color: const Color(0xFFF57F17), width: 2.0),
+                                        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.warning_amber, color: Color(0xFFF57F17), size: 20),
+                                          const SizedBox(width: 12.0),
+                                          Expanded(
+                                            child: Text(
+                                              'ボタンの押し忘れはありませんか？',
+                                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                                fontSize: 12.0,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
 
                             Row(
                               mainAxisAlignment:
