@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
+import 'package:shiftsleep/constants/colors.dart';  // ← Week 27 追加
 
 class VacationStatsWidget extends StatefulWidget {
   final String userId;
@@ -19,7 +20,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
   double _totalUsed = 0.0;
   double _remaining = 0.0;
   double _carriedOverDays = 0.0;
-  Map<String, dynamic>? _nextExpiringAccrual;  // ========== Week 16 修正：来年度付与までに消滝する1件 ==========
+  Map<String, dynamic>? _nextExpiringAccrual;
   bool _isLoading = true;
 
   @override
@@ -33,19 +34,14 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
     try {
       final totalUsed = await _repository.getTotalDaysUsedThisYear(widget.userId);
       final remaining = await _repository.getRemainingDaysThisYear(widget.userId);
-      
-      // Week 13: 持ち越し有休関連を取得
       final carriedOverDays = await _repository.getCarriedOverDays(widget.userId) ?? 0.0;
-
-      // ========== Week 16 修正：来年度付与までに消滝する1件を取得 ==========
       final nextExpiringAccrual = await _repository.getNextExpiringAccrual(widget.userId);
-      // ====================================================
 
       setState(() {
         _totalUsed = totalUsed;
         _remaining = remaining;
         _carriedOverDays = carriedOverDays;
-        _nextExpiringAccrual = nextExpiringAccrual;  // ========== Week 16 修正 ==========
+        _nextExpiringAccrual = nextExpiringAccrual;
         _isLoading = false;
       });
     } catch (e) {
@@ -71,7 +67,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
 
     return Column(
       children: [
-        // ======================== 有給統計カード ========================
+        // ======================== 有給統計カード（Week 27: protanopia 対応）========================
         Card(
           elevation: 2,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -86,41 +82,72 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                 ),
                 const SizedBox(height: 16),
                 
+                // ========== Week 27: 使用日数（黄色系） + 残日数（青色系）==========
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('使用日数', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        Text(
-                          '${_totalUsed.toStringAsFixed(1)}日',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                          ),
+                    // 使用日数：黄色系
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.vacationUsedBg,
+                          border: Border.all(color: AppColors.vacationUsedBorder, width: 1.5),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '使用日数',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            ),
+                            Text(
+                              '${_totalUsed.toStringAsFixed(1)}日',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.vacationUsedText,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('残日数', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        Text(
-                          '${_remaining.toStringAsFixed(1)}日',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
-                          ),
+                    const SizedBox(width: 12),
+                    
+                    // 残日数：青色系
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.vacationRemainingBg,
+                          border: Border.all(color: AppColors.vacationRemainingBorder, width: 1.5),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        if (_carriedOverDays > 0)
-                          Text(
-                            '(内訳: 付与20日 + 持ち越し${_carriedOverDays.toStringAsFixed(0)}日 - 使用${_totalUsed.toStringAsFixed(1)}日)',
-                            style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-                          ),
-                      ],
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '残日数',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            ),
+                            Text(
+                              '${_remaining.toStringAsFixed(1)}日',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.vacationRemainingText,
+                              ),
+                            ),
+                            if (_carriedOverDays > 0)
+                              Text(
+                                '(内訳: 付与20日 + 持ち越し${_carriedOverDays.toStringAsFixed(0)}日 - 使用${_totalUsed.toStringAsFixed(1)}日)',
+                                style: TextStyle(fontSize: 10, color: AppColors.textMuted),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -129,37 +156,37 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
           ),
         ),
         
-        // ========== Week 16 追加：昨年度消滝メッセージ ==========
+        // ========== Week 27 修正：有給消滝予定カード（黄色警告系）==========
         if (_nextExpiringAccrual != null)
           Padding(
             padding: const EdgeInsets.only(top: 12.0),
             child: Card(
-              elevation: 0,  // ← シャドウなし
-              color: Colors.red.withOpacity(0.05),  // ← 薄いピンク
+              elevation: 0,
+              color: AppColors.expiryWarningBg,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Colors.red, width: 1.5),  // ← 赤い枠線
+                side: BorderSide(color: AppColors.expiryWarningBorder, width: 1.5),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2.0),
-                      child: Icon(Icons.warning, color: Colors.red, size: 20),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2.0),
+                      child: Icon(Icons.warning, color: AppColors.expiryWarningText, size: 20),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             '⏰ 有給消滝予定',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.red,
+                              color: AppColors.expiryWarningText,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -179,7 +206,6 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
               ),
             ),
           ),
-        // ===============================================================================
       ],
     );
   }

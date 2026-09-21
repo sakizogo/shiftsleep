@@ -45,5 +45,21 @@ class AppColors {
   static const Color summaryMonthBg = Color(0xFFF3E5F5);    // 薄い紫（背景）
   static const Color summaryMonthBorder = Color(0xFF6A1B9A); // 濃い紫（枠線）
   static const Color summaryMonthText = Color(0xFF4A148C);   // テキスト
+
+    // ========== Week 27 追加: 有給統計カード（Protanopia 対応：青系 + 黄色） ==========
+  /// 使用日数：黄色系（Wong 2011: Yellow）
+  static const Color vacationUsedBg = Color(0xFFFFF9E6);      // 薄い黄色（背景）
+  static const Color vacationUsedBorder = Color(0xFFF57F17);  // 濃い黄色（枠線）
+  static const Color vacationUsedText = Color(0xFFE65100);    // テキスト
+  
+  /// 残日数：青色系（既存 summaryToday と調和）
+  static const Color vacationRemainingBg = Color(0xFFE3F2FD);     // 薄い青（背景）
+  static const Color vacationRemainingBorder = Color(0xFF0072B2); // 濃い青（枠線）
+  static const Color vacationRemainingText = Color(0xFF01579B);   // テキスト
+  
+  /// 有給消滝予定：黄色警告系（赤を避ける）
+  static const Color expiryWarningBg = Color(0xFFFFF9E6);      // 薄い黄色（背景）
+  static const Color expiryWarningBorder = Color(0xFFF57F17);  // 濃い黄色（枠線）
+  static const Color expiryWarningText = Color(0xFFE65100);    // テキスト
   // =============================================================================
 }
