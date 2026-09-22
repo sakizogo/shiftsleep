@@ -152,32 +152,37 @@ class SleepProvider extends ChangeNotifier {
 
   /// 昨夜の睡眠時間（時間:分 形式の文字列）
   String get lastSleepDurationFormatted {
-    if (_latestRecord == null) return '--:--';
-    
-    final duration = _latestRecord!.wakeTime.difference(_latestRecord!.bedtime);
-    
-    // 翌日にまたがる場合
-    if (duration.isNegative) {
-      final adjustedDuration = duration + Duration(days: 1);
-      return '${adjustedDuration.inHours}h ${adjustedDuration.inMinutes % 60}m';
-    }
-    
+    final duration = lastSleepDuration;  // ✅ 新しい lastSleepDuration を使用
     return '${duration.inHours}h ${duration.inMinutes % 60}m';
   }
 
   
   /// 昨夜の睡眠時間（Duration）- 警告判定用
   Duration get lastSleepDuration {
-    if (_latestRecord == null) return Duration.zero;
-    
-    final duration = _latestRecord!.wakeTime.difference(_latestRecord!.bedtime);
-    
-    // 翌日にまたがる場合
-    if (duration.isNegative) {
-      return duration + Duration(days: 1);
+    if (_last7DaysRecords.isEmpty) {
+      return Duration.zero;
     }
     
-    return duration;
+    // 昨日のレコードを抽出
+    final yesterday = DateTime.now().subtract(Duration(days: 1));
+    final yesterdayRecords = _last7DaysRecords
+      .where((record) =>
+        record.sleepDate.year == yesterday.year &&
+        record.sleepDate.month == yesterday.month &&
+        record.sleepDate.day == yesterday.day)
+      .toList();
+    
+    if (yesterdayRecords.isEmpty) {
+      return Duration.zero;
+    }
+    
+    // 昨日のレコードの合計睡眠時間
+    int totalMinutes = 0;
+    for (final record in yesterdayRecords) {
+      totalMinutes += record.durationMinutes;
+    }
+    
+    return Duration(minutes: totalMinutes);
   }
 
   /// 昨夜の入眠時刻（HH:MM 形式）
@@ -369,6 +374,7 @@ class SleepProvider extends ChangeNotifier {
   /// ========== Week 7 Phase 3 追加 ==========
   /// PremiumService から有料版ステータスを読み込み
   Future<void> loadAllSleepData() async {
+    debugPrint('🔍 [DEBUG] loadAllSleepData() START');  // ← ここ追加
     try {
       _isLoading = true;
       _errorMessage = null;
@@ -427,6 +433,7 @@ class SleepProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+      debugPrint('🔍 [DEBUG] loadAllSleepData() END');  // ← ここ追加
     }
   }
 

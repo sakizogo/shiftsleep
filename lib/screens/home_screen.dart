@@ -55,26 +55,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // ========== Week 7 Phase 3: 1秒ごとに時刻を更新 ==========
+    // ========== Week 28 修正: 最新睡眠データをロード ==========
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (mounted) {
+        final sleepProvider = context.read<SleepProvider>();
+        await sleepProvider.loadAllSleepData();  // ✅ 変更：loadLatestSleepData() → loadAllSleepData()
+      }
+    });
+    // ====================================================
+    
     _timeUpdateTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) {
         setState(() {
-          // setState() のコールバック内は空でOK
-          // build() が再実行されて _getCurrentTime() が新しい時刻を取得する
+          // 時刻更新のみ
         });
       },
     );
-    // =========================================================
     
-    // ========== Week 3 Day 6-2 追加: GlobalKey を初期化 ==========
     _shiftManagementKey = GlobalKey<ShiftManagementScreenState>();
-    // ===========================================================
-    Future.microtask(
-      () => context.read<SleepProvider>().loadAllSleepData(),
-    );
-    
-    _loadPatterns();
   }
 
   @override
