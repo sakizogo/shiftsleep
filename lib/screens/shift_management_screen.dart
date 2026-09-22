@@ -178,6 +178,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             // ===================================================
             // ========== Week 27+ Step 2：タブに基づいてコンテンツを表示 ==========
             // ========== Week 27+ Step 2 修正：イベント追加は remove ==========
+            _buildInputMethodTabs(),
+            const SizedBox(height: AppDimensions.paddingLarge),
             if (_selectedInputMethod == 0)
               _buildCalendarInputMethod()
             else if (_selectedInputMethod == 1)
@@ -655,19 +657,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ],
           ),
         ),
-        const SizedBox(height: AppDimensions.paddingLarge),
-        _buildInputMethodTabs(),
-        const SizedBox(height: AppDimensions.paddingLarge),
-
-         Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16.0,
-            vertical: 12.0,
-          ),
-          child: VacationStatsWidget(userId: 'test_user'),
-        ),
-
         const SizedBox(height: AppDimensions.paddingMedium),
+        
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -705,6 +696,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ),
           ),
         ),
+
+         Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16.0,
+            vertical: 12.0,
+          ),
+          child: VacationStatsWidget(userId: 'test_user'),
+        ),
+
+        
         const SizedBox(height: AppDimensions.paddingMedium),
         if (_shiftMap.isNotEmpty)
           Container(
