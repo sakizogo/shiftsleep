@@ -176,32 +176,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             // ========== Week 27+ Step 2：上部の「+ イベント追加」ボタンを削除 ==========
             // （削除済み）
             // ===================================================
-            
-            const SizedBox(height: AppDimensions.paddingLarge),
-            _buildInputMethodTabs(),
-            const SizedBox(height: AppDimensions.paddingLarge),
-            Text(
-              'パターン選択',
-              style: AppTextStyles.bodyTextStyle.copyWith(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: AppDimensions.paddingSmall),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ..._patterns.map((pattern) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
-                      child: _buildPatternButton(pattern),
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppDimensions.paddingLarge),
             // ========== Week 27+ Step 2：タブに基づいてコンテンツを表示 ==========
             // ========== Week 27+ Step 2 修正：イベント追加は remove ==========
             if (_selectedInputMethod == 0)
@@ -328,11 +302,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'パターン選択後、日付をタップ',
-          style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 13, color: AppColors.textMuted),
-        ),
-        const SizedBox(height: AppDimensions.paddingMedium),
         Padding(
           padding: const EdgeInsets.only(bottom: AppDimensions.paddingSmall),
           child: Row(
@@ -649,15 +618,47 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 );
               },
                           ),
-
-
-              
-              
             ),
-            
-            
           ),
         ),
+
+        const SizedBox(height: AppDimensions.paddingLarge),
+        Text(
+          'パターン選択',
+          style: AppTextStyles.bodyTextStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: AppDimensions.paddingSmall),
+
+        Text(
+          'パターン選択後、日付をタップ',
+          style: AppTextStyles.bodyTextStyle.copyWith(
+            fontSize: 13,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: AppDimensions.paddingMedium),
+
+
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              ..._patterns.map((pattern) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
+                  child: _buildPatternButton(pattern),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppDimensions.paddingLarge),
+        _buildInputMethodTabs(),
+        const SizedBox(height: AppDimensions.paddingLarge),
+
          Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: 16.0,
