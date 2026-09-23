@@ -658,7 +658,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           ),
         ),
         const SizedBox(height: AppDimensions.paddingMedium),
-        
+
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -808,7 +808,25 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ),
           ],
         ),
+        const SizedBox(height: AppDimensions.paddingMedium),   // Line 660 の上
+        SingleChildScrollView(                                  // Line 647
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              ..._patterns.map((pattern) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: AppDimensions.paddingSmall),
+                  child: _buildPatternButton(pattern),
+                );
+              }).toList(),
+            ],
+          ),
+        ), // SingleChildScrollView                            // Line 659
+        const SizedBox(height: AppDimensions.paddingMedium),   // Line 660
+        
         const SizedBox(height: AppDimensions.paddingMedium),
+        
+
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -825,15 +843,48 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             )),
           ),
         ),
-        if (_shiftMap.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: AppDimensions.paddingMedium),
-            child: Container(
-              padding: const EdgeInsets.all(AppDimensions.paddingSmall),
-              decoration: BoxDecoration(color: AppColors.cardBgWarning, borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall)),
-              child: Text('予定済み: ${_shiftMap.length}日', style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 12, color: AppColors.textSecondary)),
+
+          SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
+                ? () async {
+                    if (widget.onNavigateToDetails != null) {
+                      final result = await widget.onNavigateToDetails!(_shiftMap, widget.patterns);
+                      if (result is Future) {
+                        result.then((value) {
+                          if (value == true) {
+                            loadShifts();
+                            setState(() {
+                              _selectedInputMethod = 0;  // ← カレンダーに戻る
+                            });
+                          }
+                        });
+                      }
+                    }
+                  }
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
+                  ? AppColors.primaryGradientStart
+                  : AppColors.borderDefault,
+              padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+              ),
+            ),
+            child: Text(
+              '保存',
+              style: AppTextStyles.bodyTextStyle.copyWith(
+                color: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
+                    ? Colors.white
+                    : AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+              ),
             ),
           ),
+        ),
       ],
     );
   }
