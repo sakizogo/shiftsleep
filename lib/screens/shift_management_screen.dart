@@ -102,41 +102,58 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   
   Future<void> _initializeAllData() async {
     try {
+      // ========== 🆕 修正：_loadVacationData を最初に実行 ==========
+      print('[ShiftManagementScreen] 🔄 Step 1️⃣ 有休データを読み込み中...');
+      await _loadVacationData();
+      print('[ShiftManagementScreen] ✅ Step 1️⃣ 有休データ読み込み完了');
+      
+      // その後、他のデータを読み込む
+      print('[ShiftManagementScreen] 🔄 Step 2️⃣ パターン・シフト・イベントを読み込み中...');
       await _loadPatterns();
       await loadShifts();
-      await _loadVacationData();
       await loadCalendarEvents();
+      print('[ShiftManagementScreen] ✅ Step 2️⃣ 読み込み完了');
       
       print('[ShiftManagementScreen] ✅ 全ての初期化が完了');
     } catch (e) {
-      print('[ShiftManagementScreen] ⚠️  初期化エラー: $e');
+      print('[ShiftManagementScreen] ⚠️ 初期化エラー: $e');
     }
   }
   
-  Future<void> _loadVacationData() async {
-    try {
-      final now = DateTime.now();
-      final startOfYear = DateTime(now.year, 1, 1);
-      final endOfYear = DateTime(now.year, 12, 31);
-      
-      final vacationUsages = await _vacationRepository.getVacationUsageInRange(
-        'test_user',
-        startOfYear,
-        endOfYear,
-      );
-      
-      setState(() {
-        _vacationMap.clear();
-        for (final usage in vacationUsages) {
-          final dateKey = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
-          _vacationMap[dateKey] = usage.daysUsed;
-        }
-      });
-      print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
-    } catch (e) {
-      print('[ShiftManagementScreen] ⚠️  Error loading vacation data: $e');
+    Future<void> _loadVacationData() async {
+      try {
+        final now = DateTime.now();
+        final startOfYear = DateTime(now.year, 1, 1);
+        final endOfYear = DateTime(now.year, 12, 31);
+        
+        print('[ShiftManagementScreen] 🔍 有休データ検索範囲: $startOfYear ～ $endOfYear');
+        
+        final vacationUsages = await _vacationRepository.getVacationUsageInRange(
+          'test_user',
+          startOfYear,
+          endOfYear,
+        );
+        
+        print('[ShiftManagementScreen] 📊 取得した有休レコード数: ${vacationUsages.length}');
+        
+        setState(() {
+          _vacationMap.clear();
+          for (final usage in vacationUsages) {
+            // 🔧 修正：UTC → ローカルに変換
+            final utcDate = usage.usageDate;
+            final localDate = utcDate.isUtc 
+                ? DateTime(utcDate.year, utcDate.month, utcDate.day)
+                : DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
+            
+            _vacationMap[localDate] = usage.daysUsed;
+            print('[ShiftManagementScreen] 📌 有休登録: ${localDate.month}月${localDate.day}日 = ${usage.daysUsed}日');
+          }
+        });
+        print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
+      } catch (e) {
+        print('[ShiftManagementScreen] ⚠️  Error loading vacation data: $e');
+      }
     }
-  }
 
   Future<void> _loadPatterns() async {
     try {
@@ -591,6 +608,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                             )
                           : const SizedBox.shrink(),
                     ),
+
+                    SizedBox(
+                      height: 16,
+                      child: _vacationMap.containsKey(DateTime(date.year, date.month, date.day))
+                          ? Text(
+                              _vacationMap[DateTime(date.year, date.month, date.day)]! == 0.5 ? '🌤️ 半休' : '🏖️ 有休',
+                              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    // ================================================
+                    
                     if (_calendarEvents.any((e) {
                       final eventDate = e.eventDate is String
                           ? DateTime.parse(e.eventDate as String)
