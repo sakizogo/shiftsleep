@@ -493,9 +493,16 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   /// 変更を保存
   void _saveChanges() async {
     // 編集した内容で新しい SleepRecord を作成
+    // 睡眠時間を計算
+    final duration = _editedWakeTime.difference(_editedBedtime);
+    final durationMinutes = duration.isNegative 
+      ? duration.inMinutes + (24 * 60)  // 日付をまたぐ場合
+      : duration.inMinutes;
+
     final updatedRecord = widget.record.copyWith(
       sleepStartTime: _editedBedtime,
       sleepEndTime: _editedWakeTime,
+      durationMinutes: durationMinutes,  // ← ここ追加！
       updatedAt: DateTime.now(),
     );
 
