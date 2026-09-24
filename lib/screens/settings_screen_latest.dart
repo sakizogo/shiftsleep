@@ -1149,15 +1149,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[Settings] 🔍 Step 5️⃣ 就寝状態を確認...');
       
       final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
-      print('[Settings] 🔍 isSleepingNow = ${sleepProvider.isSleepingNow}');
+            print('[Settings] 🔍 isSleepingNow = ${sleepProvider.isSleepingNow}');
       
       if (sleepProvider.isSleepingNow) {
-        print('[Settings] 💤 就寝中です。アラーム再登録を開始...');
+        print('[Settings] 🔗 就寝中です。アラーム再登録を開始...');
         await _rescheduleAlarmDuringSleep(sleepProvider);
       } else {
-        print('[Settings] ℹ️ 就寝していません。アラーム再登録を実行...');
-        // ✅ 同じメソッドを呼ぶ（就寝状態に関わらず常にアラーム更新）
-        await _rescheduleAlarmDuringSleep(sleepProvider);
+        print('[Settings] 🛑 起床中のため、アラーム登録をスキップします');
+        
+        // 🟠 起床中の警告メッセージを表示
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
       }
       
     } catch (e) {
