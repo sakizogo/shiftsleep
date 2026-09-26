@@ -1334,7 +1334,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         selectedAlarmSound: selectedAlarmSound,
       );
 
-      print('[Settings] ✅ 新しいアラーム登録完了（起床時刻のみ）！');
+      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
+      print('[Settings] 📨 新しいアラーム登録処理を実行（起床時刻のみ）※登録/スキップの結果は [AlarmService] ログを参照');
     } catch (e) {
       print('[Settings] ❌ アラーム再登録エラー: $e');
     }

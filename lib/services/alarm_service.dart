@@ -252,6 +252,13 @@ class AlarmService {
     required String body,
     String selectedAlarmSound = 'default',
   }) async {
+    // ✅ Step1-B: 過去時刻はネイティブ登録しない（即時発火防止）
+    // ※ 同じ alarmId の既存予約はキャンセルしない（他の呼び出し元の有効な予約を守るため）
+    if (!scheduledDate.isAfter(DateTime.now())) {
+      print('⏭️ [AlarmService] AlarmManager 登録スキップ（過去時刻）: ID=$alarmId, 予定=$scheduledDate');
+      return;
+    }
+
     try {
       print('⏰ AlarmManager スケジュール開始');
       print('⏰ アラーム ID: $alarmId');
@@ -274,6 +281,13 @@ class AlarmService {
       );
 
       print('✅ AlarmManager スケジュール成功: $result');
+    } on PlatformException catch (e) {
+      // ✅ Step1-B: Kotlin 側で過去時刻と判定された場合はスキップとして識別
+      if (e.code == 'PAST_TIME') {
+        print('⏭️ [AlarmService] AlarmManager 登録スキップ（Kotlin側で過去時刻と判定）: ID=$alarmId');
+      } else {
+        print('❌ AlarmManager スケジュール エラー: ${e.code} ${e.message}');
+      }
     } catch (e) {
       print('❌ AlarmManager スケジュール エラー: $e');
     }
@@ -286,7 +300,8 @@ class AlarmService {
         'cancelAlarmWithAlarmManager',
         {'alarmId': alarmId},
       );
-      print('✅ AlarmManager キャンセル成功: $result');
+      // ✅ Step1-A: 成功／対象なしは Kotlin の戻り値で区別する
+      print('✅ AlarmManager キャンセル処理完了: $result');
     } catch (e) {
       print('❌ AlarmManager キャンセル エラー: $e');
     }

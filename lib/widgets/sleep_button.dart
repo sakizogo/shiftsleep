@@ -316,7 +316,8 @@ class _SleepButtonState extends State<SleepButton>
         selectedAlarmSound: selectedAlarmSound,
       );
 
-      print('[SleepButton] ✅ アラーム設定完了: 今日 ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')} 出勤（${alarmTimeBeforeShift}分前にアラーム）');
+      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
+      print('[SleepButton] 📨 アラーム登録処理を実行: 今日 ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')} 出勤（${alarmTimeBeforeShift}分前）※登録/スキップの結果は [AlarmService] ログを参照');
       // ===================================================================
 
     } catch (e) {

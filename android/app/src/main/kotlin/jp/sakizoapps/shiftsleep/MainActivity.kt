@@ -36,13 +36,26 @@ class MainActivity: FlutterActivity() {
                     val body = call.argument<String>("body") ?: ""
                     val selectedAlarmSound = call.argument<String>("selectedAlarmSound") ?: "default"
                     
+                    // ✅ Step1-B: 過去時刻は登録しない（setExactAndAllowWhileIdle は過去時刻だと即時発火する）
+                    // ※ 同じ alarmId の既存予約はキャンセルしない（他の呼び出し元の有効な予約を守るため）
+                    val now = System.currentTimeMillis()
+                    if (timestampMs <= now) {
+                        Log.w("MainActivity", "⏭️ 過去時刻のため登録スキップ（ID: $alarmId, time=$timestampMs, now=$now）")
+                        result.error("PAST_TIME", "過去時刻のためアラームを登録しません", alarmId)
+                        return@setMethodCallHandler
+                    }
+
                     scheduleAlarmWithAlarmManager(timestampMs, alarmId, title, body, selectedAlarmSound)
                     result.success("AlarmManager スケジュール成功")
                 }
                 "cancelAlarmWithAlarmManager" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
-                    cancelAlarmWithAlarmManager(alarmId)
-                    result.success("AlarmManager キャンセル成功")
+                    // ✅ Step1-A: 取消結果に応じて戻り値を分ける（null=例外）
+                    when (cancelAlarmWithAlarmManager(alarmId)) {
+                        true -> result.success("AlarmManager キャンセル成功")
+                        false -> result.success("AlarmManager キャンセル対象なし")
+                        null -> result.error("CANCEL_FAILED", "AlarmManager キャンセル失敗", alarmId)
+                    }
                 }
                 "cancelAlarm" -> {
                     val alarmId = call.argument<String>("alarmId") ?: ""
@@ -114,21 +127,34 @@ class MainActivity: FlutterActivity() {
         }
     }
 
-    private fun cancelAlarmWithAlarmManager(alarmId: Int) {
+    // ✅ Step1-A: 戻り値 true=取消成功 / false=対象なし / null=例外
+    private fun cancelAlarmWithAlarmManager(alarmId: Int): Boolean? {
         try {
             Log.d("MainActivity", "🔴 cancelAlarmWithAlarmManager: id=$alarmId")
             
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, AlarmReceiver::class.java)
+            // ✅ Step1-A: 登録時と同じ action を付けて同一の PendingIntent に一致させる
+            val intent = Intent(this, AlarmReceiver::class.java).apply {
+                action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
+            }
             val pendingIntent = PendingIntent.getBroadcast(
                 this, alarmId, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
             )
             
+            // ✅ Step1-A: 既存の PendingIntent がなければ「対象なし」（正常）
+            if (pendingIntent == null) {
+                Log.d("MainActivity", "ℹ️ キャンセル対象なし（ID: $alarmId）")
+                return false
+            }
+
             alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
             Log.d("MainActivity", "✅ AlarmManager キャンセル完了（ID: $alarmId）")
+            return true
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ cancelAlarmWithAlarmManager エラー: ${e.message}")
+            return null
         }
     }
 
