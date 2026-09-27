@@ -532,10 +532,22 @@ const SizedBox(height: AppDimensions.paddingLarge),
 
       // ✅ ========== Phase 3.2 追加: アラームをスケジュール ==========
       print('⏰ アラームスケジュール開始...');
+      // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
+      final alarmSettings = await _shiftRepository.getAppSettings('test_user');
+      final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
+      if (alarmTimeBeforeShift <= 0) {
+        print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
+      }
+      String? alarmErrorCode;  // ✅ Step2-2: ループ中の登録失敗を記録（EXACT_ALARM_DENIED を優先）
       for (final entry in widget.shiftDataMap.entries) {
         final date = entry.key;
         final shiftData = entry.value;
         final pattern = shiftData.pattern;
+
+        // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
+        if (alarmTimeBeforeShift <= 0) {
+          continue;
+        }
 
         // 勤務シフトの場合のみアラームをスケジュール
         if (pattern != null && 
@@ -543,13 +555,17 @@ const SizedBox(height: AppDimensions.paddingLarge),
             pattern.startTime != null) {
           print('🔔 アラームスケジュール: $date, 出勤時刻: ${pattern.startTime!.hour}:${pattern.startTime!.minute}');
 
-          await AlarmService.scheduleAlarmForShift(
+          final errorCode = await AlarmService.scheduleAlarmForShift(
             shiftDate: date,
             alarmTime: pattern.startTime!,
+            mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
             preAlarmEnabled: true,
-            preAlarmMinutes: 5,
+            preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
             selectedAlarmSound: 'default',
           );
+          if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
+            alarmErrorCode = errorCode;
+          }
         } else {
           print('⊘ スキップ: $date (非勤務シフト)');
         }
@@ -567,6 +583,17 @@ const SizedBox(height: AppDimensions.paddingLarge),
             duration: const Duration(seconds: 2),
           ),
         );
+        // ✅ Step2-2: アラーム登録に失敗した場合は、保存完了の後に警告を1回だけ表示
+        final alarmError = AlarmService.alarmErrorMessage(alarmErrorCode);
+        if (alarmError != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(alarmError),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
       }
 
       // onBack コールバック実行で戻る

@@ -89,6 +89,8 @@ class _SleepButtonState extends State<SleepButton>
 
   // ========== Week 26+ Step 7：「寝る」ボタン処理 ==========
   Future<void> _handleStartSleep(SleepProvider sleepProvider) async {
+    // ✅ Step2-2: 処理中にこの Widget が破棄されても通知できるよう、最初の await より前に取得
+    final messenger = ScaffoldMessenger.of(context);
     try {
       // ✨ AppSettings から isAlarmEnabled をチェック
       final settings = await _shiftRepository.getAppSettings('test_user');
@@ -122,7 +124,7 @@ class _SleepButtonState extends State<SleepButton>
       // ✨ Step 7：isAlarmEnabled が true の場合のみ今日のシフト始業30分前アラームをセット
       if (isAlarmEnabled) {
         print('[SleepButton] ✅ アラーム有効：今日のシフト始業30分前アラームをセット');
-        await _scheduleAlarmForTodayShift(now);
+        await _scheduleAlarmForTodayShift(now, messenger);
       } else {
         print('[SleepButton] ⚠️ アラーム無効：アラームをセットしません');
       }
@@ -238,7 +240,7 @@ class _SleepButtonState extends State<SleepButton>
   /// 2. pattern_id から ShiftPatternModel を取得
   /// 3. 出勤時刻 - alarmTimeBeforeShift = アラーム時刻
   /// 4. AlarmService.scheduleAlarmForShift() でアラーム登録
-  Future<void> _scheduleAlarmForTodayShift(DateTime wakeUpTime) async {
+  Future<void> _scheduleAlarmForTodayShift(DateTime wakeUpTime, ScaffoldMessengerState messenger) async {
     try {
       print('[SleepButton] 🔔 今日のシフト始業30分前アラームをセット中...');
 
@@ -252,6 +254,12 @@ class _SleepButtonState extends State<SleepButton>
       final alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
       final selectedAlarmSound = settings.selectedAlarmSound;
       print('[SleepButton] ✅ 設定取得: 出勤前${alarmTimeBeforeShift}分、音=${selectedAlarmSound}');
+
+      // ✅ ShiftPre: 出勤前アラームが「無効（0）」ならシフト勤務アラームを登録しない
+      if (alarmTimeBeforeShift <= 0) {
+        print('[SleepButton] ℹ️ 出勤前アラームが無効（0）のため登録しません');
+        return;
+      }
       // ========================================
 
       // ========== ステップ2️⃣：**今日**のシフトを取得 ==========
@@ -308,9 +316,10 @@ class _SleepButtonState extends State<SleepButton>
       // ========== ステップ5️⃣：AlarmService でアラームをスケジュール ==========
       print('[SleepButton] 🚀 AlarmService.scheduleAlarmForShift() を呼び出し中...');
 
-      await AlarmService.scheduleAlarmForShift(
+      final errorCode = await AlarmService.scheduleAlarmForShift(
         shiftDate: today,
         alarmTime: startTime,
+        mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
         preAlarmEnabled: true,
         preAlarmMinutes: alarmTimeBeforeShift,
         selectedAlarmSound: selectedAlarmSound,
@@ -318,6 +327,18 @@ class _SleepButtonState extends State<SleepButton>
 
       // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
       print('[SleepButton] 📨 アラーム登録処理を実行: 今日 ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')} 出勤（${alarmTimeBeforeShift}分前）※登録/スキップの結果は [AlarmService] ログを参照');
+
+      // ✅ Step2-2: 登録に失敗したときだけユーザーに知らせる（Widget 破棄後も表示できるよう messenger を使用）
+      final alarmError = AlarmService.alarmErrorMessage(errorCode);
+      if (alarmError != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(alarmError),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
       // ===================================================================
 
     } catch (e) {

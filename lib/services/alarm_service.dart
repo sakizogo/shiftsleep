@@ -121,9 +121,11 @@ class AlarmService {
     }
   }
 
-  static Future<void> scheduleAlarmForShift({
+  /// ✅ Step2-2: 戻り値 null=成功またはスキップ / 'EXACT_ALARM_DENIED' / 'SCHEDULE_FAILED'
+  static Future<String?> scheduleAlarmForShift({
     required DateTime shiftDate,
     required TimeOfDay alarmTime,
+    bool mainAlarmEnabled = true,  // ✅ ShiftPre: false なら出勤時刻（main）を登録しない（既定 true＝起床時刻アラームは従来どおり）
     bool preAlarmEnabled = true,
     int preAlarmMinutes = 5,
     String selectedAlarmSound = 'default',
@@ -140,24 +142,29 @@ class AlarmService {
       alarmTime.minute,
     );
 
-    await _scheduleNotification(
-      id: _generateNotificationId(shiftDate, 'main'),
-      title: '出勤時間です',
-      body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
-      scheduledDate: mainAlarmDateTime,
-      selectedAlarmSound: selectedAlarmSound,
-    );
+    // ✅ ShiftPre: mainAlarmEnabled が false のときは出勤時刻（main）を登録しない（mainError は null のまま）
+    String? mainError;
+    if (mainAlarmEnabled) {
+      await _scheduleNotification(
+        id: _generateNotificationId(shiftDate, 'main'),
+        title: '出勤時間です',
+        body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+        scheduledDate: mainAlarmDateTime,
+        selectedAlarmSound: selectedAlarmSound,
+      );
 
-    // ✅ AlarmManager でもスケジュール（デバイススリープ中対応）
-    await _scheduleWithAlarmManager(
-      alarmId: _generateNotificationId(shiftDate, 'main'),
-      scheduledDate: mainAlarmDateTime,
-      title: '出勤時間です',
-      body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
-      selectedAlarmSound: selectedAlarmSound,
-    );
+      // ✅ AlarmManager でもスケジュール（デバイススリープ中対応）
+      mainError = await _scheduleWithAlarmManager(
+        alarmId: _generateNotificationId(shiftDate, 'main'),
+        scheduledDate: mainAlarmDateTime,
+        title: '出勤時間です',
+        body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+        selectedAlarmSound: selectedAlarmSound,
+      );
+    }
 
     // 事前アラーム
+    String? preError;  // ✅ Step2-2: 事前アラームの登録結果
     if (preAlarmEnabled) {
       final preAlarmDateTime = mainAlarmDateTime.subtract(Duration(minutes: preAlarmMinutes));
 
@@ -170,13 +177,31 @@ class AlarmService {
       );
 
       // ✅ AlarmManager でもスケジュール（デバイススリープ中対応）
-      await _scheduleWithAlarmManager(
+      preError = await _scheduleWithAlarmManager(
         alarmId: _generateNotificationId(shiftDate, 'pre'),
         scheduledDate: preAlarmDateTime,
         title: '出勤${preAlarmMinutes}分前です',
         body: '準備をお始めください',
         selectedAlarmSound: selectedAlarmSound,
       );
+    }
+
+    // ✅ Step2-2: 権限エラーを優先して返す（どちらも成功・スキップなら null）
+    if (mainError == 'EXACT_ALARM_DENIED' || preError == 'EXACT_ALARM_DENIED') {
+      return 'EXACT_ALARM_DENIED';
+    }
+    return mainError ?? preError;
+  }
+
+  /// ✅ Step2-2: エラーコードをユーザー向け文言に変換（null=通知不要）
+  static String? alarmErrorMessage(String? code) {
+    switch (code) {
+      case 'EXACT_ALARM_DENIED':
+        return '⚠️ アラームを設定できませんでした。端末の設定で『アラームとリマインダー』を許可してください';
+      case 'SCHEDULE_FAILED':
+        return '⚠️ アラームの設定に失敗しました。もう一度お試しください';
+      default:
+        return null;
     }
   }
 
@@ -245,7 +270,8 @@ class AlarmService {
   }
 
   /// AlarmManager でアラームをスケジュール（デバイススリープ中対応）
-  static Future<void> _scheduleWithAlarmManager({
+  /// ✅ Step2-2: 戻り値 null=成功・過去時刻スキップ / 'EXACT_ALARM_DENIED' / 'SCHEDULE_FAILED'
+  static Future<String?> _scheduleWithAlarmManager({
     required int alarmId,
     required DateTime scheduledDate,
     required String title,
@@ -256,7 +282,7 @@ class AlarmService {
     // ※ 同じ alarmId の既存予約はキャンセルしない（他の呼び出し元の有効な予約を守るため）
     if (!scheduledDate.isAfter(DateTime.now())) {
       print('⏭️ [AlarmService] AlarmManager 登録スキップ（過去時刻）: ID=$alarmId, 予定=$scheduledDate');
-      return;
+      return null;
     }
 
     try {
@@ -281,15 +307,19 @@ class AlarmService {
       );
 
       print('✅ AlarmManager スケジュール成功: $result');
+      return null;
     } on PlatformException catch (e) {
       // ✅ Step1-B: Kotlin 側で過去時刻と判定された場合はスキップとして識別
       if (e.code == 'PAST_TIME') {
         print('⏭️ [AlarmService] AlarmManager 登録スキップ（Kotlin側で過去時刻と判定）: ID=$alarmId');
+        return null;
       } else {
         print('❌ AlarmManager スケジュール エラー: ${e.code} ${e.message}');
+        return e.code == 'EXACT_ALARM_DENIED' ? 'EXACT_ALARM_DENIED' : 'SCHEDULE_FAILED';
       }
     } catch (e) {
       print('❌ AlarmManager スケジュール エラー: $e');
+      return 'SCHEDULE_FAILED';
     }
   }
 

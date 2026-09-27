@@ -1274,7 +1274,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       final nextShift = shifts.first;
-      final startTimeStr = nextShift['start_time'] as String;
+      // ✅ FixWakeCalc: shifts テーブルには start_time 列がないため null になり得る。
+      //    null の場合は起床時刻を計算せずに終了する（エラー表示はしない）
+      final startTimeStr = nextShift['start_time'] as String?;
+      if (startTimeStr == null) {
+        print('ℹ️ 起床時刻の自動計算をスキップ: シフトに出勤時刻（start_time）がありません');
+        return;
+      }
       final timeParts = startTimeStr.split(':');
       final startHour = int.parse(timeParts[0]);
       final startMin = int.parse(timeParts[1]);
@@ -1326,7 +1332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[Settings] ✅ 古いアラームキャンセル完了');
 
       print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');
-      await AlarmService.scheduleAlarmForShift(
+      final errorCode = await AlarmService.scheduleAlarmForShift(
         shiftDate: shiftDate,
         alarmTime: alarmTime,
         preAlarmEnabled: false,
@@ -1336,6 +1342,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
       print('[Settings] 📨 新しいアラーム登録処理を実行（起床時刻のみ）※登録/スキップの結果は [AlarmService] ログを参照');
+
+      // ✅ Step2-2: 登録に失敗したときだけユーザーに知らせる（古いアラームは取り消し済みのため重要）
+      final alarmError = AlarmService.alarmErrorMessage(errorCode);
+      if (alarmError != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(alarmError),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     } catch (e) {
       print('[Settings] ❌ アラーム再登録エラー: $e');
     }
