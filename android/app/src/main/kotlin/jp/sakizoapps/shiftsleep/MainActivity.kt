@@ -45,8 +45,13 @@ class MainActivity: FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
-                    scheduleAlarmWithAlarmManager(timestampMs, alarmId, title, body, selectedAlarmSound)
-                    result.success("AlarmManager スケジュール成功")
+                    // ✅ Step2-1: 登録結果に応じて戻り値を分ける（null=成功 / それ以外=エラーコード）
+                    val errorCode = scheduleAlarmWithAlarmManager(timestampMs, alarmId, title, body, selectedAlarmSound)
+                    if (errorCode == null) {
+                        result.success("AlarmManager スケジュール成功")
+                    } else {
+                        result.error(errorCode, "AlarmManager スケジュール失敗", alarmId)
+                    }
                 }
                 "cancelAlarmWithAlarmManager" -> {
                     val alarmId = call.argument<Int>("alarmId") ?: 0
@@ -92,17 +97,23 @@ class MainActivity: FlutterActivity() {
         }
     }
 
+    // ✅ Step2-1: 戻り値 null=登録成功 / "EXACT_ALARM_DENIED"=権限なし / "SCHEDULE_FAILED"=その他の失敗
     private fun scheduleAlarmWithAlarmManager(
         timestampMs: Long,
         alarmId: Int,
         title: String,
         body: String,
         selectedAlarmSound: String
-    ) {
+    ): String? {
         try {
             Log.d("MainActivity", "🔔 scheduleAlarmWithAlarmManager: id=$alarmId, time=$timestampMs, sound=$selectedAlarmSound")
             
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            // ✅ Step2-1: Android 12 以降は登録前に正確なアラームの権限を確認（権限なしなら登録しない）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                Log.w("MainActivity", "⛔ 正確なアラームの権限がないため登録しません（ID: $alarmId）")
+                return "EXACT_ALARM_DENIED"
+            }
             val intent = Intent(this, AlarmReceiver::class.java).apply {
                 action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
                 putExtra("alarmId", alarmId.toString())
@@ -122,8 +133,14 @@ class MainActivity: FlutterActivity() {
             )
             
             Log.d("MainActivity", "✅ setExactAndAllowWhileIdle 完了（ID: $alarmId, 時刻: $timestampMs）")
+            return null
+        } catch (e: SecurityException) {
+            // ✅ Step2-1: 権限不足による失敗を識別して返す
+            Log.e("MainActivity", "❌ 正確なアラームの権限エラー: ${e.message}")
+            return "EXACT_ALARM_DENIED"
         } catch (e: Exception) {
             Log.e("MainActivity", "❌ scheduleAlarmWithAlarmManager エラー: ${e.message}")
+            return "SCHEDULE_FAILED"
         }
     }
 
