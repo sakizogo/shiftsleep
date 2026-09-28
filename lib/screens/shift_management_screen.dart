@@ -10,6 +10,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
+import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 
@@ -1248,6 +1249,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     try {
       if (selectedItems.contains('shift') && _shiftMap.containsKey(normalizedDate)) {
         await _shiftRepository.deleteShift(normalizedDate);
+        // ✅ H3: 削除した日の出勤前アラーム（pre）だけをキャンセル（起床アラーム main は残す）
+        await AlarmService.cancelPreAlarm(normalizedDate);
         _shiftMap.remove(normalizedDate);
       }
       

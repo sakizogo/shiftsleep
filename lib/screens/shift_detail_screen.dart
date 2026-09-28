@@ -450,7 +450,8 @@ const SizedBox(height: AppDimensions.paddingLarge),
                     });
                     
                     print('🔍 AlarmService.cancelAlarm 呼び出し前');
-                    await AlarmService.cancelAlarm(date);
+                    // ✅ H3: pre だけをキャンセル（cancelAlarm は main＝起床アラームまで消すため）
+                    await AlarmService.cancelPreAlarm(date);
                     print('🔔 アラームキャンセル: $date');
                     
                     print('🔍 ダイアログを閉じる');
@@ -519,6 +520,21 @@ const SizedBox(height: AppDimensions.paddingLarge),
       for (final entry in widget.shiftDataMap.entries) {
         patternMap[entry.key] = entry.value.pattern;
       }
+
+      // ✅ H3: DB 更新前に、既存シフト日（今日〜1年後）の出勤前アラーム（pre）だけをキャンセル
+      //    → 削除・休日に変更した日の pre は消え、残った出勤日の pre は後続処理で再登録される（main は残す）
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final existingShifts = await _shiftRepository.getShiftsForDateRange(
+        today,
+        today.add(const Duration(days: 365)),
+      );
+      for (final shift in existingShifts) {
+        final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
+        if (shiftDate == null) continue;
+        await AlarmService.cancelPreAlarm(shiftDate);
+      }
+      print('🔕 既存シフトの出勤前アラーム（pre）をキャンセル: ${existingShifts.length}件');
 
       // ========== Week 9-2 修正: 先に全シフトを削除 ==========
       await _shiftRepository.deleteAllShifts();

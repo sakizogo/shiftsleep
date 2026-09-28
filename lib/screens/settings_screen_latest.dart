@@ -1328,7 +1328,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : DateTime(now.year, now.month, now.day + 1);
 
       print('[Settings] 🛑 古いアラームをキャンセル中...');
-      await AlarmService.cancelAlarm(shiftDate);
+      // ✅ H1: 起床アラーム（main）だけをキャンセル。同じ日の出勤前アラーム（pre）は残す
+      await AlarmService.cancelMainAlarm(shiftDate);
       print('[Settings] ✅ 古いアラームキャンセル完了');
 
       print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');

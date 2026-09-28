@@ -359,6 +359,32 @@ class AlarmService {
     print('✓ アラームをキャンセルしました: $date');
   }
 
+  /// ✅ H1: 起床時刻アラーム（main）だけをキャンセルする（出勤前アラーム pre には触れない）
+  static Future<void> cancelMainAlarm(DateTime date) async {
+    final mainAlarmId = _generateNotificationId(date, 'main');
+
+    // flutter_local_notifications の main のみキャンセル
+    await _notificationsPlugin.cancel(mainAlarmId);
+
+    // AlarmManager の main のみキャンセル
+    await _cancelWithAlarmManager(mainAlarmId);
+
+    print('✓ 起床アラーム（main）をキャンセルしました: $date');
+  }
+
+  /// ✅ H3: 出勤前アラーム（pre）だけをキャンセルする（起床時刻アラーム main には触れない）
+  static Future<void> cancelPreAlarm(DateTime date) async {
+    final preAlarmId = _generateNotificationId(date, 'pre');
+
+    // flutter_local_notifications の pre のみキャンセル
+    await _notificationsPlugin.cancel(preAlarmId);
+
+    // AlarmManager の pre のみキャンセル（成功／対象なし／エラーは _cancelWithAlarmManager がログ出力）
+    await _cancelWithAlarmManager(preAlarmId);
+
+    print('✓ 出勤前アラーム（pre）をキャンセルしました: $date');
+  }
+
   static Future<void> cancelAllAlarms() async {
     await _notificationsPlugin.cancelAll();
     print('✓ すべてのアラームをクリアしました');
