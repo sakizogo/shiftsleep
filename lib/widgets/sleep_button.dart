@@ -92,9 +92,8 @@ class _SleepButtonState extends State<SleepButton>
     // ✅ Step2-2: 処理中にこの Widget が破棄されても通知できるよう、最初の await より前に取得
     final messenger = ScaffoldMessenger.of(context);
     try {
-      // ✨ AppSettings から isAlarmEnabled をチェック
-      final settings = await _shiftRepository.getAppSettings('test_user');
-      final isAlarmEnabled = settings?.isAlarmEnabled ?? true;  // デフォルト true
+      // ✅ H4: アラームON/OFF は SharedPreferences（AlarmService.isAlarmEnabled）を正規の保存先として判定
+      final isAlarmEnabled = await AlarmService.isAlarmEnabled();  // 未保存なら true
       print('[SleepButton] 🔔 isAlarmEnabled: $isAlarmEnabled');
       
       final now = DateTime.now();

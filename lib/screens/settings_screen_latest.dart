@@ -69,7 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
     // _loadDailyWakeUpSetting();
-    // _loadAlarmEnabledSetting();  // ✨ 🆕 追加
+    _loadAlarmEnabledSetting();  // ✅ H4: 保存済みの ON/OFF をスイッチに反映
     // ============================================================
   }
 
@@ -106,6 +106,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     Future<void> _loadAlarmEnabledSetting() async {
       try {
         final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;  // ✅ H4: 読み込み中に画面が破棄された場合は反映しない
         setState(() {
           _isAlarmEnabled = prefs.getBool('is_alarm_enabled') ?? true;
         });
@@ -123,6 +124,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
         print('✅ アラーム有効フラグを保存: $value');
       } catch (e) {
         print('⚠️ アラーム有効フラグ保存エラー: $e');
+      }
+    }
+
+    // ✅ H4: アラームOFF時に、登録済みの main / pre をすべてキャンセル
+    //    対象：今日・明日 ＋ DB に存在する今日〜1年後のシフト日（Set で重複排除）
+    Future<void> _cancelAllAlarmsForOff() async {
+      try {
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        final targetDates = <DateTime>{
+          today,
+          today.add(const Duration(days: 1)),
+        };
+        final shifts = await _shiftRepository.getShiftsForDateRange(
+          today,
+          today.add(const Duration(days: 365)),
+        );
+        for (final shift in shifts) {
+          final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
+          if (shiftDate != null) {
+            targetDates.add(DateTime(shiftDate.year, shiftDate.month, shiftDate.day));
+          }
+        }
+        for (final date in targetDates) {
+          await AlarmService.cancelMainAlarm(date);
+          await AlarmService.cancelPreAlarm(date);
+        }
+        print('🔕 [Settings] アラームOFF: ${targetDates.length}日分の main / pre をキャンセルしました');
+      } catch (e) {
+        print('❌ [Settings] アラームOFF時のキャンセルエラー: $e');
       }
     }
     // ===========================================================================================================================================
@@ -394,12 +425,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               // ✨ 🆕 追加：Toggle Switch
                               CupertinoSwitch(
                                 value: _isAlarmEnabled,
-                                onChanged: (value) {
+                                onChanged: (value) async {
                                   setState(() {
                                     _isAlarmEnabled = value;
-                                    _saveAlarmEnabledSetting(value);  // 保存
                                   });
+                                  // ✅ H4: 先に保存（以降の新規登録を止める）→ OFF なら既存の main / pre をキャンセル
+                                  //    ON に戻しても自動再登録はしない
+                                  await _saveAlarmEnabledSetting(value);  // 保存
                                   print('[Settings] アラーム有効: $value');
+                                  if (!value) {
+                                    await _cancelAllAlarmsForOff();
+                                  }
                                 },
                               ),
                               const SizedBox(width: 12),

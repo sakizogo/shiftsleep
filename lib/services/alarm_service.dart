@@ -7,6 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';  // ✅ H4
 
 class AlarmService {
   // ===== MethodChannel 定義 =====
@@ -121,6 +122,18 @@ class AlarmService {
     }
   }
 
+  /// ✅ H4: アラームON/OFF設定（SharedPreferences の is_alarm_enabled）を取得する
+  ///    未保存・読み取りエラーの場合は true（ON）として扱う
+  static Future<bool> isAlarmEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('is_alarm_enabled') ?? true;
+    } catch (e) {
+      print('⚠️ [AlarmService] アラームON/OFF設定の読み取りエラー（ONとして扱う）: $e');
+      return true;
+    }
+  }
+
   /// ✅ Step2-2: 戻り値 null=成功またはスキップ / 'EXACT_ALARM_DENIED' / 'SCHEDULE_FAILED'
   static Future<String?> scheduleAlarmForShift({
     required DateTime shiftDate,
@@ -130,6 +143,12 @@ class AlarmService {
     int preAlarmMinutes = 5,
     String selectedAlarmSound = 'default',
   }) async {
+    // ✅ H4: アラームOFFなら main / pre とも登録しない（エラーではないため null を返す）
+    if (!await isAlarmEnabled()) {
+      print('🔕 [AlarmService] アラームOFFのため登録しません: $shiftDate');
+      return null;
+    }
+
     print('🔴 [DEBUG] scheduleAlarmForShift が呼び出されました！');
     print('🔴 [DEBUG] シフト日: $shiftDate, 出勤時刻: ${alarmTime.hour}:${alarmTime.minute}');
 
