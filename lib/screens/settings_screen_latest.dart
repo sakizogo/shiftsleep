@@ -1309,24 +1309,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
 
-      final nextShift = shifts.first;
-      // ✅ FixWakeCalc: shifts テーブルには start_time 列がないため null になり得る。
-      //    null の場合は起床時刻を計算せずに終了する（エラー表示はしない）
-      final startTimeStr = nextShift['start_time'] as String?;
-      if (startTimeStr == null) {
-        print('ℹ️ 起床時刻の自動計算をスキップ: シフトに出勤時刻（start_time）がありません');
+      // ✅ H2: 出勤前アラームが「無効（0）」なら自動計算しない（前回の自動計算値も表示に残さない）
+      if (_alarmTimeBeforeShift <= 0) {
+        print('ℹ️ 起床時刻の自動計算をスキップ: 出勤前アラームが無効（0）');
+        if (mounted) {
+          context.read<SleepProvider>().clearAutoWakeUpTime();
+        }
         return;
       }
-      final timeParts = startTimeStr.split(':');
-      final startHour = int.parse(timeParts[0]);
-      final startMin = int.parse(timeParts[1]);
 
-      final tomorrow = DateTime.now().add(const Duration(days: 1));
-      final shiftStartDateTime = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, startHour, startMin);
+      // ✅ H2: 返却順は保証されないため、shifts.first は使わず shift_date（YYYY-MM-DD）の昇順に並べる
+      final sortedShifts = [...shifts]..sort((a, b) =>
+          (a['shift_date'] as String? ?? '').compareTo(b['shift_date'] as String? ?? ''));
 
-      final wakeUpDateTime = shiftStartDateTime.subtract(
-        Duration(minutes: _alarmTimeBeforeShift),
-      );
+      // ✅ H2: 起床時刻（シフト日＋開始時刻 − 設定分数）が「今より後」になる最初の出勤シフトを採用する
+      //    開始時刻は shifts ではなく pattern_id → getPatternById → startTime から取得（表示用のみ）
+      final now = DateTime.now();
+      DateTime? wakeUpDateTime;
+      for (final shift in sortedShifts) {
+        final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
+        final patternId = shift['pattern_id'] as String?;
+        if (shiftDate == null || patternId == null) continue;
+        final pattern = await _shiftRepository.getPatternById(patternId);
+        final startTime = pattern?.startTime;
+        if (startTime == null) continue;  // 休日・有休・削除済みパターン等はスキップ
+        final candidate = DateTime(
+          shiftDate.year,
+          shiftDate.month,
+          shiftDate.day,
+          startTime.hour,
+          startTime.minute,
+        ).subtract(Duration(minutes: _alarmTimeBeforeShift));
+        if (candidate.isAfter(now)) {
+          wakeUpDateTime = candidate;  // 実際のシフト日で計算（明日固定にしない）
+          break;
+        }
+      }
+
+      // ✅ H2: 対象の出勤シフトが見つからなければ、前回の自動計算値を残さずに終了
+      if (wakeUpDateTime == null) {
+        print('ℹ️ 起床時刻の自動計算をスキップ: 今日〜明日に対象の出勤シフトがありません');
+        if (mounted) {
+          context.read<SleepProvider>().clearAutoWakeUpTime();
+        }
+        return;
+      }
       
       if (mounted) {
         final sleepProvider = context.read<SleepProvider>();
