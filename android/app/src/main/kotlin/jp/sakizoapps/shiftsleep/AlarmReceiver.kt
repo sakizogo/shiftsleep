@@ -53,7 +53,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
     if (intent.action == "jp.sakizoapps.shiftsleep.STOP_ALARM") {
       Log.d("AlarmReceiver", "🛑 停止ボタンを押されました")
-      stopAlarm()
+      handleAlarmStopped(context, intent.getStringExtra("alarmId"))
       return
     }
 
@@ -64,7 +64,7 @@ class AlarmReceiver : BroadcastReceiver() {
     Log.d("AlarmReceiver", "🔔 アラーム発火！ ID: $alarmId, Label: $label, Sound: $selectedAlarmSound")
 
     showNotification(context, alarmId, label)
-    playAlarmSoundContinuous(context, selectedAlarmSound)
+    playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
     vibrate(context)
   }
 
@@ -72,6 +72,7 @@ class AlarmReceiver : BroadcastReceiver() {
     try {
       val stopIntent = Intent(context, AlarmReceiver::class.java).apply {
         action = "jp.sakizoapps.shiftsleep.STOP_ALARM"
+        putExtra("alarmId", alarmId)
       }
       val stopPendingIntent = PendingIntentCompat.getBroadcast(
         context,
@@ -103,7 +104,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
   }
 
-  private fun playAlarmSoundContinuous(context: Context, selectedAlarmSound: String) {
+  private fun playAlarmSoundContinuous(context: Context, alarmId: String, selectedAlarmSound: String) {
     try {
       val resourceName = when (selectedAlarmSound) {
         "gentle" -> "alarm_gentle"
@@ -133,7 +134,7 @@ class AlarmReceiver : BroadcastReceiver() {
       Log.d("AlarmReceiver", "⏱️ 1分間何もしない場合は自動停止します")
       
       playAlarmLoop(context)
-      startAutoStopCheck()
+      startAutoStopCheck(context, alarmId)
       
     } catch (e: Exception) {
       Log.e("AlarmReceiver", "❌ アラーム音再生エラー: ${e.message}")
@@ -170,18 +171,18 @@ class AlarmReceiver : BroadcastReceiver() {
     }
   }
 
-  private fun startAutoStopCheck() {
+  private fun startAutoStopCheck(context: Context, alarmId: String) {
     alarmHandler?.postDelayed({
       if (isAlarmPlaying) {
         val elapsedTime = System.currentTimeMillis() - alarmStartTime
         
         if (elapsedTime >= AUTO_STOP_DURATION_MS) {
           Log.d("AlarmReceiver", "⏰ 1分経過。自動停止します。")
-          stopAlarm()
+          handleAlarmStopped(context, alarmId)
         } else {
           val remainingTime = AUTO_STOP_DURATION_MS - elapsedTime
           Log.d("AlarmReceiver", "⏱️ 自動停止まで あと ${remainingTime / 1000}秒")
-          startAutoStopCheck()
+          startAutoStopCheck(context, alarmId)
         }
       }
     }, 1000L)
@@ -200,6 +201,20 @@ class AlarmReceiver : BroadcastReceiver() {
     } catch (e: Exception) {
       Log.e("AlarmReceiver", "❌ アラーム停止エラー: ${e.message}")
     }
+  }
+
+  // 停止ボタン・1分自動停止の共通処理：音を止める＋通知を消す＋停止時刻を保存
+  private fun handleAlarmStopped(context: Context, alarmId: String?) {
+    stopAlarm()
+
+    if (alarmId != null) {
+      NotificationManagerCompat.from(context).cancel(alarmId.hashCode())
+    }
+
+    // shared_preferences の従来型 API の保存形式に依存。
+    // SharedPreferencesAsync に移行すると動かない
+    context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+      .edit().putLong("flutter.alarm_stopped_at_ms", System.currentTimeMillis()).apply()
   }
 
   private fun vibrateOnce(context: Context) {
