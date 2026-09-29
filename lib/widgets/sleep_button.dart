@@ -5,10 +5,10 @@ import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
-import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 
 class SleepButton extends StatefulWidget {
@@ -31,7 +31,6 @@ class _SleepButtonState extends State<SleepButton>
   late Animation<double> _scaleAnimation;
   bool _isPressed = false;
 
-  final SleepRepository _sleepRepository = SleepRepository();
   final ShiftRepository _shiftRepository = ShiftRepository();
 
   @override
@@ -159,54 +158,9 @@ class _SleepButtonState extends State<SleepButton>
   Future<void> _handleWakeUp(SleepProvider sleepProvider) async {
     try {
       print('[SleepButton] 🛏️ _handleWakeUp メソッドが呼ばれました');
-      
-      // ========== Week 7 Phase 3 修正: SleepProvider から現在の睡眠レコード ID を取得 ==========
-      final currentSleepRecordId = sleepProvider.currentSleepRecordIdNow;
-      print('[SleepButton] 🔍 currentSleepRecordId: $currentSleepRecordId');
-      if (currentSleepRecordId == null) {
-        throw Exception('Sleep record ID not found in SleepProvider');
-      }
-      // ========================================================================
 
-      final now = DateTime.now();
-
-      final sleepRecord =
-          await _sleepRepository.getSleepRecordById(currentSleepRecordId);
-
-      if (sleepRecord != null) {
-        print('[SleepButton] 💾 睡眠レコードを更新中...');
-        
-        final updatedRecord = sleepRecord.copyWith(
-          sleepEndTime: now,
-          sleepEndAuto: false,
-          durationMinutes: now.difference(sleepRecord.sleepStartTime).inMinutes,
-          lastModifiedAt: now,
-          updatedAt: now,
-        );
-
-        await _sleepRepository.updateSleepRecord(updatedRecord);
-        print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
-
-        // ========== Step 7：今日のシフト始業30分前アラームをキャンセル ==========
-        print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
-        final today = DateTime(now.year, now.month, now.day);
-        await AlarmService.cancelAlarm(today);
-        await AlarmService.stopAlarmSound();
-        print('[SleepButton] 🔊 アラーム音を停止しました');
-        print('[SleepButton] ✅ アラームをキャンセルしました');
-        // =====================================================================
-
-        // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
-        sleepProvider.endSleepingNow();
-        print('[SleepButton] ✅ 睡眠中フラグをクリア');
-        // ========================================================================
-
-        if (mounted) {
-          await sleepProvider.loadAllSleepData();
-        }
-      } else {
-        print('[SleepButton] ⚠️ 睡眠レコードが見つかりません');
-      }
+      // 起床処理本体は WakeUpService に集約（当日の main・pre アラームもキャンセル）
+      await WakeUpService.wakeUp(sleepProvider, DateTime.now());
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
