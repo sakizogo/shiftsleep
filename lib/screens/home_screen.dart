@@ -8,6 +8,7 @@ import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ← これを追加
+import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/screens/settings_screen_latest.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
@@ -84,6 +85,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _shiftManagementKey.currentState?.loadShifts();
       setState(() {});
       // =========================================================
+
+      // 通知の「停止」ボタンで保存された停止時刻で起床処理（await しない）
+      _handlePendingAlarmStop();
+    }
+  }
+
+  /// 通知の「停止」ボタンで保存された停止時刻があれば起床処理を行う
+  Future<void> _handlePendingAlarmStop() async {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final provider = context.read<SleepProvider>();
+
+    final woke = await WakeUpService.processPendingAlarmStop(provider);
+    if (woke) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('⏰ アラーム停止時刻で起床を記録しました'),
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 
