@@ -6,6 +6,7 @@ import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/wake_up_service.dart';
 import 'screens/home_screen.dart';
 
 
@@ -105,8 +106,22 @@ class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
       try {
         final sleepProvider = 
           Provider.of<SleepProvider>(context, listen: false);
+        // await の前に取得（通知停止で起床した場合の SnackBar 用）
+        final messenger = ScaffoldMessenger.of(context);
         await sleepProvider.initializeSleepState();
         print('[_HomeScreenWrapperState] ✅ 睡眠状態の初期化完了');
+
+        // ========== 通知の「停止」ボタンで保存された停止時刻で起床処理 ==========
+        final woke = await WakeUpService.processPendingAlarmStop(sleepProvider);
+        if (woke) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('⏰ アラーム停止時刻で起床を記録しました'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        // ======================================================================
       } catch (e) {
         print('[_HomeScreenWrapperState] ❌ 睡眠状態の初期化エラー: $e');
       }
