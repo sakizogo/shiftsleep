@@ -51,6 +51,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _timeUpdateTimer;
   // ==========================================================
 
+  // 通知停止の停止時刻を確認するまでの秒数カウンター（5秒ごとに確認）
+  int _pendingStopCheckSeconds = 0;
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +74,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           // 時刻更新のみ
         });
+
+        // 前面表示中の通知停止・1分自動停止にも数秒以内で対応する
+        _pendingStopCheckSeconds++;
+        if (_pendingStopCheckSeconds >= 5) {
+          _pendingStopCheckSeconds = 0;
+          if (mounted && context.read<SleepProvider>().isSleepingNow) {
+            _handlePendingAlarmStop();
+          }
+        }
       },
     );
     
