@@ -105,74 +105,14 @@ class MainActivity: FlutterActivity() {
         body: String,
         selectedAlarmSound: String
     ): String? {
-        try {
-            Log.d("MainActivity", "🔔 scheduleAlarmWithAlarmManager: id=$alarmId, time=$timestampMs, sound=$selectedAlarmSound")
-            
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            // ✅ Step2-1: Android 12 以降は登録前に正確なアラームの権限を確認（権限なしなら登録しない）
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                Log.w("MainActivity", "⛔ 正確なアラームの権限がないため登録しません（ID: $alarmId）")
-                return "EXACT_ALARM_DENIED"
-            }
-            val intent = Intent(this, AlarmReceiver::class.java).apply {
-                action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
-                putExtra("alarmId", alarmId.toString())
-                putExtra("label", title)
-                putExtra("selectedAlarmSound", selectedAlarmSound)
-            }
-            
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, alarmId, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                timestampMs,
-                pendingIntent
-            )
-            
-            Log.d("MainActivity", "✅ setExactAndAllowWhileIdle 完了（ID: $alarmId, 時刻: $timestampMs）")
-            return null
-        } catch (e: SecurityException) {
-            // ✅ Step2-1: 権限不足による失敗を識別して返す
-            Log.e("MainActivity", "❌ 正確なアラームの権限エラー: ${e.message}")
-            return "EXACT_ALARM_DENIED"
-        } catch (e: Exception) {
-            Log.e("MainActivity", "❌ scheduleAlarmWithAlarmManager エラー: ${e.message}")
-            return "SCHEDULE_FAILED"
-        }
+        // ✅ H2 Step 3: 予約の保存（登録と保存は AlarmScheduler に移動）
+        return AlarmScheduler.schedule(this, timestampMs, alarmId, title, body, selectedAlarmSound)
     }
 
     // ✅ Step1-A: 戻り値 true=取消成功 / false=対象なし / null=例外
     private fun cancelAlarmWithAlarmManager(alarmId: Int): Boolean? {
-        try {
-            Log.d("MainActivity", "🔴 cancelAlarmWithAlarmManager: id=$alarmId")
-            
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            // ✅ Step1-A: 登録時と同じ action を付けて同一の PendingIntent に一致させる
-            val intent = Intent(this, AlarmReceiver::class.java).apply {
-                action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, alarmId, intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            // ✅ Step1-A: 既存の PendingIntent がなければ「対象なし」（正常）
-            if (pendingIntent == null) {
-                Log.d("MainActivity", "ℹ️ キャンセル対象なし（ID: $alarmId）")
-                return false
-            }
-
-            alarmManager.cancel(pendingIntent)
-            pendingIntent.cancel()
-            Log.d("MainActivity", "✅ AlarmManager キャンセル完了（ID: $alarmId）")
-            return true
-        } catch (e: Exception) {
-            Log.e("MainActivity", "❌ cancelAlarmWithAlarmManager エラー: ${e.message}")
-            return null
-        }
+        // ✅ H2 Step 3: 予約の保存（取消と保存分の削除は AlarmScheduler に移動）
+        return AlarmScheduler.cancel(this, alarmId)
     }
 
     private fun setAlarm(alarmId: String, timestampMs: Long, label: String, selectedAlarmSound: String) {
