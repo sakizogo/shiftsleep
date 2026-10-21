@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
 
 /// 起床処理（UI を含まない部分）
@@ -55,6 +56,9 @@ class WakeUpService {
       }
       await AlarmService.stopAlarmSound();
       print('[SleepButton] 🔊 アラーム音を停止しました');
+
+      // ✅ N4: 手動起床時刻は「今夜だけ有効」なので起床したら消す
+      await ManualWakeService.clear();
       if (cancelAlarms) {
         print('[SleepButton] ✅ アラームをキャンセルしました');
       }

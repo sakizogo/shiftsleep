@@ -10,6 +10,7 @@ import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import '../services/manual_wake_service.dart';
 
 class SleepButton extends StatefulWidget {
   final String userId;
@@ -119,10 +120,11 @@ class _SleepButtonState extends State<SleepButton>
       await sleepProvider.insertSleepRecord(sleepRecord);
       await sleepProvider.setCurrentSleepRecordIdNow(sleepRecord.id);
       
-      // ✨ Step 7：isAlarmEnabled が true の場合のみ今日のシフト始業30分前アラームをセット
+      // ✨ Step 7：isAlarmEnabled が true の場合のみアラームをセット
+      // ✅ N4: 手動起床時刻とシフト基準を比べ、早い方だけを登録
       if (isAlarmEnabled) {
-        print('[SleepButton] ✅ アラーム有効：今日のシフト始業30分前アラームをセット');
-        await _scheduleAlarmForTodayShift(now, messenger);
+        print('[SleepButton] ✅ アラーム有効：起床アラームをセット');
+        await _scheduleWakeAlarm(now, messenger);
       } else {
         print('[SleepButton] ⚠️ アラーム無効：アラームをセットしません');
       }
@@ -185,6 +187,87 @@ class _SleepButtonState extends State<SleepButton>
     }
   }
   // ==================================================
+
+    /// ✅ N4: 手動起床時刻とシフト基準（出勤前アラーム）を比べ、早い方だけを登録する
+  /// - 手動なし → 今まで通りシフト基準
+  /// - シフト基準なし、または手動の方が早い → 手動起床（📳 1秒バイブ）
+  /// - シフト基準の方が早い → シフト基準＋理由をメッセージで表示
+  Future<void> _scheduleWakeAlarm(DateTime now, ScaffoldMessengerState messenger) async {
+    final manualWakeAt = await ManualWakeService.getActive();
+
+    // 手動起床なし → 今まで通り
+    if (manualWakeAt == null) {
+      print('[SleepButton] ℹ️ 手動起床なし：シフト基準アラームを登録');
+      await _scheduleAlarmForTodayShift(now, messenger);
+      return;
+    }
+
+    final settings = await _shiftRepository.getAppSettings('test_user');
+    if (settings == null) {
+      print('[SleepButton] ⚠️ 設定が見つかりません（手動起床を登録できません）');
+      return;
+    }
+
+    final shiftPre = await _getTodayShiftPreAlarm(now, settings.alarmTimeBeforeShift);
+    String hm(DateTime t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
+
+    // シフト基準の方が早い（同時刻含む）→ シフト基準だけ登録
+    if (shiftPre != null && !manualWakeAt.isBefore(shiftPre.alarmAt)) {
+      print('[SleepButton] 🏢 シフト基準の方が早い：${hm(shiftPre.alarmAt)}（手動 ${hm(manualWakeAt)} は登録しない）');
+      await _scheduleAlarmForTodayShift(now, messenger);
+
+      final text = manualWakeAt.isBefore(shiftPre.startAt)
+          ? '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出勤前アラーム（${shiftPre.minutesBefore}分前）より遅いため、${hm(shiftPre.alarmAt)} に鳴ります'
+          : '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出社予定時刻（${hm(shiftPre.startAt)}）より遅いため、出勤前アラーム（${shiftPre.minutesBefore}分前）の ${hm(shiftPre.alarmAt)} に鳴ります';
+      // 設定画面の「更新されました」などが順番待ちしていると埋もれるため、先に消してから表示
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(content: Text(text), duration: const Duration(seconds: 6)),
+      );
+      return;
+    }
+
+    // 手動起床の方が早い、またはシフト基準なし → 手動起床だけ登録
+    print('[SleepButton] ⏰ 手動起床を登録：${hm(manualWakeAt)}（シフト基準: ${shiftPre == null ? "なし" : hm(shiftPre.alarmAt)}）');
+    final error = await ManualWakeService.scheduleAlarm(
+      target: manualWakeAt,
+      preAlarmMinutes: settings.alarmTimeBeforeShift,
+      selectedAlarmSound: settings.selectedAlarmSound,
+    );
+    if (error != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  /// ✅ N4: 今日のシフトの出勤前アラーム時刻を計算する（登録はしない）
+  /// 出勤前アラーム無効・シフトなし・休日・出勤時刻なし・すでに過ぎた時刻 → null
+  Future<({DateTime alarmAt, DateTime startAt, int minutesBefore})?> _getTodayShiftPreAlarm(
+      DateTime now, int minutesBefore) async {
+    if (minutesBefore <= 0) return null;
+
+    final today = DateTime(now.year, now.month, now.day);
+    final shifts = await _shiftRepository.getShiftsForDateRange(today, today);
+    if (shifts.isEmpty) return null;
+
+    final patternId = shifts.first['pattern_id'] as String;
+    if (patternId == 'default_dayoff') return null;
+
+    final pattern = await _shiftRepository.getPatternById(patternId);
+    if (pattern == null || pattern.startTime == null) return null;
+
+    final startTime = pattern.startTime!;
+    final startAt = DateTime(today.year, today.month, today.day, startTime.hour, startTime.minute);
+    final alarmAt = startAt.subtract(Duration(minutes: minutesBefore));
+    if (!alarmAt.isAfter(now)) return null;
+
+    return (alarmAt: alarmAt, startAt: startAt, minutesBefore: minutesBefore);
+  }
 
   // ========== Step 7：今日のシフト始業30分前アラームをセット ==========
   /// 

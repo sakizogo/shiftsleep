@@ -14,6 +14,7 @@ import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import '../services/manual_wake_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -1069,6 +1070,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _wakeUpTime = picked;
       });
       
+      // ✅ N4: 手動起床時刻を「今夜だけ有効」として保存（「今から寝る」で使う）
+      await ManualWakeService.save(picked);
+
       // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
       await _saveSettings();
     }
