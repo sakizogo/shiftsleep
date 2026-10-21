@@ -219,6 +219,8 @@ class _SleepButtonState extends State<SleepButton>
       final text = manualWakeAt.isBefore(shiftPre.startAt)
           ? '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出勤前アラーム（${shiftPre.minutesBefore}分前）より遅いため、${hm(shiftPre.alarmAt)} に鳴ります'
           : '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出社予定時刻（${hm(shiftPre.startAt)}）より遅いため、出勤前アラーム（${shiftPre.minutesBefore}分前）の ${hm(shiftPre.alarmAt)} に鳴ります';
+      // 設定画面の「更新されました」などが順番待ちしていると埋もれるため、先に消してから表示
+      messenger.clearSnackBars();
       messenger.showSnackBar(
         SnackBar(content: Text(text), duration: const Duration(seconds: 6)),
       );
