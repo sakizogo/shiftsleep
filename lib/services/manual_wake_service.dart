@@ -4,12 +4,21 @@ import 'package:vibration/vibration.dart';
 
 import 'alarm_service.dart';
 
-/// N4: 「今夜だけ」有効な手動起床時刻を管理する
-/// - 設定画面で起床時刻を選んだとき save()
-/// - 「今から寝る」で getActive() → シフト基準と比べて早い方を登録
-/// - 「起きる」で clear()
+/// N4/N10/N11: 手動起床時刻を管理する
+/// - 設定画面で起床時刻を選んだとき save()（今夜だけの予約 + 最後に選んだ時刻を保存）
+/// - 「この設定を毎日使用する」は setDaily() / isDaily()
+/// - 「今から寝る」で getActive() → 今夜だけの予約、なければ毎日設定の時刻を返す
+///   （シフト基準と比べて早い方を登録するのは呼び出し側）
+/// - 「起きる」で clear() → 今夜だけの予約のみ削除（最後に選んだ時刻と毎日設定は残す）
 class ManualWakeService {
+  /// 今夜だけの予約（ISO8601 日時）
   static const String _key = 'shiftsleep_manual_wake_at';
+
+  /// 最後に選んだ時刻（"HH:mm"、clear() では消さない）
+  static const String _timeKey = 'shiftsleep_manual_wake_time';
+
+  /// 毎日使用フラグ（bool、clear() では消さない）
+  static const String _dailyKey = 'shiftsleep_manual_wake_daily';
 
   /// 指定時刻が次に来る日時（今日のその時刻が過ぎていれば明日）
   static DateTime nextOccurrence(TimeOfDay time, {DateTime? from}) {
@@ -23,30 +32,73 @@ class ManualWakeService {
     final target = nextOccurrence(time);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, target.toIso8601String());
+    await prefs.setString(_timeKey, _format(time));
     print('[ManualWake] 💾 手動起床時刻を保存: $target');
   }
 
-  /// 有効な手動起床時刻を返す（未保存・過去なら null。過去の値は削除）
+  /// 毎日使用フラグを返す（未保存なら false）
+  static Future<bool> isDaily() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_dailyKey) ?? false;
+  }
+
+  /// 毎日使用フラグを保存（time があれば最後に選んだ時刻も保存）
+  static Future<void> setDaily(bool enabled, {TimeOfDay? time}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_dailyKey, enabled);
+    if (time != null) {
+      await prefs.setString(_timeKey, _format(time));
+    }
+    print('[ManualWake] 🔁 毎日使用: ${enabled ? 'ON' : 'OFF'}');
+  }
+
+  /// 有効な手動起床時刻を返す
+  /// ① 今夜だけの予約が未来ならそれ（過去なら削除）
+  /// ② なければ毎日使用 ON かつ最後に選んだ時刻があれば、その次の発生日時
+  /// ③ どちらもなければ null
   static Future<DateTime?> getActive() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_key);
-    if (saved == null) return null;
-
-    final target = DateTime.tryParse(saved);
-    if (target == null || !target.isAfter(DateTime.now())) {
+    if (saved != null) {
+      final target = DateTime.tryParse(saved);
+      if (target != null && target.isAfter(DateTime.now())) {
+        print('[ManualWake] ✅ 有効な手動起床時刻: $target');
+        return target;
+      }
       await prefs.remove(_key);
       print('[ManualWake] 🗑️ 期限切れの手動起床時刻を削除: $saved');
-      return null;
     }
-    print('[ManualWake] ✅ 有効な手動起床時刻: $target');
-    return target;
+
+    final daily = prefs.getBool(_dailyKey) ?? false;
+    final time = _parse(prefs.getString(_timeKey));
+    if (daily && time != null) {
+      final target = nextOccurrence(time);
+      print('[ManualWake] 🔁 毎日設定から手動起床時刻: $target');
+      return target;
+    }
+    return null;
   }
 
-  /// 手動起床時刻を削除（「起きる」押下時）
+  /// 今夜だけの予約を削除（「起きる」押下時）。最後に選んだ時刻と毎日設定は残す
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_key);
-    print('[ManualWake] 🗑️ 手動起床時刻をクリア');
+    print('[ManualWake] 🗑️ 手動起床時刻をクリア（毎日設定は残す）');
+  }
+
+  static String _format(TimeOfDay time) =>
+      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+  /// "HH:mm" を TimeOfDay に変換（不正値は null）
+  static TimeOfDay? _parse(String? value) {
+    if (value == null) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   /// 手動起床時刻でアラームを登録し、成功したら1秒バイブ

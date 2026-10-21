@@ -41,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _vacationAccrualDate;
   // ========== Week 25+ 新規追加：毎日設定チェックボックス ==========
   bool _useDailyWakeUpSetting = false;  // チェックボックスの状態
+  bool _hasManualWakeTonight = false;  // ✅ N10: 今夜の手動起床が有効か（予約 or 毎日設定）
   // ================================================================
 
   final ShiftRepository _shiftRepository = ShiftRepository();
@@ -69,7 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _initializeCurrentSettings();  // ← 追加
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
-    // _loadDailyWakeUpSetting();
+    _loadDailyWakeUpSetting();  // ✅ N11: 毎日使用フラグと今夜の手動起床の有無を反映
     _loadAlarmEnabledSetting();  // ✅ H4: 保存済みの ON/OFF をスイッチに反映
     // ============================================================
   }
@@ -100,6 +101,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       print('⚠️ 設定読み込みエラー: $e');
     }
+  }
+
+  /// ✅ N10/N11: 毎日使用フラグと、今夜の手動起床が有効かを読み込む
+  Future<void> _loadDailyWakeUpSetting() async {
+    final isDaily = await ManualWakeService.isDaily();
+    final hasTonight = (await ManualWakeService.getActive()) != null;
+    if (!mounted) return;
+    setState(() {
+      _useDailyWakeUpSetting = isDaily;
+      _hasManualWakeTonight = hasTonight;
+    });
   }
 
     // ========== 🆕 新規追加：SharedPreferences から アラーム有効フラグを読み込み ==========
@@ -421,7 +433,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Consumer<SleepProvider>(
                         builder: (context, sleepProvider, _) {
                           final displayWakeUpTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
-                          return Row(
+                          // ✅ N10: 毎日 OFF で今夜の予約がないときはグレー表示＋文字で説明
+                          final isUnsetTonight = !_useDailyWakeUpSetting && !_hasManualWakeTonight;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Row(
                             children: [
                               // ✨ 🆕 追加：Toggle Switch
                               CupertinoSwitch(
@@ -444,7 +461,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               // 時刻表示
                               Text(
                                 '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
-                                style: AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
+                                style: isUnsetTonight
+                                    ? AppTextStyles.largeNumberStyle.copyWith(fontSize: 32, color: AppColors.textMuted)
+                                    : AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
                               ),
                               const Spacer(),
                               
@@ -466,6 +485,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                               ),
                             ],
+                          ),
+                              if (isUnsetTonight)
+                                Text(
+                                  '今夜は未設定（「変更」で予約）',
+                                  style: AppTextStyles.bodyTextStyle.copyWith(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                            ],
                           );
                         },
                       ),
@@ -486,28 +515,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           subtitle: Text(
-                            'シフト登録時に自動で起床時刻を計算しても、\nこの設定が有効な場合は毎日上記時刻で統一されます',
+                            'ON：毎晩この時刻で起こします\nOFF：「変更」で選んだ夜だけ使います\n※出勤前アラームの方が早い日はそちらを優先します',
                             style: AppTextStyles.bodyTextStyle.copyWith(
                               fontSize: 11,
                               color: AppColors.textMuted,
                             ),
                           ),
                           value: _useDailyWakeUpSetting,
-                          onChanged: (bool? value) {
+                          onChanged: (bool? value) async {
                             if (value != null) {
                               setState(() {
                                 _useDailyWakeUpSetting = value;
                               });
-                              // SharedPreferences に保存
-                              
-                              
+                              // ✅ N11: SharedPreferences に保存（ON は画面に表示中の時刻を毎日使う時刻にする）
+                              final displayTime = context.read<SleepProvider>().autoWakeUpTimeOfDay ?? _wakeUpTime;
+                              final timeStr = '${displayTime.hour.toString().padLeft(2, '0')}:${displayTime.minute.toString().padLeft(2, '0')}';
+                              final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+                              if (value) {
+                                await ManualWakeService.setDaily(true, time: displayTime);
+                              } else {
+                                await ManualWakeService.setDaily(false);
+                              }
+                              await _loadDailyWakeUpSetting();
+
                               print('[SettingsScreen] 📌 毎日設定チェックボックス: ${value ? "✅ ON" : "❌ OFF"}');
-                              
+
                               // ユーザーに通知
                               if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   SnackBar(
-                                    content: Text(value ? '✅ 毎日この時刻で起床時刻を固定します' : '❌ シフト登録時に自動計算します'),
+                                    content: Text(value
+                                        ? '✅ 毎晩 $timeStr に起こします（出勤前アラームの方が早い日はそちらを優先）'
+                                        : '⬜ 「変更」で選んだ夜だけこの時刻を使います'),
                                     duration: const Duration(seconds: 2),
                                   ),
                                 );
@@ -1072,6 +1111,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       // ✅ N4: 手動起床時刻を「今夜だけ有効」として保存（「今から寝る」で使う）
       await ManualWakeService.save(picked);
+      // ✅ N11: 毎日 ON なら毎日使う時刻も更新
+      if (_useDailyWakeUpSetting) {
+        await ManualWakeService.setDaily(true, time: picked);
+      }
+      if (mounted) {
+        setState(() {
+          _hasManualWakeTonight = true;
+        });
+      }
 
       // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
       await _saveSettings();
