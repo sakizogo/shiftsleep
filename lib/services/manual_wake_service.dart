@@ -119,6 +119,7 @@ class ManualWakeService {
       preAlarmEnabled: false,
       preAlarmMinutes: preAlarmMinutes,
       selectedAlarmSound: selectedAlarmSound,
+      isManualWake: true,  // ✅ N9: 通知文言を「起床時間です」にする
     );
     print('[ManualWake] 📨 手動起床アラームを登録: $target ※結果は [AlarmService] ログを参照');
 

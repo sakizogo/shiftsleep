@@ -1454,6 +1454,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         preAlarmEnabled: false,
         preAlarmMinutes: alarmTimeBeforeShift,
         selectedAlarmSound: selectedAlarmSound,
+        isManualWake: true,  // ✅ N9: 通知文言を「起床時間です」にする
       );
 
       // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない

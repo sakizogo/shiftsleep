@@ -142,6 +142,7 @@ class AlarmService {
     bool preAlarmEnabled = true,
     int preAlarmMinutes = 5,
     String selectedAlarmSound = 'default',
+    bool isManualWake = false,  // ✅ N9: true なら main の文言を「起床時間です」にする（手動起床用）
   }) async {
     // ✅ H4: アラームOFFなら main / pre とも登録しない（エラーではないため null を返す）
     if (!await isAlarmEnabled()) {
@@ -164,10 +165,15 @@ class AlarmService {
     // ✅ ShiftPre: mainAlarmEnabled が false のときは出勤時刻（main）を登録しない（mainError は null のまま）
     String? mainError;
     if (mainAlarmEnabled) {
+      // ✅ N9: 手動起床のときだけ「起床時間です」に切り替える
+      final mainTimeStr = '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}';
+      final mainTitle = isManualWake ? '起床時間です' : '出勤時間です';
+      final mainBody = isManualWake ? '$mainTimeStr に起床予定です' : '$mainTimeStr に出勤します';
+
       await _scheduleNotification(
         id: _generateNotificationId(shiftDate, 'main'),
-        title: '出勤時間です',
-        body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+        title: mainTitle,
+        body: mainBody,
         scheduledDate: mainAlarmDateTime,
         selectedAlarmSound: selectedAlarmSound,
       );
@@ -176,8 +182,8 @@ class AlarmService {
       mainError = await _scheduleWithAlarmManager(
         alarmId: _generateNotificationId(shiftDate, 'main'),
         scheduledDate: mainAlarmDateTime,
-        title: '出勤時間です',
-        body: '${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')} に出勤します',
+        title: mainTitle,
+        body: mainBody,
         selectedAlarmSound: selectedAlarmSound,
       );
     }
