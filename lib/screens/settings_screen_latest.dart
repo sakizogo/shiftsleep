@@ -1444,7 +1444,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       print('[Settings] 🛑 古いアラームをキャンセル中...');
       // ✅ H1: 起床アラーム（main）だけをキャンセル。同じ日の出勤前アラーム（pre）は残す
-      await AlarmService.cancelMainAlarm(shiftDate);
+      // ✅ N17: 前回が別の日付で登録されていても残らないよう、今日と明日の main をキャンセル
+      await ManualWakeService.cancelTodayAndTomorrow();
       print('[Settings] ✅ 古いアラームキャンセル完了');
 
       print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');

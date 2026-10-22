@@ -50,6 +50,27 @@ class ManualWakeService {
       await prefs.setString(_timeKey, _format(time));
     }
     print('[ManualWake] 🔁 毎日使用: ${enabled ? 'ON' : 'OFF'}');
+
+    // ✅ N17: OFF にしたら毎日設定から登録した予約を消す（今夜だけの予約があれば有効なまま残す）
+    if (!enabled) {
+      if (prefs.getString(_key) == null) {
+        print('[ManualWake] 🧹 今夜だけの予約がないため、毎日設定の手動起床アラームをキャンセル');
+        await cancelTodayAndTomorrow();
+      } else {
+        print('[ManualWake] ⏭️ 今夜だけの予約があるため、手動起床アラームはキャンセルしない');
+      }
+    }
+  }
+
+  /// ✅ N17: 今日と明日の手動起床アラーム（main）をキャンセルする
+  /// 手動起床は最大24時間先なので、登録日付は今日か明日のどちらか
+  static Future<void> cancelTodayAndTomorrow() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    await AlarmService.cancelMainAlarm(today);
+    await AlarmService.cancelMainAlarm(tomorrow);
+    print('[ManualWake] 🧹 今日と明日の手動起床アラームをキャンセル: ${_formatDate(today)} / ${_formatDate(tomorrow)}');
   }
 
   /// 有効な手動起床時刻を返す
@@ -89,6 +110,9 @@ class ManualWakeService {
   static String _format(TimeOfDay time) =>
       '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
+  static String _formatDate(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
   /// "HH:mm" を TimeOfDay に変換（不正値は null）
   static TimeOfDay? _parse(String? value) {
     if (value == null) return null;
@@ -111,7 +135,8 @@ class ManualWakeService {
     final shiftDate = DateTime(target.year, target.month, target.day);
 
     // 起床アラーム（main）だけを取り消してから登録（pre は残す）
-    await AlarmService.cancelMainAlarm(shiftDate);
+    // ✅ N17: 前回が別の日付で登録されていても残らないよう、今日と明日の main を取り消す
+    await cancelTodayAndTomorrow();
 
     final errorCode = await AlarmService.scheduleAlarmForShift(
       shiftDate: shiftDate,

@@ -53,6 +53,8 @@ class WakeUpService {
         print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
         final today = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
         await AlarmService.cancelAlarm(today);
+        // ✅ N17: 明日の日付で登録された手動起床アラームも残さない
+        await ManualWakeService.cancelTodayAndTomorrow();
       }
       await AlarmService.stopAlarmSound();
       print('[SleepButton] 🔊 アラーム音を停止しました');
