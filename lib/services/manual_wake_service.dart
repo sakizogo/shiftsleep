@@ -150,6 +150,11 @@ class ManualWakeService {
 
     final error = AlarmService.alarmErrorMessage(errorCode);
     if (error == null) {
+      // ✅ N20: 過去時刻はスキップされても成功扱い（null）で返るため、バイブの前に確認する
+      if (!target.isAfter(DateTime.now())) {
+        print('[ManualWake] ⏭️ 起床時刻を過ぎていたためアラーム未登録（バイブなし）: $target');
+        return '⚠️ 起床時刻 ${target.hour}:${target.minute.toString().padLeft(2, '0')} を過ぎていたため、アラームを設定できませんでした';
+      }
       await _vibrate();
     }
     return error;
