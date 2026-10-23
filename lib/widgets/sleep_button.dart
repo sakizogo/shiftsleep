@@ -242,6 +242,20 @@ class _SleepButtonState extends State<SleepButton>
           duration: const Duration(seconds: 6),
         ),
       );
+    } else if (manualWakeAt.hour == now.hour &&
+        manualWakeAt.minute == now.minute &&
+        manualWakeAt.year == DateTime(now.year, now.month, now.day + 1).year &&
+        manualWakeAt.month == DateTime(now.year, now.month, now.day + 1).month &&
+        manualWakeAt.day == DateTime(now.year, now.month, now.day + 1).day) {
+      // ✅ N18: 起床時刻が今と同じ時・分のため翌日になったことを知らせる（普通の翌日起床では出さない）
+      print('[SleepButton] ℹ️ 起床時刻が今と同じ分のため翌日に設定：${manualWakeAt}');
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('⏰ 起床時刻 ${hm(manualWakeAt)} は今と同じ時刻のため、明日 ${hm(manualWakeAt)} に設定しました'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
   }
 
