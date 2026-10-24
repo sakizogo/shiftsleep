@@ -2,11 +2,8 @@ package jp.sakizoapps.shiftsleep
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.app.AlarmManager
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.util.Log
 import jp.sakizoapps.shiftsleep.AlarmReceiver  // ← 🆕 追加
@@ -21,15 +18,6 @@ class MainActivity: FlutterActivity() {
         
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
-                "setAlarm" -> {
-                    val alarmId = call.argument<String>("alarmId") ?: ""
-                    val timestampMs = call.argument<Long>("timestampMs") ?: 0L
-                    val label = call.argument<String>("label") ?: "Alarm"
-                    val selectedAlarmSound = call.argument<String>("selectedAlarmSound") ?: "default"
-                    
-                    setAlarm(alarmId, timestampMs, label, selectedAlarmSound)
-                    result.success("アラームセット成功")
-                }
                 "scheduleAlarmWithAlarmManager" -> {
                     val timestampMs = call.argument<Long>("timestampMs") ?: 0L
                     val alarmId = call.argument<Int>("alarmId") ?: 0
@@ -62,15 +50,6 @@ class MainActivity: FlutterActivity() {
                         false -> result.success("AlarmManager キャンセル対象なし")
                         null -> result.error("CANCEL_FAILED", "AlarmManager キャンセル失敗", alarmId)
                     }
-                }
-                "cancelAlarm" -> {
-                    val alarmId = call.argument<String>("alarmId") ?: ""
-                    cancelAlarm(alarmId)
-                    result.success("キャンセル成功")
-                }
-                "cancelAllAlarms" -> {
-                    cancelAllAlarms()
-                    result.success("全キャンセル成功")
                 }
                 "stopAlarm" -> {
                     stopAlarm()
@@ -114,52 +93,6 @@ class MainActivity: FlutterActivity() {
     private fun cancelAlarmWithAlarmManager(alarmId: Int): Boolean? {
         // ✅ H2 Step 3: 予約の保存（取消と保存分の削除は AlarmScheduler に移動）
         return AlarmScheduler.cancel(this, alarmId)
-    }
-
-    private fun setAlarm(alarmId: String, timestampMs: Long, label: String, selectedAlarmSound: String) {
-        try {
-            Log.d("MainActivity", "🔔 setAlarm: id=$alarmId, time=$timestampMs, sound=$selectedAlarmSound")
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, AlarmReceiver::class.java).apply {
-                action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
-                putExtra("alarmId", alarmId)
-                putExtra("label", label)
-                putExtra("selectedAlarmSound", selectedAlarmSound)
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, alarmId.hashCode(), intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timestampMs, pendingIntent)
-            Log.d("MainActivity", "✅ setAndAllowWhileIdle 完了")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "❌ setAlarm エラー: ${e.message}")
-        }
-    }
-
-    private fun cancelAlarm(alarmId: String) {
-        try {
-            Log.d("MainActivity", "❌ cancelAlarm: id=$alarmId")
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, AlarmReceiver::class.java)
-            val pendingIntent = PendingIntent.getBroadcast(
-                this, alarmId.hashCode(), intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            alarmManager.cancel(pendingIntent)
-            Log.d("MainActivity", "✅ キャンセル完了")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "❌ cancelAlarm エラー: ${e.message}")
-        }
-    }
-
-    private fun cancelAllAlarms() {
-        try {
-            Log.d("MainActivity", "❌ cancelAllAlarms 呼び出し")
-            Log.d("MainActivity", "✅ 全キャンセル完了")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "❌ cancelAllAlarms エラー: ${e.message}")
-        }
     }
 
     private fun stopAlarm() {
