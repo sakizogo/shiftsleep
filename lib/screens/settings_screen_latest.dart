@@ -683,11 +683,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               
                               await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
                               
+                              if (!mounted) return;  // ✅ N12: 画面が閉じられていたら setState しない
                               setState(() {
                                 _currentSettings = updatedSettings;
                               });
                               
-                              if (mounted) {
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('✅ アラーム音を保存しました'),
@@ -696,7 +697,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 );
                               }
                             } catch (e) {
-                              if (mounted) {
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text('❌ 保存に失敗しました: $e'),
@@ -1197,6 +1198,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     
+    if (!mounted) return;  // ✅ N12: await 後に画面が閉じられていたら Provider に触らない
     try {
       // ========== Step 4️⃣：SleepProvider に起床時刻を更新 ==========
       print('[Settings] 🔄 Step 4️⃣ プロバイダーを更新...');
