@@ -237,6 +237,7 @@ class AlarmService {
     required DateTime scheduledDate,
     String selectedAlarmSound = 'default',
   }) async {
+    if (Platform.isAndroid) return; // N6: Android はネイティブ（AlarmManager）だけで通知する
     try {
       print('⏰ 現在時刻: ${DateTime.now()}');
       print('⏰ スケジュール時刻: $scheduledDate');
