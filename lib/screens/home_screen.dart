@@ -4,10 +4,8 @@ import 'dart:async';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
-import '../widgets/sleep_button.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
-import 'package:shiftsleep/services/alarm_service.dart';  // ← これを追加
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/screens/settings_screen_latest.dart';
 import 'package:shiftsleep/screens/edit_sleep_record_screen.dart';
@@ -18,15 +16,13 @@ import 'package:shiftsleep/screens/shift_detail_screen.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
-import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
-import 'package:shiftsleep/widgets/vacation_stats_widget.dart';  // ← これを追加
 
 // Week 3 Day 5: シフト管理画面内の詳細状態管理
 enum ShiftManagementView { calendar, details }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -41,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   List<ShiftPatternModel> _patterns = [];
-  bool _isLoadingPatterns = false;
   
   // ========== Week 3 Day 6-2 追加: シフト管理画面の state にアクセス ==========
   late GlobalKey<ShiftManagementScreenState> _shiftManagementKey;
@@ -129,9 +124,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadPatterns() async {
-    setState(() {
-      _isLoadingPatterns = true;
-    });
 
     try {
       final patterns = await _shiftRepository.getAllPatterns();
@@ -150,14 +142,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     
       setState(() {
         _patterns = updatedPatterns;
-        _isLoadingPatterns = false;
       });
       print('Loaded ${updatedPatterns.length} patterns from DB');
     } catch (e) {
       print('Error loading patterns: $e');
-      setState(() {
-        _isLoadingPatterns = false;
-      });
     }
   }
 
@@ -260,8 +248,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             patterns: _patterns,
             onNavigateToDetails: (shiftDataMap, patterns) {
               setState(() {
-                _shiftDataMapForDetails = shiftDataMap as Map<DateTime, ShiftData>;
-                _patternsForDetails = patterns as List<ShiftPatternModel>;
+                _shiftDataMapForDetails = shiftDataMap;
+                _patternsForDetails = patterns;
                 _shiftManagementView = ShiftManagementView.details;
               });
             },
@@ -482,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                     decoration: BoxDecoration(
                                       color: AppColors.primaryGradientStart
-                                          .withOpacity(0.1),
+                                          .withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(
                                         AppDimensions.borderRadiusSmall,
                                       ),
@@ -635,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 ),
                                 const SizedBox(height: 4.0),
                                 Text(
-                                  '${sleepProvider.sri.toStringAsFixed(0)}',
+                                  sleepProvider.sri.toStringAsFixed(0),
                                   style: AppTextStyles.statNumberStyle,
                                 ),
                                 const SizedBox(height: 4.0),
@@ -844,13 +832,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            AppColors.primaryGradientStart.withOpacity(0.1),
-                            AppColors.primaryGradientEnd.withOpacity(0.1),
+                            AppColors.primaryGradientStart.withValues(alpha: 0.1),
+                            AppColors.primaryGradientEnd.withValues(alpha: 0.1),
                           ],
                         ),
                         border: Border.all(
                           color: AppColors.primaryGradientStart
-                              .withOpacity(0.3),
+                              .withValues(alpha: 0.3),
                           width: AppDimensions.borderWidthThin,
                         ),
                         borderRadius: BorderRadius.circular(
@@ -953,13 +941,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                AppColors.primaryGradientStart.withOpacity(0.15),
-                                AppColors.primaryGradientEnd.withOpacity(0.15),
+                                AppColors.primaryGradientStart.withValues(alpha: 0.15),
+                                AppColors.primaryGradientEnd.withValues(alpha: 0.15),
                               ],
                             ),
                             border: Border.all(
                               color: AppColors.primaryGradientStart
-                                  .withOpacity(0.5),
+                                  .withValues(alpha: 0.5),
                               width: AppDimensions.borderWidthThin,
                             ),
                             borderRadius: BorderRadius.circular(
@@ -1005,7 +993,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         AppDimensions.paddingSmall,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.7),
+                                        color: Colors.white.withValues(alpha: 0.7),
                                         borderRadius: BorderRadius.circular(
                                           AppDimensions.borderRadiusSmall,
                                         ),
@@ -1132,8 +1120,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           ],
                                         ),
                                       ),
-                                    ))
-                                .toList(),
+                                    )),
                           ],
                         ),
 
@@ -1210,7 +1197,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       decoration: BoxDecoration(
                         color: AppColors.cardBgAlert,
                         border: Border.all(
-                          color: AppColors.warningRed.withOpacity(0.3),
+                          color: AppColors.warningRed.withValues(alpha: 0.3),
                           width: AppDimensions.borderWidthThin,
                         ),
                         borderRadius: BorderRadius.circular(
