@@ -3,6 +3,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -172,6 +173,14 @@ class MainActivity: FlutterActivity() {
         AlarmReceiver.mediaPlayer = null
         AlarmReceiver.alarmHandler?.removeCallbacksAndMessages(null)
         AlarmReceiver.alarmHandler = null
+
+        // N6: 「起きる」で音を止めたら、残っているアラーム通知（alarm_channel）もすべて消す
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.activeNotifications
+                ?.filter { it.notification.channelId == "alarm_channel" }
+                ?.forEach { nm?.cancel(it.tag, it.id) }
+        }
 
         Log.d("MainActivity", "✅ アラーム停止完了")
         } catch (e: Exception) {
