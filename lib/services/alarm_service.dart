@@ -22,9 +22,6 @@ class AlarmService {
   static final AudioPlayer _testAudioPlayer = AudioPlayer();
   static Timer? _testAudioTimer;
 
-  // ===== 初期化フラグ =====
-  static bool _isInitialized = false;
-
   static Future<void> initialize() async {
     tz_data.initializeTimeZones();
     // ========== Channel を削除（古い設定をリセット） ==========
@@ -72,8 +69,6 @@ class AlarmService {
 
     await _setupAndroidChannel();
 
-    // ★ 追加：初期化完了フラグをセット ★
-    _isInitialized = true;
     print('✅ AlarmService initialized successfully');
   }
 
@@ -411,11 +406,6 @@ class AlarmService {
     print('✓ 出勤前アラーム（pre）をキャンセルしました: $date');
   }
 
-  static Future<void> cancelAllAlarms() async {
-    await _notificationsPlugin.cancelAll();
-    print('✓ すべてのアラームをクリアしました');
-  }
-
   /// selectedAlarmSound から実際のファイル名を取得
   static String _getSoundFileName(String selectedAlarmSound) {
     switch (selectedAlarmSound) {
@@ -426,18 +416,6 @@ class AlarmService {
       case 'default':
       default:
         return 'alarm_default';
-    }
-  }
-
-  static String _getChannelId(String selectedAlarmSound) {
-    switch (selectedAlarmSound) {
-      case 'gentle':
-        return 'alarm_channel_gentle';
-      case 'harsh':
-        return 'alarm_channel_harsh';
-      case 'default':
-      default:
-        return 'alarm_channel_default';
     }
   }
 
