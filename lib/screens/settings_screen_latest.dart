@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';  // ← CupertinoSwitch 用
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // ========== Week 25+ 追加 ==========
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
@@ -20,9 +19,9 @@ class SettingsScreen extends StatefulWidget {
   final String userId;
 
   const SettingsScreen({
-    Key? key,
+    super.key,
     required this.userId,
-  }) : super(key: key);
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -173,12 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        Navigator.pop(context);
-        return false;
-      },
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: AppColors.backgroundLight,
         appBar: AppBar(
           backgroundColor: AppColors.backgroundLight,
@@ -217,8 +211,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.all(AppDimensions.paddingMedium),
                   decoration: BoxDecoration(
                     color: _isPremiumUser
-                        ? Colors.green.withOpacity(0.05)
-                        : Colors.grey.withOpacity(0.05),
+                        ? Colors.green.withValues(alpha: 0.05)
+                        : Colors.grey.withValues(alpha: 0.05),
                     border: Border.all(
                       color: _isPremiumUser
                           ? Colors.green
@@ -336,7 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             vertical: AppDimensions.paddingMedium,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
+                            color: Colors.green.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(
                               AppDimensions.borderRadiusMedium,
                             ),
@@ -389,7 +383,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 _advicePromoVisible = value;
                               });
                             },
-                            activeColor: AppColors.primaryGradientStart,
+                            activeThumbColor: AppColors.primaryGradientStart,
                           ),
                         ],
                       ),
@@ -968,8 +962,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildBenefitItem(String benefit) {
@@ -1062,7 +1055,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.primaryGradientStart.withOpacity(0.1)
+                ? AppColors.primaryGradientStart.withValues(alpha: 0.1)
                 : AppColors.cardBgGray,
             border: Border.all(
               color: isSelected
@@ -1252,7 +1245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
+              content: Text('⚠️ 起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
               backgroundColor: Colors.orange,
               duration: Duration(seconds: 4),
             ),
