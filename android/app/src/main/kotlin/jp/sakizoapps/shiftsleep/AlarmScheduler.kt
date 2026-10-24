@@ -46,6 +46,7 @@ object AlarmScheduler {
                 action = "jp.sakizoapps.shiftsleep.ALARM_ACTION"
                 putExtra("alarmId", alarmId.toString())
                 putExtra("label", title)
+                putExtra("body", body)
                 putExtra("selectedAlarmSound", selectedAlarmSound)
             }
 

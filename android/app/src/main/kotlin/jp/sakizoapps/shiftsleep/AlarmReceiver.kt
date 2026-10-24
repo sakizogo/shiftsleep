@@ -60,15 +60,16 @@ class AlarmReceiver : BroadcastReceiver() {
     val alarmId = intent.getStringExtra("alarmId") ?: "unknown"
     val label = intent.getStringExtra("label") ?: "Alarm"
     val selectedAlarmSound = intent.getStringExtra("selectedAlarmSound") ?: "default"
+    val body = intent.getStringExtra("body") ?: ""
 
     Log.d("AlarmReceiver", "🔔 アラーム発火！ ID: $alarmId, Label: $label, Sound: $selectedAlarmSound")
 
-    showNotification(context, alarmId, label)
+    showNotification(context, alarmId, label, body)
     playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
     vibrate(context)
   }
 
-  private fun showNotification(context: Context, alarmId: String, label: String) {
+  private fun showNotification(context: Context, alarmId: String, label: String, body: String) {
     try {
       val stopIntent = Intent(context, AlarmReceiver::class.java).apply {
         action = "jp.sakizoapps.shiftsleep.STOP_ALARM"
@@ -82,12 +83,27 @@ class AlarmReceiver : BroadcastReceiver() {
         false
       )
 
+      // N6: 通知をタップしたらアプリを開く（音は止めない。止めるのは「停止」ボタンだけ）
+      val openIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+      }
+      val openPendingIntent = openIntent?.let {
+        PendingIntentCompat.getActivity(
+          context,
+          alarmId.hashCode() + 2,
+          it,
+          android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+          false
+        )
+      }
+
       val notification = NotificationCompat.Builder(context, "alarm_channel")
         .setSmallIcon(android.R.drawable.ic_dialog_info)
-        .setContentTitle("⏰ アラーム")
-        .setContentText(label)
+        .setContentTitle("⏰ $label")
+        .setContentText(body.ifEmpty { label })
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setAutoCancel(false)
+        .setContentIntent(openPendingIntent)
         .addAction(
           android.R.drawable.ic_menu_close_clear_cancel,
           "停止",
