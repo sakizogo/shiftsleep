@@ -1232,6 +1232,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     
+    String? alarmError;  // ✅ N22: アラーム再登録の失敗文言（null=成功／起床中）
     try {
       // ========== Step 5️⃣：就寝中の場合、アラーム再登録 ==========
       print('[Settings] 🔍 Step 5️⃣ 就寝状態を確認...');
@@ -1241,7 +1242,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       if (sleepProvider.isSleepingNow) {
         print('[Settings] 🔗 就寝中です。アラーム再登録を開始...');
-        await _rescheduleAlarmDuringSleep(sleepProvider);
+        alarmError = await _rescheduleAlarmDuringSleep(sleepProvider);
       } else {
         print('[Settings] 🛑 起床中のため、アラーム登録をスキップします');
         
@@ -1263,7 +1264,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     
     // ========== Step 6️⃣：ユーザーに成功を通知 ==========
-    if (mounted) {
+    // ✅ N22: アラーム登録に失敗したときはオレンジだけを出す（緑の「更新されました」は出さない）
+    if (alarmError != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(alarmError),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました'),
@@ -1425,7 +1435,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
     /// 就寝中のアラーム再登録（古いアラーム削除→新規登録）
-  Future<void> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
+  // ✅ N22: 戻り値 null=成功 / 文字列=オレンジで表示する文言（表示は _saveSettings で行う）
+  Future<String?> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
     try {
       print('[Settings] 🔄 アラーム再登録処理を開始...');
 
@@ -1462,18 +1473,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[Settings] 📨 新しいアラーム登録処理を実行（起床時刻のみ）※登録/スキップの結果は [AlarmService] ログを参照');
 
       // ✅ Step2-2: 登録に失敗したときだけユーザーに知らせる（古いアラームは取り消し済みのため重要）
-      final alarmError = AlarmService.alarmErrorMessage(errorCode);
-      if (alarmError != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(alarmError),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
+      return AlarmService.alarmErrorMessage(errorCode);
     } catch (e) {
       print('[Settings] ❌ アラーム再登録エラー: $e');
+      return '⚠️ 起床時刻は保存しましたが、アラームを設定できませんでした';
     }
   }
 }
