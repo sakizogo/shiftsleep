@@ -34,12 +34,12 @@ object AlarmScheduler {
         selectedAlarmSound: String
     ): String? {
         try {
-            Log.d("MainActivity", "🔔 scheduleAlarmWithAlarmManager: id=$alarmId, time=$timestampMs, sound=$selectedAlarmSound")
+            Log.d("AlarmScheduler", "🔔 scheduleAlarmWithAlarmManager: id=$alarmId, time=$timestampMs, sound=$selectedAlarmSound")
 
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             // ✅ Step2-1: Android 12 以降は登録前に正確なアラームの権限を確認（権限なしなら登録しない）
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                Log.w("MainActivity", "⛔ 正確なアラームの権限がないため登録しません（ID: $alarmId）")
+                Log.w("AlarmScheduler", "⛔ 正確なアラームの権限がないため登録しません（ID: $alarmId）")
                 return "EXACT_ALARM_DENIED"
             }
             val intent = Intent(context, AlarmReceiver::class.java).apply {
@@ -61,16 +61,16 @@ object AlarmScheduler {
                 pendingIntent
             )
 
-            Log.d("MainActivity", "✅ setExactAndAllowWhileIdle 完了（ID: $alarmId, 時刻: $timestampMs）")
+            Log.d("AlarmScheduler", "✅ setExactAndAllowWhileIdle 完了（ID: $alarmId, 時刻: $timestampMs）")
             // ✅ H2 Step 3: 予約の保存（登録に成功したときだけ保存）
             save(context, SavedAlarm(timestampMs, alarmId, title, body, selectedAlarmSound))
             return null
         } catch (e: SecurityException) {
             // ✅ Step2-1: 権限不足による失敗を識別して返す
-            Log.e("MainActivity", "❌ 正確なアラームの権限エラー: ${e.message}")
+            Log.e("AlarmScheduler", "❌ 正確なアラームの権限エラー: ${e.message}")
             return "EXACT_ALARM_DENIED"
         } catch (e: Exception) {
-            Log.e("MainActivity", "❌ scheduleAlarmWithAlarmManager エラー: ${e.message}")
+            Log.e("AlarmScheduler", "❌ scheduleAlarmWithAlarmManager エラー: ${e.message}")
             return "SCHEDULE_FAILED"
         }
     }
@@ -78,7 +78,7 @@ object AlarmScheduler {
     // ✅ Step1-A: 戻り値 true=取消成功 / false=対象なし / null=例外
     fun cancel(context: Context, alarmId: Int): Boolean? {
         try {
-            Log.d("MainActivity", "🔴 cancelAlarmWithAlarmManager: id=$alarmId")
+            Log.d("AlarmScheduler", "🔴 cancelAlarmWithAlarmManager: id=$alarmId")
 
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             // ✅ Step1-A: 登録時と同じ action を付けて同一の PendingIntent に一致させる
@@ -92,7 +92,7 @@ object AlarmScheduler {
 
             // ✅ Step1-A: 既存の PendingIntent がなければ「対象なし」（正常）
             if (pendingIntent == null) {
-                Log.d("MainActivity", "ℹ️ キャンセル対象なし（ID: $alarmId）")
+                Log.d("AlarmScheduler", "ℹ️ キャンセル対象なし（ID: $alarmId）")
                 // ✅ H2 Step 3: 予約の保存（対象なしでも保存分は削除）
                 remove(context, alarmId)
                 return false
@@ -100,12 +100,12 @@ object AlarmScheduler {
 
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
-            Log.d("MainActivity", "✅ AlarmManager キャンセル完了（ID: $alarmId）")
+            Log.d("AlarmScheduler", "✅ AlarmManager キャンセル完了（ID: $alarmId）")
             // ✅ H2 Step 3: 予約の保存（取消に成功したら保存分を削除）
             remove(context, alarmId)
             return true
         } catch (e: Exception) {
-            Log.e("MainActivity", "❌ cancelAlarmWithAlarmManager エラー: ${e.message}")
+            Log.e("AlarmScheduler", "❌ cancelAlarmWithAlarmManager エラー: ${e.message}")
             return null
         }
     }
