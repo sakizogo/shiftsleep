@@ -98,7 +98,7 @@ class AlarmReceiver : BroadcastReceiver() {
       }
 
       val notification = NotificationCompat.Builder(context, "alarm_channel")
-        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setSmallIcon(R.drawable.ic_stat_alarm)
         .setContentTitle("⏰ $label")
         .setContentText(body.ifEmpty { label })
         .setPriority(NotificationCompat.PRIORITY_HIGH)
