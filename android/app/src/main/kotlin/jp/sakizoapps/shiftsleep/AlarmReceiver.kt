@@ -49,6 +49,9 @@ class AlarmReceiver : BroadcastReceiver() {
 
     Log.d("AlarmReceiver", "🔔 アラーム発火！ ID: $alarmId, Label: $label, Sound: $selectedAlarmSound")
 
+    // N46: 鳴ったアラームの保存分を消す（AlarmManager の予約は鳴った時点で終わっている）
+    alarmId.toIntOrNull()?.let { AlarmScheduler.remove(context, it) }
+
     // N29: 音はフォアグラウンドサービスで鳴らす（アプリをスワイプで消したあとでも鳴るように）
     try {
       val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
@@ -193,7 +196,7 @@ class AlarmReceiver : BroadcastReceiver() {
         
         if (elapsedTime >= AUTO_STOP_DURATION_MS) {
           Log.d("AlarmReceiver", "⏰ 1分経過。自動停止します。")
-          handleAlarmStopped(context, alarmId)
+          handleAutoStopped(context, alarmId)
         } else {
           val remainingTime = AUTO_STOP_DURATION_MS - elapsedTime
           Log.d("AlarmReceiver", "⏱️ 自動停止まで あと ${remainingTime / 1000}秒")
@@ -218,7 +221,7 @@ class AlarmReceiver : BroadcastReceiver() {
     }
   }
 
-  // 停止ボタン・1分自動停止の共通処理：音を止める＋通知を消す＋停止時刻を保存
+  // 停止ボタンの処理：音を止める＋通知を消す＋停止時刻を保存（＝起床扱い）
   private fun handleAlarmStopped(context: Context, alarmId: String?) {
     stopAlarm()
     // N29: フォアグラウンドサービスで鳴っている音も止める
@@ -232,6 +235,13 @@ class AlarmReceiver : BroadcastReceiver() {
     // SharedPreferencesAsync に移行すると動かない
     context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
       .edit().putLong("flutter.alarm_stopped_at_ms", System.currentTimeMillis()).apply()
+  }
+
+  // N27: 予備の鳴らし方での 1 分自動停止：音を止めて、お知らせ通知に差し替える（起床扱いにはしない）
+  private fun handleAutoStopped(context: Context, alarmId: String) {
+    stopAlarm()
+    NotificationManagerCompat.from(context).cancel(alarmId.hashCode())
+    AlarmSoundService.showAutoStoppedNotification(context, alarmId)
   }
 
   private fun vibrateOnce(context: Context) {

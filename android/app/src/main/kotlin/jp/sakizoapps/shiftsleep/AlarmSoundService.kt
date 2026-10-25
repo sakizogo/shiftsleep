@@ -28,7 +28,7 @@ import androidx.core.app.ServiceCompat
 // （アプリを「最近使ったアプリ」からスワイプで消したあとでも、音が鳴り続けるようにする）
 // - 起動：AlarmReceiver が startForegroundService で起動する（Step 5 で切り替え）
 // - 停止：stopService（停止ボタンは AlarmReceiver 経由、「起きる」は MainActivity.stopAlarm 経由）
-// - 60 秒で自動停止（flutter.alarm_stopped_at_ms を保存してから stopSelf）
+// - 60 秒で自動停止（N27: 起床扱いにはしない。「自動で止まりました」の通知を残す）
 class AlarmSoundService : Service() {
   companion object {
     private const val TAG = "AlarmSoundService"
@@ -37,6 +37,39 @@ class AlarmSoundService : Service() {
     const val PLAY_DURATION_MS = 500L
     const val SILENCE_DURATION_MS = 200L
     private const val WAKE_LOCK_TIMEOUT_MS = 70000L
+
+    // N27: 自動停止のお知らせ通知（前面通知とは別の ID。音・バイブなし。「起きる」で消える）
+    fun showAutoStoppedNotification(context: Context, alarmId: String) {
+      try {
+        val openIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+          flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openPendingIntent = openIntent?.let {
+          PendingIntentCompat.getActivity(
+            context,
+            alarmId.hashCode() + 2,
+            it,
+            PendingIntent.FLAG_UPDATE_CURRENT,
+            false
+          )
+        }
+        val text = "起きたら睡眠を記録するため「起きる」を押してください"
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+          .setSmallIcon(R.drawable.ic_stat_alarm)
+          .setContentTitle("⏰ アラームが自動で止まりました")
+          .setContentText(text)
+          .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+          .setPriority(NotificationCompat.PRIORITY_HIGH)
+          .setSilent(true)
+          .setAutoCancel(false)
+          .setContentIntent(openPendingIntent)
+          .build()
+        NotificationManagerCompat.from(context).notify(alarmId.hashCode() + 3, notification)
+        Log.d(TAG, "✅ 自動停止の通知を表示しました")
+      } catch (e: Exception) {
+        Log.e(TAG, "❌ 自動停止の通知エラー: ${e.message}")
+      }
+    }
   }
 
   private var mediaPlayer: MediaPlayer? = null
@@ -216,26 +249,20 @@ class AlarmSoundService : Service() {
     }
   }
 
-  // 1 秒ごとに確認し、60 秒たったら停止時刻を保存して止める
+  // 1 秒ごとに確認し、60 秒たったら止める（N27: 起床扱いにはせず、お知らせ通知を残す）
   private fun startAutoStopCheck() {
     handler?.postDelayed({
       if (isPlaying) {
         val elapsed = System.currentTimeMillis() - startTimeMs
         if (elapsed >= AUTO_STOP_DURATION_MS) {
-          Log.d(TAG, "⏰ 1分経過。自動停止します。")
-          saveStoppedAt()
+          Log.d(TAG, "⏰ 1分経過。自動停止します（起床扱いにはしません）")
+          currentAlarmId?.let { showAutoStoppedNotification(this@AlarmSoundService, it) }
           stopSelf()
         } else {
           startAutoStopCheck()
         }
       }
     }, 1000L)
-  }
-
-  // shared_preferences の従来型 API の保存形式に依存（AlarmReceiver.handleAlarmStopped と同じ）
-  private fun saveStoppedAt() {
-    getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-      .edit().putLong("flutter.alarm_stopped_at_ms", System.currentTimeMillis()).apply()
   }
 
   private fun releasePlayback() {

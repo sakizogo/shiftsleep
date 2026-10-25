@@ -70,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // 時刻更新のみ
         });
 
-        // 前面表示中の通知停止・1分自動停止にも数秒以内で対応する
+        // 前面表示中の通知停止にも数秒以内で対応する
         _pendingStopCheckSeconds++;
         if (_pendingStopCheckSeconds >= 5) {
           _pendingStopCheckSeconds = 0;
