@@ -21,6 +21,10 @@ class WakeUpService {
     DateTime wakeUpTime, {
     bool cancelAlarms = true,
   }) async {
+    // N33: 睡眠記録がない・id がない・途中で例外が出ても、音は必ず止める（stopAlarmSound は例外を外に出さない）
+    await AlarmService.stopAlarmSound();
+    print('[SleepButton] 🔊 アラーム音を停止しました');
+
     // ========== Week 7 Phase 3 修正: SleepProvider から現在の睡眠レコード ID を取得 ==========
     // Provider に未復元なら SharedPreferences の保存値で補う
     var currentSleepRecordId = provider.currentSleepRecordIdNow;
@@ -56,8 +60,6 @@ class WakeUpService {
         // ✅ N17: 明日の日付で登録された手動起床アラームも残さない
         await ManualWakeService.cancelTodayAndTomorrow();
       }
-      await AlarmService.stopAlarmSound();
-      print('[SleepButton] 🔊 アラーム音を停止しました');
 
       // ✅ N4: 手動起床時刻は「今夜だけ有効」なので起床したら消す
       await ManualWakeService.clear();
