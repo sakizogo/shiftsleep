@@ -4,6 +4,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.util.Log
 import jp.sakizoapps.shiftsleep.AlarmReceiver  // ← 🆕 追加
@@ -106,6 +107,9 @@ class MainActivity: FlutterActivity() {
         AlarmReceiver.mediaPlayer = null
         AlarmReceiver.alarmHandler?.removeCallbacksAndMessages(null)
         AlarmReceiver.alarmHandler = null
+
+        // N29: フォアグラウンドサービスで鳴っている音も止める
+        stopService(Intent(this, AlarmSoundService::class.java))
 
         // N6: 「起きる」で音を止めたら、残っているアラーム通知（alarm_channel）もすべて消す
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

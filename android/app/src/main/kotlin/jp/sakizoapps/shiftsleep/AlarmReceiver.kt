@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import android.util.Log
 import androidx.core.app.PendingIntentCompat
+import androidx.core.content.ContextCompat
 
 class AlarmReceiver : BroadcastReceiver() {
   companion object {
@@ -48,9 +49,23 @@ class AlarmReceiver : BroadcastReceiver() {
 
     Log.d("AlarmReceiver", "🔔 アラーム発火！ ID: $alarmId, Label: $label, Sound: $selectedAlarmSound")
 
-    showNotification(context, alarmId, label, body)
-    playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
-    vibrate(context)
+    // N29: 音はフォアグラウンドサービスで鳴らす（アプリをスワイプで消したあとでも鳴るように）
+    try {
+      val serviceIntent = Intent(context, AlarmSoundService::class.java).apply {
+        putExtra("alarmId", alarmId)
+        putExtra("label", label)
+        putExtra("body", body)
+        putExtra("selectedAlarmSound", selectedAlarmSound)
+      }
+      ContextCompat.startForegroundService(context, serviceIntent)
+      Log.d("AlarmReceiver", "✅ AlarmSoundService を起動しました")
+    } catch (e: Exception) {
+      // 起動できなかったときは、今までどおりこの中で鳴らす
+      Log.e("AlarmReceiver", "❌ AlarmSoundService の起動エラー（従来の方法で鳴らします）: ${e.message}")
+      showNotification(context, alarmId, label, body)
+      playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
+      vibrate(context)
+    }
   }
 
   private fun showNotification(context: Context, alarmId: String, label: String, body: String) {
@@ -206,6 +221,8 @@ class AlarmReceiver : BroadcastReceiver() {
   // 停止ボタン・1分自動停止の共通処理：音を止める＋通知を消す＋停止時刻を保存
   private fun handleAlarmStopped(context: Context, alarmId: String?) {
     stopAlarm()
+    // N29: フォアグラウンドサービスで鳴っている音も止める
+    context.stopService(Intent(context, AlarmSoundService::class.java))
 
     if (alarmId != null) {
       NotificationManagerCompat.from(context).cancel(alarmId.hashCode())
