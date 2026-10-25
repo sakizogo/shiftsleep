@@ -454,6 +454,17 @@ class AlarmService {
 
       final soundFileName = soundMap[selectedAlarmSound] ?? soundMap['default']!;
 
+      // ✅ N52: 試聴も本番と同じアラーム音量の系統（USAGE_ALARM）で鳴らす（試聴の大きさ＝本番の大きさ）
+      await _testAudioPlayer.setAudioContext(
+        AudioContext(
+          android: const AudioContextAndroid(
+            usageType: AndroidUsageType.alarm,
+            contentType: AndroidContentType.sonification,
+            audioFocus: AndroidAudioFocus.gainTransient,
+          ),
+        ),
+      );
+
       // 音量設定（0.0〜1.0）
       await _testAudioPlayer.setVolume(volume);
 
