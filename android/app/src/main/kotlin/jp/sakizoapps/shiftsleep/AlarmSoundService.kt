@@ -70,6 +70,19 @@ class AlarmSoundService : Service() {
         Log.e(TAG, "❌ 自動停止の通知エラー: ${e.message}")
       }
     }
+
+    // N49: アプリの設定画面で保存した音量（0〜100）を読む。保存していない・読めないときは 1.0（最大）
+    // shared_preferences の従来型 API の保存形式に依存（Dart の setInt は Long で保存される）
+    fun readAlarmVolume(context: Context): Float {
+      return try {
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val percent = prefs.getLong("flutter.alarm_volume_percent", 100L).coerceIn(0L, 100L)
+        percent / 100f
+      } catch (e: Exception) {
+        Log.e(TAG, "❌ 音量の読み込みエラー（最大で鳴らします）: ${e.message}")
+        1.0f
+      }
+    }
   }
 
   private var mediaPlayer: MediaPlayer? = null
@@ -202,6 +215,8 @@ class AlarmSoundService : Service() {
       }
       val resourceId = resources.getIdentifier(resourceName, "raw", packageName)
       val uri = Uri.parse("android.resource://$packageName/$resourceId")
+      // N49: アプリで設定した音量で鳴らす（端末のアラーム音量に掛け算される）
+      val volume = readAlarmVolume(this)
 
       mediaPlayer = MediaPlayer().apply {
         // N29: アラーム音量で鳴らす（メディア音量が 0 でも鳴る）
@@ -212,7 +227,7 @@ class AlarmSoundService : Service() {
             .build()
         )
         setDataSource(this@AlarmSoundService, uri)
-        setVolume(1.0f, 1.0f)
+        setVolume(volume, volume)
         prepare()
       }
 
@@ -220,7 +235,7 @@ class AlarmSoundService : Service() {
       startTimeMs = System.currentTimeMillis()
       handler = Handler(Looper.getMainLooper())
 
-      Log.d(TAG, "🔊 アラーム音繰り返し再生開始: $selectedAlarmSound（USAGE_ALARM）")
+      Log.d(TAG, "🔊 アラーム音繰り返し再生開始: $selectedAlarmSound（USAGE_ALARM、音量 ${(volume * 100).toInt()}%）")
       playLoop()
       startAutoStopCheck()
     } catch (e: Exception) {

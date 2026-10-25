@@ -121,6 +121,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (!mounted) return;  // ✅ H4: 読み込み中に画面が破棄された場合は反映しない
         setState(() {
           _isAlarmEnabled = prefs.getBool('is_alarm_enabled') ?? true;
+          // ✅ N49: 保存した音量を読み込む（保存していなければ 100%）
+          _soundVolume = (prefs.getInt('alarm_volume_percent') ?? 100).clamp(0, 100) / 100.0;
         });
         print('✅ アラーム有効フラグを読み込み: $_isAlarmEnabled');
       } catch (e) {
@@ -676,6 +678,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               );
                               
                               await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
+                              // ✅ N49: 音量も一緒に保存する（0〜100。アラームが鳴るときにネイティブ側が読む）
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.setInt('alarm_volume_percent', (_soundVolume * 100).round());
                               
                               if (!mounted) return;  // ✅ N12: 画面が閉じられていたら setState しない
                               setState(() {
@@ -685,7 +690,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('✅ アラーム音を保存しました'),
+                                    content: Text('✅ アラーム音と音量を保存しました'),
                                     duration: Duration(seconds: 2),
                                   ),
                                 );

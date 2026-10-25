@@ -136,9 +136,11 @@ class AlarmReceiver : BroadcastReceiver() {
         context.packageName
       )
       
+      // N49: アプリで設定した音量で鳴らす
+      val volume = AlarmSoundService.readAlarmVolume(context)
       mediaPlayer = MediaPlayer().apply {
         setDataSource(context, Uri.parse("android.resource://${context.packageName}/$resourceId"))
-        setVolume(1.0f, 1.0f)
+        setVolume(volume, volume)
       }
       
       mediaPlayer?.prepare()
