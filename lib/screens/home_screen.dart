@@ -357,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         const SizedBox(width: AppDimensions.paddingSmall),
                         Text(
-                          '昨夜の睡眠',
+                          '${DateTime.now().month}/${DateTime.now().day} の睡眠（0:00〜）',
                           style: AppTextStyles.sectionTitleStyle,
                         ),
                       ],
@@ -382,22 +382,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${sleepProvider.lastBedtimeFormatted} ～ ${sleepProvider.lastWakeTimeFormatted}',
-                              style: AppTextStyles.bodyTextStyle.copyWith(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
+                            if (sleepProvider.todaysSplitSleepDuration.inMinutes >= 1)
+                              Text(
+                                sleepProvider.todaysSleepDurationFormatted,
+                                style: AppTextStyles.largeNumberStyle.copyWith(
+                                  fontSize: 42,
+                                ),
+                              )
+                            else
+                              Text(
+                                'まだ記録がありません',
+                                style: AppTextStyles.bodyTextStyle.copyWith(
+                                  color: AppColors.textMuted,
+                                ),
                               ),
-                            ),
-                            const SizedBox(
-                                height: AppDimensions.paddingMedium),
-
-                            Text(
-                              sleepProvider.lastSleepDurationFormatted,
-                              style: AppTextStyles.largeNumberStyle.copyWith(
-                                fontSize: 42,
-                              ),
-                            ),
                             const SizedBox(
                                 height: AppDimensions.paddingMedium),
                                 if (sleepProvider.lastSleepDuration.inMinutes < 60 ||
@@ -429,6 +427,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
 
+                            if (sleepProvider.todaysSplitSleepDuration.inMinutes >= 1)
                             Row(
                               mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
@@ -503,7 +502,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
                         child: Text(
-                          'データなし',
+                          'まだ記録がありません',
                           style: AppTextStyles.bodyTextStyle.copyWith(
                             color: AppColors.textMuted,
                           ),

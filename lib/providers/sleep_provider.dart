@@ -776,33 +776,56 @@ class SleepProvider extends ChangeNotifier {
     notifyListeners();
   }
   // =====================================================================
+  // ========== N35: 0:00 で切り分けた当日の睡眠時間 ==========
+
+  /// 当日（本日 0:00〜現在）に重なる睡眠の合計時間
+  ///
+  /// - 開始・終了を本日 0:00〜現在で切り分け、重なる分だけを足す
+  /// - 睡眠中の記録は含めない
+  /// - 1 回の睡眠が 10 分以下の記録は含めない（寝ていないと判断）
+  /// - 終了が開始より前の記録は、終了を +1 日として扱う
+  Duration get todaysSplitSleepDuration {
+    final now = DateTime.now();
+    final dayStart = DateTime(now.year, now.month, now.day);
+    Duration total = Duration.zero;
+
+    for (final record in _last7DaysRecords) {
+      // 睡眠中の記録は含めない
+      if (_isSleepingNow &&
+          (record.id == _currentSleepRecordIdNow ||
+              (_sleepStartTime != null &&
+                  record.sleepStartTime.millisecondsSinceEpoch ==
+                      _sleepStartTime!.millisecondsSinceEpoch))) {
+        continue;
+      }
+
+      final start = record.sleepStartTime;
+      var end = record.sleepEndTime;
+      if (end.isBefore(start)) {
+        end = end.add(const Duration(days: 1));
+      }
+
+      // 10 分以下の睡眠は含めない
+      if (end.difference(start) <= const Duration(minutes: 10)) {
+        continue;
+      }
+
+      final from = start.isAfter(dayStart) ? start : dayStart;
+      final to = end.isBefore(now) ? end : now;
+      if (to.isAfter(from)) {
+        total += to.difference(from);
+      }
+    }
+
+    return total;
+  }
   // ========== Week 9-1 追加: 当日/週間/月間の睡眠集計 ==========
   
   /// 当日（本日0時以降）の総睡眠時間（時間:分 形式）
   /// 
   /// メイン睡眠 + 補助睡眠（昼寝など）の合計
   String get todaysSleepDurationFormatted {
-    final today = DateTime.now();
-    final todayRecords = _last7DaysRecords
-        .where((record) =>
-          record.sleepDate.year == today.year &&
-          record.sleepDate.month == today.month &&
-          record.sleepDate.day == today.day
-        )
-        .toList();
-    
-    if (todayRecords.isEmpty) return '0h 0m';
-    
-    int totalMinutes = 0;
-    for (final record in todayRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes;
-      }
-    }
-    
+    final totalMinutes = todaysSplitSleepDuration.inMinutes;
     return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
   }
 
