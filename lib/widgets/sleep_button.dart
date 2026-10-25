@@ -274,6 +274,8 @@ class _SleepButtonState extends State<SleepButton>
 
     final pattern = await _shiftRepository.getPatternById(patternId);
     if (pattern == null || pattern.startTime == null) return null;
+    // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
+    if (pattern.patternType != ShiftType.work) return null;
 
     final startTime = pattern.startTime!;
     final startAt = DateTime(today.year, today.month, today.day, startTime.hour, startTime.minute);
@@ -343,6 +345,12 @@ class _SleepButtonState extends State<SleepButton>
       final pattern = await _shiftRepository.getPatternById(patternId);
       if (pattern == null || pattern.startTime == null) {
         print('[SleepButton] ⚠️ 出勤時刻が設定されていません');
+        return;
+      }
+
+      // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
+      if (pattern.patternType != ShiftType.work) {
+        print('[SleepButton] ℹ️ 今日は出勤ではありません（種類: ${pattern.patternType}）（スキップ）');
         return;
       }
 
