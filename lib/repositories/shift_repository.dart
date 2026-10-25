@@ -392,23 +392,33 @@ class ShiftRepository {
   /// ============ Helper Methods ============
 
   /// 文字列を ShiftType に変換
+  /// 保存形式はスネークケース（off_day など）。古い形式（dayOff など）も読めるようにする
   ShiftType _stringToShiftType(String type) {
     switch (type.toLowerCase()) {
+      case 'off_day':
       case 'dayoff':
         return ShiftType.dayOff;
+      case 'vacation':
+        return ShiftType.vacation;
+      case 'half_vacation':
+      case 'halfvacation':
+        return ShiftType.halfVacation;
       case 'work':
       default:
         return ShiftType.work;
     }
   }
 
-  /// ShiftType を文字列に変換
+  /// ShiftType を文字列に変換（スネークケースで保存）
   String _shiftTypeToString(ShiftType type) {
     switch (type) {
       case ShiftType.dayOff:
-        return 'dayOff';
+        return 'off_day';
+      case ShiftType.vacation:
+        return 'vacation';
+      case ShiftType.halfVacation:
+        return 'half_vacation';
       case ShiftType.work:
-      default:
         return 'work';
     }
   }
