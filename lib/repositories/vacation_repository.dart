@@ -329,15 +329,21 @@ class VacationRepository {
   /// ========== Week 14 追加 ==========
   Future<void> deleteVacationUsageByDate(String userId, DateTime usageDate) async {
     final db = await _dbHelper.database;
-    final dateString = usageDate.toIso8601String().split('T')[0];
+    // N64：保存されている usage_date は時刻つき（…T00:00:00.000 や …T00:00:00.000Z）なので、
+    // 「その日の 'YYYY-MM-DD' 以上、翌日の 'YYYY-MM-DD' 未満」で比べる（Z があってもなくても当たる）
+    // 年・月・日の数字をそのまま使う（UTC の値も toLocal() は通さない）
+    final day = DateTime(usageDate.year, usageDate.month, usageDate.day);
+    final nextDay = DateTime(usageDate.year, usageDate.month, usageDate.day + 1);
+    final dateString = day.toIso8601String().split('T')[0];
+    final nextDateString = nextDay.toIso8601String().split('T')[0];
 
-    await db.delete(
+    final deletedCount = await db.delete(
       'vacation_usage',
-      where: 'user_id = ? AND usage_date = ?',
-      whereArgs: [userId, dateString],
+      where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
+      whereArgs: [userId, dateString, nextDateString],
     );
 
-    print('[VacationRepository] ✅ 有給使用を削除: $userId の${usageDate.month}月${usageDate.day}日分');
+    print('[VacationRepository] ✅ 有給使用を削除: $userId の${usageDate.month}月${usageDate.day}日分（$deletedCount 件）');
   }
 
   /// ========== 🌟 メイン計算ロジック ==========
