@@ -13,6 +13,7 @@ import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
+import 'package:shiftsleep/constants/calendar_range.dart';
 
 class ShiftData {
   final DateTime date;
@@ -123,9 +124,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   
     Future<void> _loadVacationData() async {
       try {
-        final now = DateTime.now();
-        final startOfYear = DateTime(now.year, 1, 1);
-        final endOfYear = DateTime(now.year, 12, 31);
+        // N67：カレンダーの範囲全体を読む（来年の 🏖️ も出るように）
+        final startOfYear = CalendarRange.firstDate;
+        final endOfYear = CalendarRange.lastDate;
         
         print('[ShiftManagementScreen] 🔍 有休データ検索範囲: $startOfYear ～ $endOfYear');
         
@@ -330,7 +331,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               GestureDetector(
                 onTap: () {
                   setState(() {
-                    _focusedDay = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
+                    final prev = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
+                    if (!prev.isBefore(CalendarRange.firstDate)) _focusedDay = prev;  // N67：範囲の外に出ない
                   });
                 },
                 child: Icon(Icons.chevron_left, color: AppColors.primaryGradientStart, size: 24),
@@ -342,7 +344,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               GestureDetector(
                 onTap: () {
                   setState(() {
-                    _focusedDay = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
+                    final next = DateTime(_focusedDay.year, _focusedDay.month + 1, 1);
+                    if (!next.isAfter(CalendarRange.lastDate)) _focusedDay = next;  // N67：範囲の外に出ない
                   });
                 },
                 child: Icon(Icons.chevron_right, color: AppColors.primaryGradientStart, size: 24),
@@ -360,8 +363,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             ),
             child: TableCalendar(
             rowHeight: 75,
-            firstDay: DateTime.utc(2024, 1, 1),
-            lastDay: DateTime.utc(2026, 12, 31),
+            firstDay: CalendarRange.firstDayUtc,  // N67
+            lastDay: CalendarRange.lastDayUtc,
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
             eventLoader: (day) {
@@ -452,7 +455,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 }
               });
             },
-            onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+            onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),  // N67：見出しの「○月 ○年」も更新する
             calendarStyle: CalendarStyle(
               defaultDecoration: BoxDecoration(
                 color: Colors.white,
@@ -805,9 +808,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _rangeStartDate ?? DateTime.now(),
-                    firstDate: DateTime.utc(2024, 1, 1),
-                    lastDate: DateTime.utc(2026, 12, 31),
+                    initialDate: CalendarRange.clamp(_rangeStartDate ?? DateTime.now()),  // N67
+                    firstDate: CalendarRange.firstDate,
+                    lastDate: CalendarRange.lastDate,
                     builder: (context, child) => Theme(
                       data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
                       child: child!,
@@ -825,9 +828,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _rangeEndDate ?? DateTime.now(),
-                    firstDate: DateTime.utc(2024, 1, 1),
-                    lastDate: DateTime.utc(2026, 12, 31),
+                    initialDate: CalendarRange.clamp(_rangeEndDate ?? DateTime.now()),  // N67
+                    firstDate: CalendarRange.firstDate,
+                    lastDate: CalendarRange.lastDate,
                     builder: (context, child) => Theme(
                       data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
                       child: child!,
@@ -984,9 +987,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   Future<void> loadCalendarEvents() async {
     try {
-      final now = DateTime.now();
-      final startDate = DateTime(now.year, now.month - 1, 1);
-      final endDate = DateTime(now.year, now.month + 2, 0);
+      // N67：カレンダーの範囲全体を読む（来年のイベントも出るように）
+      final startDate = CalendarRange.firstDate;
+      final endDate = CalendarRange.lastDate;
       final events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
       setState(() {
         _calendarEvents.clear();
@@ -1016,9 +1019,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   Future<void> loadShifts() async {
     try {
-      final now = DateTime.now();
-      final startDate = DateTime(now.year, now.month - 1, 1);
-      final endDate = DateTime(now.year, now.month + 2, 0);
+      // N67・N72：カレンダーの範囲全体を読む（読んでいない日のシフトが保存で消えないように）
+      final startDate = CalendarRange.firstDate;
+      final endDate = CalendarRange.lastDate;
       final shiftRecords = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
       setState(() {
         _shiftMap.clear();

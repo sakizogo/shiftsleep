@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/models/event_type.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/constants/calendar_range.dart';
 
 
 
@@ -119,9 +120,9 @@ class CalendarEventScreenState extends State<CalendarEventScreen> {
       onTap: () async {
         final picked = await showDatePicker(
           context: context,
-          initialDate: _selectedDate,
-          firstDate: DateTime.utc(2024, 1, 1),
-          lastDate: DateTime.utc(2026, 12, 31),
+          initialDate: CalendarRange.clamp(_selectedDate),  // N67
+          firstDate: CalendarRange.firstDate,
+          lastDate: CalendarRange.lastDate,
           builder: (context, child) => Theme(
             data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
             child: child!,
