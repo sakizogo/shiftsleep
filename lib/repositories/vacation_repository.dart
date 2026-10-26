@@ -190,9 +190,13 @@ class VacationRepository {
   ) async {
     final db = await _dbHelper.database;
 
+    // N64：保存する日はローカルの 0 時にそろえる（カレンダーの日は UTC の 0 時で来ることがあるため）
+    // 年・月・日の数字をそのまま使う（toLocal() は通さない）
+    final normalizedDate = DateTime(usageDate.year, usageDate.month, usageDate.day);
+
     final usage = VacationUsage.create(
       userId: userId,
-      usageDate: usageDate,
+      usageDate: normalizedDate,
       daysUsed: daysUsed,
       reason: reason,
     );
