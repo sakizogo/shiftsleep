@@ -41,7 +41,6 @@ class AppSettings {
       final userId = map['user_id'] as String? ?? 'unknown';
       final alarmTime = _safeIntCast(map['alarm_time_before_shift']) ?? 30;
       final createdAt = DateTime.parse(map['created_at'] as String);
-      final isAlarmEnabled = map['is_alarm_enabled'] as bool? ?? true;
       final updatedAt = DateTime.parse(map['updated_at'] as String);
       final wakeUpTime = map['wake_up_time'] as String? ?? '07:00';
       final selectedAlarmSound = map['selected_alarm_sound'] as String? ?? 'default';
@@ -87,7 +86,6 @@ class AppSettings {
   /// AppSettingsをMapに変換（DB保存用）
   Map<String, dynamic> toMap() {
     return {
-      'is_alarm_enabled': isAlarmEnabled,
       'id': id,
       'user_id': userId,
       'alarm_time_before_shift': alarmTimeBeforeShift,

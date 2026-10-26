@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:shiftsleep/models/vacation_model.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -26,7 +27,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 17,  // 16 → 17
+      version: 18,  // 17 → 18（N58・N60・N53）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -311,21 +312,50 @@ class DatabaseHelper {
           } catch (e) {
             // カラムが既に存在する場合はエラーを無視
             print('⚠️ first_accrual_date column may already exist: $e');
-            // ========== 新規追加：バージョン 16 → 17 - is_alarm_enabled カラム ==========
-            if (oldVersion < 17) {
-              print('🔄 Database upgrade: v$oldVersion → v17');
-
-              try {
-                await db.execute('''
-                  ALTER TABLE app_settings
-                  ADD COLUMN is_alarm_enabled INTEGER DEFAULT 1
-                ''');
-                print('✅ Database upgrade complete: app_settings table updated with is_alarm_enabled column');
-              } catch (e) {
-                print('⚠️ Column might already exist: $e');
-              }
+          }
+        }
+        // ========================================================================
+        // ========== v18（N58・N60・N53）==========
+        // ・vacation_accruals に is_carried_over がなければ足す（新しくインストールした端末にはなかった）
+        // ・自動生成の付与の記録の失効日を「2 年後の前日の 23:59:59.999」に計算し直す
+        // ・v17 の is_alarm_enabled は DB では使わない（ON/OFF は SharedPreferences）
+        if (oldVersion < 18) {
+          print('🔧 Database upgrade: v$oldVersion → v18');
+          try {
+            final columns = await db.rawQuery('PRAGMA table_info(vacation_accruals)');
+            final hasCarriedOver = columns.any((c) => c['name'] == 'is_carried_over');
+            if (!hasCarriedOver) {
+              await db.execute(
+                'ALTER TABLE vacation_accruals ADD COLUMN is_carried_over INTEGER DEFAULT 0',
+              );
+              print('✅ DB v18: is_carried_over を追加しました');
+            } else {
+              print('ℹ️ DB v18: is_carried_over はすでにあります（スキップ）');
             }
-            // =====================================================================
+
+            final accruals = await db.query(
+              'vacation_accruals',
+              columns: ['id', 'accrual_date'],
+              where: 'notes LIKE ?',
+              whereArgs: ['自動生成：%'],
+            );
+            final now = DateTime.now().toIso8601String();
+            for (final row in accruals) {
+              final accrualDate = DateTime.parse(row['accrual_date'] as String);
+              final expiryDate = VacationAccrual.calculateExpiryDate(accrualDate);
+              await db.update(
+                'vacation_accruals',
+                {
+                  'expiry_date': expiryDate.toIso8601String(),
+                  'updated_at': now,
+                },
+                where: 'id = ?',
+                whereArgs: [row['id']],
+              );
+            }
+            print('✅ DB v18: 自動生成の付与 ${accruals.length} 件の失効日を計算し直しました');
+          } catch (e) {
+            print('⚠️ DB v18 Migration error: $e');
           }
         }
         // ========================================================================
@@ -498,7 +528,8 @@ class DatabaseHelper {
         expiry_date TEXT NOT NULL,
         notes TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        is_carried_over INTEGER DEFAULT 0
       )
     ''');
     
