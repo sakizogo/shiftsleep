@@ -88,8 +88,8 @@ class VacationAccrual {
     String? notes,
   }) {
     final now = DateTime.now();
-    // 付与日から2年後が失効日
-    final expiryDate = accrualDate.add(Duration(days: 730));
+    // 付与日から 2 年後の前日（23:59:59.999）まで使える（N60）
+    final expiryDate = calculateExpiryDate(accrualDate);
     
     return VacationAccrual(
       id: const Uuid().v4(),
@@ -100,6 +100,21 @@ class VacationAccrual {
       notes: notes,
       createdAt: now,
       updatedAt: now,
+    );
+  }
+
+  /// 失効日（最後に使える日時）を計算する（N60）
+  /// 付与日の 2 年後の前日の 23:59:59.999（例：2024-10-01 付与 → 2026-09-30 23:59:59.999）
+  /// 1 日付与で日が 0 になるときは、DateTime が前の月の末日にしてくれる
+  static DateTime calculateExpiryDate(DateTime accrualDate) {
+    return DateTime(
+      accrualDate.year + 2,
+      accrualDate.month,
+      accrualDate.day - 1,
+      23,
+      59,
+      59,
+      999,
     );
   }
 

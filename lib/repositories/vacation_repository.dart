@@ -801,6 +801,30 @@ class VacationRepository {
     }
   }
 
+  /// 最初の付与日から yearOffset 年後の付与日を計算する（N61）
+  /// 最初の付与日が 2/29 のとき、うるう年でない年は月末（2/28）にそろえる
+  static DateTime accrualDateForYear(DateTime firstAccrualDate, int yearOffset) {
+    final year = firstAccrualDate.year + yearOffset;
+    final lastDayOfMonth = DateTime(year, firstAccrualDate.month + 1, 0).day;
+    final day = firstAccrualDate.day > lastDayOfMonth
+        ? lastDayOfMonth
+        : firstAccrualDate.day;
+    return DateTime(year, firstAccrualDate.month, day);
+  }
+
+  /// 最初の付与日から、今日までに来た付与日の一覧（古い順）（N61）
+  static List<DateTime> accrualDatesUntilToday(DateTime firstAccrualDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dates = <DateTime>[];
+    for (int i = 0; i < 100; i++) {  // 万一のための上限
+      final accrualDate = accrualDateForYear(firstAccrualDate, i);
+      if (accrualDate.isAfter(today)) break;
+      dates.add(accrualDate);
+    }
+    return dates;
+  }
+
     /// ========== Week 16 修正版：hire_date と first_accrual_date から各年度の付与を自動生成 ==========
   /// 
   /// 修正版（1年ごとに付与）：
@@ -816,9 +840,8 @@ class VacationRepository {
   Future<void> autoGenerateAccruals(
     String userId,
     DateTime hireDate,
-    DateTime firstAccrualDate, {
-    int yearsAhead = 5,  // デフォルト5年分を生成
-  }) async {
+    DateTime firstAccrualDate,
+  ) async {
     try {
       print('🔄 autoGenerateAccruals() 開始: userId=$userId');
       
@@ -826,13 +849,8 @@ class VacationRepository {
       final existingAccruals = await getVacationAccrualsByUser(userId);
       print('📊 既存の付与履歴: ${existingAccruals.length}件');
 
-      // 各年度の付与日を生成（初回6ヶ月後、以降1年ごと）
-      for (int i = 0; i < yearsAhead; i++) {
-        final accrualDate = DateTime(
-          firstAccrualDate.year + i,
-          firstAccrualDate.month,
-          firstAccrualDate.day,
-        );
+      // 今日までに来た付与日を、古い順に処理する（N61）
+      for (final accrualDate in accrualDatesUntilToday(firstAccrualDate)) {
 
         // この年の付与日数を計算
         final daysGranted = calculateDaysGranted(hireDate, accrualDate);
@@ -842,12 +860,8 @@ class VacationRepository {
           continue;
         }
 
-        // 失効日を計算（付与日の1年後の前日）
-        final expiryDate = DateTime(
-          accrualDate.year + 1,
-          accrualDate.month,
-          accrualDate.day - 1,  // 前日まで有効
-        );
+        // 失効日（最後に使える日）。DB に入る値も VacationAccrual.create で同じ計算（N60）
+        final expiryDate = VacationAccrual.calculateExpiryDate(accrualDate);
 
         // 既に同じ日付の付与があるかチェック
         final isDuplicate = existingAccruals.any((accrual) {

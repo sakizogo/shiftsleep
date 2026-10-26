@@ -124,21 +124,16 @@ Future<void> _generateAccrualSchedule() async {
     final firstAccrualDate = format.parse(_firstAccrualDateController.text);
 
     // 付与スケジュール情報を生成（DB保存なし、確認用）
+    // 自動生成と同じく、今日までに来た付与日だけを並べる（N61）
     List<String> scheduleList = [];
-    for (int i = 0; i < 5; i++) {
-      final accrualDate = DateTime(
-        firstAccrualDate.year + i,
-        firstAccrualDate.month,
-        firstAccrualDate.day,
-      );
-      
+    for (final accrualDate in VacationRepository.accrualDatesUntilToday(firstAccrualDate)) {
       final daysGranted = VacationRepository.calculateDaysGranted(
         _selectedHiredDate!,
         accrualDate,
       );
 
       if (daysGranted > 0) {
-        scheduleList.add('📅 ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日に${daysGranted}日付与');
+        scheduleList.add('📅 ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日に$daysGranted日付与');
       }
     }
 
