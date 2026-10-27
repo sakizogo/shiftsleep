@@ -489,171 +489,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               todayTextStyle: const TextStyle(color: Colors.black87, fontWeight: FontWeight.w700, fontSize: 13),
             ),
             calendarBuilders: CalendarBuilders(
-              selectedBuilder: (context, date, focusedDay) {
-                return GestureDetector(
-                  onLongPress: () => _showDeleteDialog(date),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3.0),
-                      child: Text(
-                        '${date.day}',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2.0),
-                    SizedBox(
-                      height: 20,
-                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4.0),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
-                              child: Text(
-                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    
-                    SizedBox(
-                      height: 16,
-                      child: _vacationMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Text(
-                              _vacationMap[DateTime(date.year, date.month, date.day)]! == 0.5 ? '🌤️ 半休' : '🏖️ 有休',
-                              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
-                              textAlign: TextAlign.center,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    
-                    if (_calendarEvents.any((e) {
-                      final eventDate = e.eventDate is String
-                          ? DateTime.parse(e.eventDate as String)
-                          : e.eventDate as DateTime;
-                      return isSameDay(eventDate, date);
-                    }))
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: _calendarEvents
-                            .where((e) {
-                              final eventDate = e.eventDate is String
-                                  ? DateTime.parse(e.eventDate as String)
-                                  : e.eventDate as DateTime;
-                              return isSameDay(eventDate, date);
-                            })
-                            .map((e) => Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                              child: Text(
-                                _getEventEmoji(e.eventType),
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                            ))
-                            .take(2)
-                            .toList(),
-                      ),
-                  ],
-                  ),
-                );
-              },
-              defaultBuilder: (context, date, focusedDay) {
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3.0),
-                      child: Text(
-                        '${date.day}',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2.0),
-                    SizedBox(
-                      height: 20,
-                      child: _shiftMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Container(
-                              decoration: BoxDecoration(
-                                color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(4.0),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
-                              child: Text(
-                                _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.patternName ?? '',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w600,
-                                  color: _shiftMap[DateTime(date.year, date.month, date.day)]!.pattern?.color ?? Colors.black54,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-
-                    SizedBox(
-                      height: 16,
-                      child: _vacationMap.containsKey(DateTime(date.year, date.month, date.day))
-                          ? Text(
-                              _vacationMap[DateTime(date.year, date.month, date.day)]! == 0.5 ? '🌤️ 半休' : '🏖️ 有休',
-                              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
-                              textAlign: TextAlign.center,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    // ================================================
-                    
-                    if (_calendarEvents.any((e) {
-                      final eventDate = e.eventDate is String
-                          ? DateTime.parse(e.eventDate as String)
-                          : e.eventDate as DateTime;
-                      return isSameDay(eventDate, date);
-                    }))
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: _calendarEvents
-                            .where((e) {
-                              final eventDate = e.eventDate is String
-                                  ? DateTime.parse(e.eventDate as String)
-                                  : e.eventDate as DateTime;
-                              return isSameDay(eventDate, date);
-                            })
-                            .map((e) => Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                              child: Text(
-                                _getEventEmoji(e.eventType),
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                            ))
-                            .take(2)
-                            .toList(),
-                      ),
-                  ],
-                );
-              },
-                          ),
+              // N71：選択・今日・通常のマスを同じ中身で描く（今日のマスも数字を上に、シフト名・有休・イベントを表示）
+              selectedBuilder: (context, date, focusedDay) =>
+                  _buildDayCell(date, isSelected: true, isToday: isSameDay(date, DateTime.now())),
+              todayBuilder: (context, date, focusedDay) =>
+                  _buildDayCell(date, isSelected: false, isToday: true),
+              defaultBuilder: (context, date, focusedDay) =>
+                  _buildDayCell(date, isSelected: false, isToday: false),
+            ),
             ),
           ),
         ),
@@ -791,6 +634,111 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           ),
       ],
     );
+  }
+
+  /// N71：カレンダーの 1 マス（選択・今日・通常で共通）
+  Widget _buildDayCell(DateTime date, {required bool isSelected, required bool isToday}) {
+    final dateKey = DateTime(date.year, date.month, date.day);
+    final shift = _shiftMap[dateKey];
+    final vacationDays = _vacationMap[dateKey];
+    final dayEvents = _calendarEvents.where((e) {
+      final eventDate = e.eventDate is String
+          ? DateTime.parse(e.eventDate as String)
+          : e.eventDate as DateTime;
+      return isSameDay(eventDate, date);
+    }).take(2).toList();
+
+    final cell = Container(
+      // マスいっぱいの幅にそろえる（上下の margin は入れず rowHeight 75 に収める）
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 2.0),
+      // 枠線は foregroundDecoration で描き、中身の寸法を変えない
+      decoration: BoxDecoration(
+        color: isToday ? AppColors.primaryGradientStart.withValues(alpha: 0.08) : Colors.white,
+        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+      ),
+      // 選んだ日は青（Wong 2011: Blue）の 2px、選んでいない今日は薄い紫の 1px
+      foregroundDecoration: isSelected || isToday
+          ? BoxDecoration(
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.calendarSelectedBorder
+                    : AppColors.primaryGradientStart.withValues(alpha: 0.5),
+                width: isSelected ? 2.0 : 1.0,
+              ),
+              borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+            )
+          : null,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 3.0),
+            child: Text(
+              '${date.day}',
+              style: TextStyle(
+                color: isToday ? AppColors.primaryGradientStart : Colors.black87,
+                fontWeight: isToday ? FontWeight.w900 : FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 2.0),
+          SizedBox(
+            height: 20,
+            child: shift != null
+                ? Container(
+                    decoration: BoxDecoration(
+                      color: shift.pattern?.color.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(4.0),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
+                    child: Text(
+                      shift.pattern?.patternName ?? '',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: shift.pattern?.color ?? Colors.black54,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          SizedBox(
+            height: 16,
+            child: vacationDays != null
+                ? Text(
+                    vacationDays == 0.5 ? '🌤️ 半休' : '🏖️ 有休',
+                    style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  )
+                : const SizedBox.shrink(),
+          ),
+          if (dayEvents.isNotEmpty)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: dayEvents
+                  .map((e) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                        child: Text(
+                          _getEventEmoji(e.eventType),
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ))
+                  .toList(),
+            ),
+        ],
+      ),
+    );
+
+    // 長押しで削除するのは、これまでどおり選んだマスだけ
+    return isSelected
+        ? GestureDetector(onLongPress: () => _showDeleteDialog(date), child: cell)
+        : cell;
   }
 
   Widget _buildRangeInputMethod() {
