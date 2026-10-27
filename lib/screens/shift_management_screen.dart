@@ -1103,13 +1103,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     }
     
     try {
-      final event = _calendarEvents.where((e) {
+      // N76：その日のイベントをすべて「名前 絵文字」にして 1 行にまとめる（削除は日付でまとめて行う）
+      final dayEvents = _calendarEvents.where((e) {
         final eventDate = DateTime.parse(e.eventDate);
         return isSameDay(eventDate, normalizedDate);
-      }).firstOrNull;
-      
-      if (event != null) {
-        targets['event'] = 'イベント：${event.eventName ?? '無題'} ${event.eventEmoji}';
+      }).toList();
+
+      if (dayEvents.isNotEmpty) {
+        final labels = dayEvents.map((e) {
+          final typeName = eventTypes.where((t) => t.id == e.eventType).firstOrNull?.name;
+          final name = (e.eventName?.isNotEmpty ?? false) ? e.eventName! : (typeName ?? '無題');
+          return '$name ${_getEventEmoji(e.eventType)}';
+        });
+        targets['event'] = 'イベント：${labels.join('、')}';
       }
     } catch (e) {
       debugPrint('Error checking events: $e');
