@@ -1212,11 +1212,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       }
       
       if (selectedItems.contains('event')) {
+        await _shiftRepository.deleteCalendarEventByDate(normalizedDate);
         _calendarEvents.removeWhere((e) {
           final eventDate = DateTime.parse(e.eventDate);
           return isSameDay(eventDate, normalizedDate);
         });
       }
+
+      if (mounted) setState(() {});
     } catch (e) {
       debugPrint('Error deleting items: $e');
       if (mounted) {
