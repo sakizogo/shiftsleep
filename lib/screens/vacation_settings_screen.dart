@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
-import 'package:shiftsleep/services/vacation_calculation_service.dart';
 
 class VacationSettingsScreen extends StatefulWidget {
   final String userId;
@@ -27,6 +26,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   DateTime? _selectedHiredDate;
   VacationSettings? _settings;
   VacationSummary? _summary;
+  ({DateTime date, int days})? _nextAccrual;  // N63：次の付与日と付与日数（初回付与日が未登録なら null）
   bool _isLoading = true;
 
   @override
@@ -60,10 +60,14 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     // ========== Week 16追加: 初回付与日を読み込む ==========
     final firstAccrualDate = await _repository.getFirstAccrualDate(widget.userId);
     // ===============================================================================
-    
+
+    // N63：次の付与予定（DB の初回付与日から 1 年ごと）
+    final nextAccrual = await _repository.getNextAccrual(widget.userId);
+
     setState(() {
       _settings = settings;
       _summary = summary;
+      _nextAccrual = nextAccrual;
       if (settings != null) {
         _selectedHiredDate = settings.hiredDate;
         _annualDaysController.text = settings.annualDays.toString();
@@ -125,16 +129,11 @@ Future<void> _generateAccrualSchedule() async {
 
     // 付与スケジュール情報を生成（DB保存なし、確認用）
     // 自動生成と同じく、今日までに来た付与日だけを並べる（N61）
+    // 日数も保存と同じく、初回からの回数で法定の表を引く（N62・N63 の accrualsUntilToday）
     List<String> scheduleList = [];
-    for (final accrualDate in VacationRepository.accrualDatesUntilToday(firstAccrualDate)) {
-      final daysGranted = VacationRepository.calculateDaysGranted(
-        _selectedHiredDate!,
-        accrualDate,
-      );
-
-      if (daysGranted > 0) {
-        scheduleList.add('📅 ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日に$daysGranted日付与');
-      }
+    for (final accrual in VacationRepository.accrualsUntilToday(firstAccrualDate)) {
+      final accrualDate = accrual.date;
+      scheduleList.add('📅 ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日に${accrual.days}日付与');
     }
 
     if (scheduleList.isEmpty) {
@@ -289,14 +288,12 @@ Future<void> _generateAccrualSchedule() async {
     final autoCalculatedDays =
         VacationSettings.calculateAnnualDays(_selectedHiredDate ?? DateTime.now());
     
-    // 次の付与予定日を計算
-    final nextAccrualDate = _selectedHiredDate != null
-        ? VacationCalculationService.getNextAccrualDate(_selectedHiredDate!)
-        : null;
-    
-    final daysUntilNextAccrual = _selectedHiredDate != null
-        ? VacationCalculationService.getDaysUntilNextAccrual(_selectedHiredDate!)
-        : null;
+    // 次の付与予定日（N63：初回付与日から 1 年ごと。あと何日かは今日の 0 時から数える）
+    final nextAccrual = _nextAccrual;
+    final now = DateTime.now();
+    final daysUntilNextAccrual = nextAccrual?.date
+        .difference(DateTime(now.year, now.month, now.day))
+        .inDays;
 
     return Scaffold(
       appBar: AppBar(
@@ -426,7 +423,7 @@ Future<void> _generateAccrualSchedule() async {
             ],
 
             // 🌟 次の付与予定を表示（新規追加）
-            if (nextAccrualDate != null && daysUntilNextAccrual != null) ...[
+            if (nextAccrual != null && daysUntilNextAccrual != null) ...[
               Card(
                 elevation: 1,
                 shape: RoundedRectangleBorder(
@@ -448,7 +445,7 @@ Future<void> _generateAccrualSchedule() async {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        DateFormat('yyyy年M月d日').format(nextAccrualDate),
+                        '${DateFormat('yyyy年M月d日').format(nextAccrual.date)}（あと $daysUntilNextAccrual 日）',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -456,7 +453,7 @@ Future<void> _generateAccrualSchedule() async {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'あと $daysUntilNextAccrual 日で新しい有給が付与されます',
+                        '${nextAccrual.days}日付与予定',
                         style: const TextStyle(
                           fontSize: 12,
                           color: Colors.grey,

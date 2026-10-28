@@ -838,17 +838,75 @@ class VacationRepository {
     return DateTime(year, firstAccrualDate.month, day);
   }
 
-  /// 最初の付与日から、今日までに来た付与日の一覧（古い順）（N61）
-  static List<DateTime> accrualDatesUntilToday(DateTime firstAccrualDate) {
+  /// 法定の付与日数（初回、1 年後、2 年後…。7 回目以降は 20 日）（N62・N63）
+  static const List<int> _legalDaysByYear = [10, 11, 12, 14, 16, 18, 20];
+
+  /// 最初の付与日から i 回目（0 が初回）の付与日と付与日数（N62・N63 の共通の関数）
+  /// 付与日は accrualDateForYear（2/29 → うるう年でない年は 2/28）、日数は i で法定の表を引く
+  static ({DateTime date, int days}) accrualForYear(DateTime first, int i) {
+    final days = i < _legalDaysByYear.length ? _legalDaysByYear[i] : _legalDaysByYear.last;
+    return (date: accrualDateForYear(first, i), days: days);
+  }
+
+  /// 最初の付与日から、今日までに来た付与の一覧（古い順）（N61・N62）
+  static List<({DateTime date, int days})> accrualsUntilToday(DateTime firstAccrualDate) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final dates = <DateTime>[];
+    final accruals = <({DateTime date, int days})>[];
     for (int i = 0; i < 100; i++) {  // 万一のための上限
-      final accrualDate = accrualDateForYear(firstAccrualDate, i);
-      if (accrualDate.isAfter(today)) break;
-      dates.add(accrualDate);
+      final accrual = accrualForYear(firstAccrualDate, i);
+      if (accrual.date.isAfter(today)) break;
+      accruals.add(accrual);
     }
-    return dates;
+    return accruals;
+  }
+
+  /// 最初の付与日から、今日までに来た付与日の一覧（古い順）（N61）
+  static List<DateTime> accrualDatesUntilToday(DateTime firstAccrualDate) {
+    return accrualsUntilToday(firstAccrualDate).map((a) => a.date).toList();
+  }
+
+  /// 最初の付与日から、今日より後の最初の付与日と付与日数（N63）
+  static ({DateTime date, int days})? nextAccrualAfterToday(DateTime firstAccrualDate) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    for (int i = 0; i < 100; i++) {  // 万一のための上限
+      final accrual = accrualForYear(firstAccrualDate, i);
+      if (accrual.date.isAfter(today)) return accrual;
+    }
+    return null;
+  }
+
+  /// 次の付与日と付与日数（N63）。初回付与日（app_settings.first_accrual_date）がなければ null
+  Future<({DateTime date, int days})?> getNextAccrual(String userId) async {
+    final firstAccrualDate = await getFirstAccrualDate(userId);
+    if (firstAccrualDate == null) return null;
+    return nextAccrualAfterToday(firstAccrualDate);
+  }
+
+  /// 処理中の自動生成（userId ごと）。もう一度呼ばれたら同じ Future を返して 1 回にまとめる（N62）
+  static final Map<String, Future<int>> _autoGenerateInFlight = {};
+
+  /// DB の入社日（vacation_settings.hired_date）と初回付与日（app_settings.first_accrual_date）から
+  /// 今日までの付与を自動生成する（N62）。どちらかがなければ何もしない。作った件数を返す
+  Future<int> autoGenerateAccrualsFromSettings(String userId) {
+    return _autoGenerateInFlight.putIfAbsent(
+      userId,
+      () => _autoGenerateAccrualsFromSettings(userId)
+          .whenComplete(() => _autoGenerateInFlight.remove(userId)),
+    );
+  }
+
+  Future<int> _autoGenerateAccrualsFromSettings(String userId) async {
+    final settings = await getVacationSettings(userId);
+    final firstAccrualDate = await getFirstAccrualDate(userId);
+    if (settings == null || firstAccrualDate == null) {
+      debugPrint('🗓️ N62: 入社日または初回付与日が未設定のため、自動生成しません');
+      return 0;
+    }
+    final createdCount = await autoGenerateAccruals(userId, settings.hiredDate, firstAccrualDate);
+    debugPrint('🗓️ N62: 付与を $createdCount 件自動生成');
+    return createdCount;
   }
 
     /// ========== Week 16 修正版：hire_date と first_accrual_date から各年度の付与を自動生成 ==========
@@ -863,28 +921,26 @@ class VacationRepository {
   /// - 2027年10月1日：11日（1年後）
   /// - 2028年10月1日：12日（2年後）
   /// ...
-  Future<void> autoGenerateAccruals(
+  /// 付与日数は初回からの回数で法定の表を引く（N62・N63 の accrualForYear）。作った件数を返す
+  Future<int> autoGenerateAccruals(
     String userId,
     DateTime hireDate,
     DateTime firstAccrualDate,
   ) async {
+    var createdCount = 0;
     try {
       print('🔄 autoGenerateAccruals() 開始: userId=$userId');
-      
+
       // 既存の付与履歴を確認
       final existingAccruals = await getVacationAccrualsByUser(userId);
       print('📊 既存の付与履歴: ${existingAccruals.length}件');
 
       // 今日までに来た付与日を、古い順に処理する（N61）
-      for (final accrualDate in accrualDatesUntilToday(firstAccrualDate)) {
+      for (final accrual in accrualsUntilToday(firstAccrualDate)) {
+        final accrualDate = accrual.date;
 
-        // この年の付与日数を計算
-        final daysGranted = calculateDaysGranted(hireDate, accrualDate);
-        
-        if (daysGranted == 0) {
-          print('⏭️  ${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日：付与対象外（6ヶ月未満）');
-          continue;
-        }
+        // この年の付与日数（N62・N63：初回からの回数で法定の表を引く）
+        final daysGranted = accrual.days;
 
         // 失効日（最後に使える日）。DB に入る値も VacationAccrual.create で同じ計算（N60）
         final expiryDate = VacationAccrual.calculateExpiryDate(accrualDate);
@@ -908,6 +964,7 @@ class VacationRepository {
           daysGranted.toDouble(),
           notes: '自動生成：${accrualDate.year}年度付与',
         );
+        createdCount++;
 
         print('✅ 付与を自動生成：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 → ${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日 ($daysGranted日)');
       }
@@ -916,6 +973,7 @@ class VacationRepository {
     } catch (e) {
       print('❌ Error auto-generating accruals: $e');
     }
+    return createdCount;
   }
     /// ========== Week 16 修正版：来年度付与までに消滅する付与を取得 ==========
   /// 

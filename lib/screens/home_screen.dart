@@ -15,6 +15,7 @@ import 'package:shiftsleep/screens/sleep_records_screen.dart';
 import 'package:shiftsleep/screens/shift_detail_screen.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
 
@@ -82,6 +83,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
     
     _shiftManagementKey = GlobalKey<ShiftManagementScreenState>();
+
+    // N62：今日までに来た付与を自動生成（await しない）
+    VacationRepository().autoGenerateAccrualsFromSettings('test_user');
   }
 
   @override
@@ -95,6 +99,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // 通知の「停止」ボタンで保存された停止時刻で起床処理（await しない）
       _handlePendingAlarmStop();
+
+      // N62：起動したまま付与日をまたいだときも、付与を自動生成（await しない）
+      VacationRepository().autoGenerateAccrualsFromSettings('test_user');
     }
   }
 
