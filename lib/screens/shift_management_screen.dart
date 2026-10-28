@@ -1220,13 +1220,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   onPressed: selectedItems.isEmpty
                       ? null
                       : () async {
-                          await _deleteSelectedItems(selectedDate, selectedItems);
+                          final deleted = await _deleteSelectedItems(selectedDate, selectedItems);
                           if (mounted) {
                             Navigator.pop(context);
                             setState(() {});
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('削除しました')),
-                            );
+                            // N74：失敗したときは _deleteSelectedItems が失敗の SnackBar を出すので、ここでは出さない
+                            if (deleted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('削除しました')),
+                              );
+                            }
                           }
                         },
                   child: const Text('削除', style: TextStyle(color: Colors.red)),
@@ -1239,7 +1242,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  Future<void> _deleteSelectedItems(DateTime date, Set<String> selectedItems) async {
+  /// N74：全部消せたら true、途中で失敗したら false を返す
+  Future<bool> _deleteSelectedItems(DateTime date, Set<String> selectedItems) async {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     const userId = 'test_user';
     
@@ -1266,6 +1270,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       }
 
       if (mounted) setState(() {});
+      return true;
     } catch (e) {
       debugPrint('Error deleting items: $e');
       if (mounted) {
@@ -1273,6 +1278,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           SnackBar(content: Text('削除に失敗しました: $e')),
         );
       }
+      if (mounted) setState(() {});
+      return false;
     }
   }
 }

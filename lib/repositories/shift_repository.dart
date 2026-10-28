@@ -204,6 +204,7 @@ class ShiftRepository {
       print('Shift deleted: $dateStr');
     } catch (e) {
       print('Error deleting shift: $e');
+      rethrow;  // N74：失敗を呼び出し元に知らせる
     }
   }
 
@@ -327,6 +328,7 @@ class ShiftRepository {
       print('✅ Calendar events deleted for date: $dateStr');
     } catch (e) {
       print('❌ Error deleting calendar events for date: $e');
+      rethrow;  // N74：失敗を呼び出し元に知らせる
     }
   }
 
