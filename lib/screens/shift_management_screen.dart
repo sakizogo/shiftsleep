@@ -59,7 +59,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late ShiftPatternModel _defaultVacation1Day;
   late ShiftPatternModel _defaultVacationHalf;
   late List<ShiftPatternModel> _patterns;
-  
+  int _vacationStatsVersion = 0;  // N77・N69：増やすと VacationStatsWidget を作り直して残日数を読み直す
+
   @override
   void initState() {
     super.initState();
@@ -404,6 +405,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   _focusedDay = focusedDay;
                   final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
                   _vacationMap[dateKey] = 0.5;
+                  _vacationStatsVersion++;
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -425,6 +427,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   _focusedDay = focusedDay;
                   final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
                   _vacationMap[dateKey] = 1.0;
+                  _vacationStatsVersion++;
                 });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -436,9 +439,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 return;
               }
 
+              // N77：有休（1.0）の日なら有休を消す
+              final removedVacation = _selectedPattern != null &&
+                  await _removeFullVacationIfOverwritten(selectedDate, _selectedPattern!);
+              if (!mounted) return;
+
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
+                if (removedVacation) _vacationStatsVersion++;
                 if (_selectedPattern != null) {
                   _shiftMap[selectedDate] = ShiftData(
                     date: selectedDay,
@@ -579,7 +588,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             horizontal: 16.0,
             vertical: 12.0,
           ),
-          child: VacationStatsWidget(userId: 'test_user'),
+          child: VacationStatsWidget(key: ValueKey(_vacationStatsVersion), userId: 'test_user'),
         ),
 
         
@@ -901,10 +910,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Future<void> _applyRangeShift() async {
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
       DateTime current = _rangeStartDate!;
+      var vacationChanged = false;
       while (!current.isAfter(_rangeEndDate!)) {
         final normalized = DateTime(current.year, current.month, current.day);
         _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
-        
+
         if (_selectedPattern!.patternType == ShiftType.vacation) {
           await _vacationRepository.recordVacationUsage(
             'test_user',
@@ -912,6 +922,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             1.0,
             'カレンダーから登録（有休）',
           );
+          _vacationMap[normalized] = 1.0;  // N69：すぐ 🏖️ が出るように
+          vacationChanged = true;
         } else if (_selectedPattern!.patternType == ShiftType.halfVacation) {
           await _vacationRepository.recordVacationUsage(
             'test_user',
@@ -919,11 +931,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             0.5,
             'カレンダーから登録（半休）',
           );
+          _vacationMap[normalized] = 0.5;  // N69：すぐ 🌤️ が出るように
+          vacationChanged = true;
+        } else if (await _removeFullVacationIfOverwritten(normalized, _selectedPattern!)) {
+          vacationChanged = true;  // N77
         }
-        
+
         current = current.add(const Duration(days: 1));
       }
-      setState(() {});
+      setState(() {
+        if (vacationChanged) _vacationStatsVersion++;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${_rangeEndDate!.difference(_rangeStartDate!).inDays + 1}日追加'),
@@ -932,6 +950,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         ),
       );
     }
+
+  /// N77：有休（1.0）の日に普通のシフト・休日を入れたら、その日の有休を消す
+  /// 半休（0.5）は消さない（Week 20 の「半休＋シフト共存」）。消したら true を返す
+  Future<bool> _removeFullVacationIfOverwritten(DateTime date, ShiftPatternModel pattern) async {
+    final dateKey = DateTime(date.year, date.month, date.day);
+    if (_vacationMap[dateKey] != 1.0) return false;
+    await _vacationRepository.deleteVacationUsageByDate('test_user', dateKey);
+    _vacationMap.remove(dateKey);
+    debugPrint('🗑️ N77: ${dateKey.month}/${dateKey.day} の有休 1.0 を削除（${pattern.patternName}で上書き）');
+    return true;
+  }
 
   Future<void> loadCalendarEvents() async {
     try {
