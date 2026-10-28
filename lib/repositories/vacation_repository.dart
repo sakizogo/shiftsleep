@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
@@ -201,11 +202,26 @@ class VacationRepository {
       reason: reason,
     );
 
-    await db.insert(
-      'vacation_usage',
-      usage.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    // N68：同じ日の行が増え続けないように、その日の既存行を消してから入れる
+    // 条件は deleteVacationUsageByDate と同じ（その日の 'YYYY-MM-DD' 以上、翌日の 'YYYY-MM-DD' 未満。Z ありの行にも当たる）
+    final nextDay = DateTime(usageDate.year, usageDate.month, usageDate.day + 1);
+    final dateString = normalizedDate.toIso8601String().split('T')[0];
+    final nextDateString = nextDay.toIso8601String().split('T')[0];
+
+    await db.transaction((txn) async {
+      final deletedCount = await txn.delete(
+        'vacation_usage',
+        where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
+        whereArgs: [userId, dateString, nextDateString],
+      );
+      debugPrint('🗑️ N68: 同じ日の既存行を $deletedCount 件削除');
+
+      await txn.insert(
+        'vacation_usage',
+        usage.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
 
     print('✅ VacationUsage recorded: userId=$userId, daysUsed=$daysUsed');
   }
