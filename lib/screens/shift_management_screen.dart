@@ -422,16 +422,27 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   1.0,
                   'カレンダーから登録（有休）',
                 );
+                // N78：置き換える前のシフト（出勤のシフトなら、保存でアラームが取り消されることを知らせる）
+                final previousPattern = _shiftMap[selectedDate]?.pattern;
+                final replacedWork = previousPattern?.patternType == ShiftType.work;
                 setState(() {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
                   final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
                   _vacationMap[dateKey] = 1.0;
                   _vacationStatsVersion++;
+                  // N78：期間指定の有休と同じく、その日のシフトも「有休」にする
+                  _shiftMap[dateKey] = ShiftData(date: dateKey, pattern: _selectedPattern);
                 });
+                if (previousPattern != null && previousPattern.id != _selectedPattern!.id) {
+                  debugPrint('🔁 N78: ${selectedDate.month}/${selectedDate.day} の ${previousPattern.patternName} を${_selectedPattern!.patternName}に置き換え');
+                }
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
+                    content: Text(
+                      '✅ ${_selectedPattern!.patternName}を登録しました'
+                      '${replacedWork ? '\n「シフト保存」を押すと出勤前アラームが取り消されます' : ''}',
+                    ),
                     duration: const Duration(seconds: 2),
                   ),
                 );
