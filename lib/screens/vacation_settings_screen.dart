@@ -514,6 +514,15 @@ Future<void> _generateAccrualSchedule() async {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    // N79：値が入っても何の日付か分かるように、見出しを固定で出す
+                    Text(
+                      '入社日',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     ElevatedButton.icon(
                       onPressed: _selectHiredDate,
                       icon: const Icon(Icons.calendar_today),
@@ -567,13 +576,40 @@ Future<void> _generateAccrualSchedule() async {
                     
                     // ========== Week 16 追加: 初回付与日入力欄 ==========
                     const SizedBox(height: 16),
+                    // N79：見出しを固定で出す
+                    Text(
+                      '初回付与日',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     ElevatedButton.icon(
                       onPressed: () async {
+                        // N79：入社日より前は選べないように。入社日がなければ 1980 年から
+                        final firstDate = _selectedHiredDate ?? DateTime(1980);
+                        final lastDate = DateTime.now().add(const Duration(days: 365));
+
+                        // 最初に開く日：入力欄の日。なければ入社日の 6 か月後（入社日もなければ今日）
+                        DateTime initialDate;
+                        try {
+                          initialDate = DateFormat('yyyy年M月d日').parse(_firstAccrualDateController.text);
+                        } catch (_) {
+                          final hired = _selectedHiredDate;
+                          initialDate = hired != null
+                              ? DateTime(hired.year, hired.month + 6, hired.day)
+                              : DateTime.now();
+                        }
+                        // 範囲外だと showDatePicker が assert で落ちるので、範囲内に収める
+                        if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+                        if (initialDate.isAfter(lastDate)) initialDate = lastDate;
+
                         final pickedDate = await showDatePicker(
                           context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                          initialDate: initialDate,
+                          firstDate: firstDate,
+                          lastDate: lastDate,
                         );
                         
                         if (pickedDate != null) {
