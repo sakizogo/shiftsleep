@@ -118,22 +118,6 @@ class VacationAccrual {
     );
   }
 
-  /// この付与がまだ有効か（失効前）を判定
-  bool get isValid {
-    return DateTime.now().isBefore(expiryDate);
-  }
-
-  /// 失効まであと何日か
-  int get daysUntilExpiry {
-    final diff = expiryDate.difference(DateTime.now()).inDays;
-    return diff > 0 ? diff : 0;
-  }
-
-  /// 失効日を日本語フォーマットで取得（例：「2026年9月30日」）
-  String get expiryDateFormatted {
-    return '${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日';
-  }
-
   /// JSON 変換
   Map<String, dynamic> toMap() {
     return {

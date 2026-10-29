@@ -137,27 +137,6 @@ class VacationRepository {
     return result.map((map) => VacationAccrual.fromMap(map)).toList();
   }
 
-  /// 指定期間内の有給付与を取得
-  Future<List<VacationAccrual>> getVacationAccrualsInRange(
-    String userId,
-    DateTime startDate,
-    DateTime endDate,
-  ) async {
-    final db = await _dbHelper.database;
-    final result = await db.query(
-      'vacation_accruals',
-      where: 'user_id = ? AND accrual_date BETWEEN ? AND ?',
-      whereArgs: [
-        userId,
-        startDate.toIso8601String(),
-        endDate.toIso8601String(),
-      ],
-      orderBy: 'accrual_date DESC',
-    );
-
-    return result.map((map) => VacationAccrual.fromMap(map)).toList();
-  }
-
   /// 日付の範囲を SQL の文字列で比べるための値（N70）
   /// 開始日の 'YYYY-MM-DD' と、終了日の翌日の 'YYYY-MM-DD' を返す。「列 >= start AND 列 < endExclusive」で使うと、
   /// 終了日の日が丸ごと入る（…Z つきの行や 23:59:59.999 の行も当たる）
@@ -274,110 +253,22 @@ class VacationRepository {
   }
 
   /// 付与年度の有給使用（新しい順）（N66）。今日より後の使用（予定）も入れる
-  /// N64 と同じく「開始日の 'YYYY-MM-DD' 以上、終了日の翌日の 'YYYY-MM-DD' 未満」で比べる（Z があってもなくても当たる）
+  /// dayRangeForSql で比べる（半開区間：開始日以上・終了日の翌日未満。Z があってもなくても当たる）
   Future<List<VacationUsage>> getVacationUsageInFiscalYear(
     String userId,
     FiscalYear fiscalYear,
   ) async {
     final db = await _dbHelper.database;
-    final end = fiscalYear.end;
-    final startString = fiscalYear.start.toIso8601String().split('T')[0];
-    final nextDayString = DateTime(end.year, end.month, end.day + 1).toIso8601String().split('T')[0];
+    final range = dayRangeForSql(fiscalYear.start, fiscalYear.end);
 
     final result = await db.query(
       'vacation_usage',
       where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
-      whereArgs: [userId, startString, nextDayString],
+      whereArgs: [userId, range.start, range.endExclusive],
       orderBy: 'usage_date DESC',
     );
 
     return result.map((map) => VacationUsage.fromMap(map)).toList();
-  }
-
-  /// ========== 今年の使用日数合計を計算 ==========
-  /// ✅ 【修正版：ステップ1～3のデバッグログ付き】
-  Future<double> getTotalDaysUsedThisYear(String userId) async {
-    print('🔍 [DEBUG] getTotalDaysUsedThisYear() 開始');
-    print('🔍 [DEBUG] userId=$userId');
-    
-    final db = await _dbHelper.database;
-    final now = DateTime.now();
-    final startOfYear = DateTime(now.year, 1, 1);
-    final endOfYear = DateTime(now.year, 12, 31);
-
-    print('📅 [DEBUG] 検索範囲: ${startOfYear.toIso8601String()} ～ ${endOfYear.toIso8601String()}');
-
-    // ========== ステップ1：全件データを確認 ==========
-    print('🔍 [DEBUG] ステップ1：vacation_usage テーブル全件表示');
-    final allUsage = await db.query('vacation_usage');
-    print('📊 [DEBUG] vacation_usage 全件数: ${allUsage.length}件');
-    for (final row in allUsage) {
-      print('📊 [DEBUG]   - user_id=${row['user_id']}, usage_date=${row['usage_date']}, days_used=${row['days_used']}');
-    }
-
-    // ========== ステップ2：WHERE 条件で抽出 ==========
-    print('🔍 [DEBUG] ステップ2：WHERE 条件で抽出（userId=$userId で絞り込み）');
-    final filteredUsage = await db.query(
-      'vacation_usage',
-      where: 'user_id = ?',
-      whereArgs: [userId],
-    );
-    print('📊 [DEBUG] user_id=$userId の件数: ${filteredUsage.length}件');
-    for (final row in filteredUsage) {
-      print('📊 [DEBUG]   - usage_date=${row['usage_date']}, days_used=${row['days_used']}');
-    }
-
-    // ========== ステップ3：SUM でデータベース集計 ==========
-    print('🔍 [DEBUG] ステップ3：rawQuery で SUM(days_used) を計算');
-    final result = await db.rawQuery(
-      'SELECT SUM(days_used) as total FROM vacation_usage WHERE user_id = ? AND usage_date BETWEEN ? AND ?',
-      [
-        userId,
-        startOfYear.toIso8601String(),
-        endOfYear.toIso8601String(),
-      ],
-    );
-
-    print('📊 [DEBUG] rawQuery 結果: $result');
-
-    if (result.isEmpty || result.first['total'] == null) {
-      print('⚠️  [DEBUG] 使用日数 = 0.0（レコードなしまたは NULL）');
-      return 0.0;
-    }
-
-    final usedDays = (result.first['total'] as num).toDouble();
-    print('✅ [DEBUG] 使用日数 = $usedDays 日');
-    
-    return usedDays;
-  }
-
-  /// ========== 有給残日数を計算（持ち越し対応版）==========
-  Future<double> getRemainingDaysThisYear(String userId) async {
-    print('🔍 [DEBUG] getRemainingDaysThisYear() 開始 (userId=$userId)');
-    
-    // ステップ1：今年の付与日数を取得
-    final settings = await getVacationSettings(userId);
-    if (settings == null) {
-      print('⚠️ [DEBUG] VacationSettings not found for userId=$userId');
-      return 0.0;
-    }
-    print('📊 [DEBUG] 今年の付与日数: ${settings.annualDays}日');
-
-    // ステップ2：使用日数を取得
-    final usedDays = await getTotalDaysUsedThisYear(userId);
-    print('📊 [DEBUG] 使用日数: $usedDays日');
-
-    // ステップ3：持ち越し有休を取得
-    final carriedOverDays = await getCarriedOverDays(userId) ?? 0.0;
-    print('📊 [DEBUG] 持ち越し有休: $carriedOverDays日');
-
-    // ステップ4：残日数を計算（正しい式）
-    // 残日数 = (今年の付与 + 持ち越し) - 使用日数
-    final remaining = (settings.annualDays + carriedOverDays - usedDays).toDouble();
-    print('📊 [DEBUG] 計算式: (${settings.annualDays} + $carriedOverDays) - $usedDays = $remaining');
-    print('✅ getRemainingDaysThisYear() 完了 → remaining=$remaining日');
-    
-    return remaining;
   }
 
   /// 使用履歴を削除
@@ -478,7 +369,6 @@ class VacationRepository {
       totalGranted: balance.totalGranted,
       totalUsed: balance.totalUsed,
       totalRemaining: balance.totalRemaining,
-      expiringCount: expiringAccruals.length,
       nextExpiryDate: expiringAccruals.isNotEmpty
           ? expiringAccruals.first.expiryDate
           : null,
@@ -583,65 +473,6 @@ class VacationRepository {
       debugPrint('🔄 N80: 持ち越しの基準日を ${latestAccrualDate.toIso8601String().split('T')[0]} に設定');
     }
     return latestAccrualDate;
-  }
-
-  /// 今年度に消滅予定の日数を計算
-  ///
-  /// 昨年度から持ち越された有休で、今年度中に失効する分の日数
-  Future<double?> getDaysExpiringThisYear(String userId) async {
-    try {
-      final db = await _dbHelper.database;
-      final currentYear = DateTime.now().year;
-      
-      // 昨年度から持ち越された、失効日が今年度のデータを取得
-      final results = await db.query(
-        'vacation_accruals',
-        where: 'user_id = ? AND is_carried_over = 1 AND strftime("%Y", expiry_date) = ?',
-        whereArgs: [userId, currentYear.toString()],
-      );
-      
-      if (results.isEmpty) return 0.0;
-      
-      // 失効予定の日数を計算
-      double totalExpiring = 0.0;
-      for (final record in results) {
-        totalExpiring += (record['days_granted'] as int).toDouble();
-      }
-      
-      return totalExpiring;
-    } catch (e) {
-      print('❌ Error getting days expiring this year: $e');
-      return null;
-    }
-  }
-
-  /// 今年度の消滅予定日を取得
-  /// 
-  /// 最も早い失効日を返す
-  Future<DateTime?> getExpirationDate(String userId) async {
-    try {
-      final db = await _dbHelper.database;
-      final currentYear = DateTime.now().year;
-      
-      // 昨年度から持ち越された、失効日が今年度の最も早い失効日を取得
-      final results = await db.query(
-        'vacation_accruals',
-        where: 'user_id = ? AND is_carried_over = 1 AND strftime("%Y", expiry_date) = ?',
-        whereArgs: [userId, currentYear.toString()],
-        orderBy: 'expiry_date ASC',
-        limit: 1,
-      );
-      
-      if (results.isEmpty) return null;
-      
-      final expiryDateStr = results.first['expiry_date'] as String?;
-      if (expiryDateStr == null) return null;
-      
-      return DateTime.parse(expiryDateStr);
-    } catch (e) {
-      print('❌ Error getting expiration date: $e');
-      return null;
-    }
   }
 
   /// 持ち越し有休数を app_settings に保存
@@ -786,127 +617,8 @@ class VacationRepository {
     }
   }
 
-  /// ========== Week 16 消滅予定スケジュール ==========
-  
-  /// 【重要】全ての付与分の消滅予定を一覧表示
-  /// 
-  /// 戻り値：
-  /// [
-  ///   {
-  ///     'accrualDate': '2026-10-01',  // 付与日
-  ///     'daysGranted': 10,             // 付与日数
-  ///     'expiryDate': '2027-09-30',   // 消滅日
-  ///     'daysRemaining': 8,            // 残日数（使用後）
-  ///     'isExpired': false,            // 失効済みか
-  ///     'daysUntilExpiry': 35,        // 消滅までの日数
-  ///   },
-  ///   ...
-  /// ]
-  Future<List<Map<String, dynamic>>> getExpirationSchedule(String userId) async {
-    try {
-      final balance = await getVacationBalance(userId);
-      if (balance.accruals.isEmpty) {
-        print('⚠️ getExpirationSchedule: 付与履歴がありません (userId=$userId)');
-        return [];
-      }
-
-      List<Map<String, dynamic>> schedule = [];
-      final now = DateTime.now();
-
-      // N80：付与ごとの使用・残りは allocateUsage の割り当て結果を使う
-      for (final a in balance.accruals) {
-        final accrual = a.accrual;
-        schedule.add(_accrualBalanceToMap(a, now));
-
-        debugPrint('📅 [Expiration Schedule] ${accrual.accrualDate.month}月${accrual.accrualDate.day}日付与: ${a.startingDays}日 → ${accrual.expiryDate.month}月${accrual.expiryDate.day}日失効（残${a.remainingDays}日）');
-      }
-
-      // 消滅日順でソート
-      schedule.sort((a, b) {
-        final expiryA = DateTime.parse(a['expiryDate'] as String);
-        final expiryB = DateTime.parse(b['expiryDate'] as String);
-        return expiryA.compareTo(expiryB);
-      });
-
-      print('✅ getExpirationSchedule: ${schedule.length}件の付与スケジュール取得');
-      return schedule;
-    } catch (e) {
-      print('❌ Error getting expiration schedule: $e');
-      return [];
-    }
-  }
-
-  /// 近い消滅予定（30日以内）を簡潔にまとめたメッセージを生成
-  /// 
-  /// 返り値例：
-  /// "8月30日までに有休10日が消滅します。\n9月30日までに有休11日が消滅します。"
-  Future<String?> getExpirationWarningMessages(String userId) async {
-    try {
-      final schedule = await getExpirationSchedule(userId);
-      if (schedule.isEmpty) return null;
-
-      final now = DateTime.now();
-      final messages = <String>[];
-
-      for (final item in schedule) {
-        final daysUntilExpiry = item['daysUntilExpiry'] as int;
-        
-        // 30日以内のみを対象
-        if (daysUntilExpiry <= 30 && daysUntilExpiry >= 0) {
-          final expiryMonth = item['expiryMonth'] as int;
-          final expiryDay = item['expiryDay'] as int;
-          final daysRemaining = item['daysRemaining'] as double;
-          
-          messages.add('${expiryMonth}月${expiryDay}日までに有休${daysRemaining.toStringAsFixed(1)}日が消滅します。');
-        }
-      }
-
-      if (messages.isEmpty) return null;
-
-      return messages.join('\n');
-    } catch (e) {
-      print('❌ Error getting expiration warning messages: $e');
-      return null;
-    }
-  }
-
   /// ========== Week 16 付与日数の自動計算ヘルパー ==========
   
-  /// hire_date から、経過年数に応じた付与日数を計算
-  /// 
-  /// 日本の法定最低付与日数：
-  /// - 6ヶ月後（1年目）：10日
-  /// - 1年6ヶ月後（2年目）：11日
-  /// - 2年6ヶ月後（3年目）：12日
-  /// - 3年6ヶ月後（4年目）：14日
-  /// - 4年6ヶ月後（5年目）：16日
-  /// - 5年6ヶ月後（6年目）：18日
-  /// - 6年6ヶ月以降（7年目以降）：20日（MAX）
-  static int calculateDaysGranted(DateTime hireDate, DateTime accrualDate) {
-    // hire_date から accrual_date までの月数を計算
-    final monthsSinceHire = (accrualDate.year - hireDate.year) * 12 +
-                           (accrualDate.month - hireDate.month);
-
-    // 付与日数を決定（初回6ヶ月後、以降1年ごと）
-    if (monthsSinceHire < 6) {
-      return 0;  // 6ヶ月未満は付与対象外
-    } else if (monthsSinceHire < 18) {
-      return 10;  // 6ヶ月～18ヶ月未満（初回 + 1年以内）
-    } else if (monthsSinceHire < 30) {
-      return 11;  // 18ヶ月～30ヶ月未満（初回 + 1～2年）
-    } else if (monthsSinceHire < 42) {
-      return 12;  // 30ヶ月～42ヶ月未満（初回 + 2～3年）
-    } else if (monthsSinceHire < 54) {
-      return 14;  // 42ヶ月～54ヶ月未満（初回 + 3～4年）
-    } else if (monthsSinceHire < 66) {
-      return 16;  // 54ヶ月～66ヶ月未満（初回 + 4～5年）
-    } else if (monthsSinceHire < 78) {
-      return 18;  // 66ヶ月～78ヶ月未満（初回 + 5～6年）
-    } else {
-      return 20;  // 78ヶ月以上（初回 + 6年以上）
-    }
-  }
-
   /// 最初の付与日から yearOffset 年後の付与日を計算する（N61）
   /// 最初の付与日が 2/29 のとき、うるう年でない年は月末（2/28）にそろえる
   static DateTime accrualDateForYear(DateTime firstAccrualDate, int yearOffset) {
@@ -966,11 +678,6 @@ class VacationRepository {
       accruals.add(accrual);
     }
     return accruals;
-  }
-
-  /// 最初の付与日から、今日までに来た付与日の一覧（古い順）（N61）
-  static List<DateTime> accrualDatesUntilToday(DateTime firstAccrualDate) {
-    return accrualsUntilToday(firstAccrualDate).map((a) => a.date).toList();
   }
 
   /// 最初の付与日から、今日より後の最初の付与日と付与日数（N63）
@@ -1153,19 +860,14 @@ class VacationSummary {
   final double totalGranted;        // 累計付与日数
   final double totalUsed;        // 累計使用日数
   final double totalRemaining;   // 累計残日数
-  final int expiringCount;       // 失効予定数
   final DateTime? nextExpiryDate; // 次の失効日
 
   VacationSummary({
     required this.totalGranted,
     required this.totalUsed,
     required this.totalRemaining,
-    required this.expiringCount,
     this.nextExpiryDate,
   });
-
-  /// 失効予定がないか判定
-  bool get hasNoExpiring => expiringCount == 0;
 
   /// 失効予定がある場合、警告メッセージを生成
   String? get expiryWarningMessage {
