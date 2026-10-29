@@ -158,6 +158,19 @@ class VacationRepository {
     return result.map((map) => VacationAccrual.fromMap(map)).toList();
   }
 
+  /// 日付の範囲を SQL の文字列で比べるための値（N70）
+  /// 開始日の 'YYYY-MM-DD' と、終了日の翌日の 'YYYY-MM-DD' を返す。「列 >= start AND 列 < endExclusive」で使うと、
+  /// 終了日の日が丸ごと入る（…Z つきの行や 23:59:59.999 の行も当たる）
+  /// 時刻は捨てて年・月・日だけを使う（toLocal() は通さない。N64 と同じ）
+  static ({String start, String endExclusive}) dayRangeForSql(DateTime start, DateTime end) {
+    final startDay = DateTime(start.year, start.month, start.day);
+    final nextDay = DateTime(end.year, end.month, end.day + 1);
+    return (
+      start: startDay.toIso8601String().split('T')[0],
+      endExclusive: nextDay.toIso8601String().split('T')[0],
+    );
+  }
+
   /// 🌟 失効予定の付与（残り30日以内）を取得
   Future<List<VacationAccrual>> getExpiringAccruals(
     String userId, {
@@ -167,16 +180,15 @@ class VacationRepository {
     final now = DateTime.now();
     final thirtyDaysLater = now.add(Duration(days: daysThreshold));
 
+    // N70：BETWEEN をやめ、今日の日付以上・30 日後の翌日の日付未満で比べる（30 日後の日も丸ごと入る）
+    final range = dayRangeForSql(now, thirtyDaysLater);
     final result = await db.query(
       'vacation_accruals',
-      where: 'user_id = ? AND expiry_date BETWEEN ? AND ?',
-      whereArgs: [
-        userId,
-        now.toIso8601String(),
-        thirtyDaysLater.toIso8601String(),
-      ],
+      where: 'user_id = ? AND expiry_date >= ? AND expiry_date < ?',
+      whereArgs: [userId, range.start, range.endExclusive],
       orderBy: 'expiry_date ASC',
     );
+    debugPrint('⏰ N70: 失効予定の付与 expiry_date ${range.start} 以上 ${range.endExclusive} 未満 → ${result.length} 件');
 
     return result.map((map) => VacationAccrual.fromMap(map)).toList();
   }
@@ -228,22 +240,21 @@ class VacationRepository {
   }
 
   /// 指定期間の有給使用履歴を取得
+  /// N70：開始日〜終了日の日付で比べる（時刻は見ない。終了日の日は Z つきの行も含めて丸ごと入る）
   Future<List<VacationUsage>> getVacationUsageInRange(
     String userId,
     DateTime startDate,
     DateTime endDate,
   ) async {
     final db = await _dbHelper.database;
+    final range = dayRangeForSql(startDate, endDate);
     final result = await db.query(
       'vacation_usage',
-      where: 'user_id = ? AND usage_date BETWEEN ? AND ?',
-      whereArgs: [
-        userId,
-        startDate.toIso8601String(),
-        endDate.toIso8601String(),
-      ],
+      where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
+      whereArgs: [userId, range.start, range.endExclusive],
       orderBy: 'usage_date DESC',
     );
+    debugPrint('🔍 N70: 有給使用 usage_date ${range.start} 以上 ${range.endExclusive} 未満 → ${result.length} 件');
 
     return result.map((map) => VacationUsage.fromMap(map)).toList();
   }
