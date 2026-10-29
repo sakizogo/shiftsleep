@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
+import 'package:shiftsleep/services/vacation_allocation.dart';
 
 class VacationRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -368,92 +369,69 @@ class VacationRepository {
 
   /// ========== 🌟 メイン計算ロジック ==========
 
-  /// 🌟 現在の残日数を計算（全付与期間を考慮）
-  /// 
-  /// 計算ロジック：
-  /// 1. ユーザーの全付与を取得
-  /// 2. 各付与ごとに：
-  ///    - 失効日を過ぎていたらスキップ
-  ///    - 有効な付与については、その期間内の使用日数を集計
-  ///    - 付与日数 - 使用日数 = その付与の残日数
-  /// 3. 全付与の残日数を合計
-  Future<double> calculateRemainingDays(String userId) async {
+  /// 付与の行・使用の行（全件）・持ち越しを読み、使用を付与に割り当てる（N80）
+  Future<VacationBalance> getVacationBalance(String userId) async {
+    final db = await _dbHelper.database;
     final accruals = await getVacationAccrualsByUser(userId);
-    
-    if (accruals.isEmpty) {
+    final usageRows = await db.query(
+      'vacation_usage',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    final usages = usageRows.map((map) => VacationUsage.fromMap(map)).toList();
+    final carryOver = await getCarryOver(userId);
+
+    return allocateUsage(
+      accruals: accruals,
+      usages: usages,
+      today: DateTime.now(),
+      carryOver: carryOver,
+    );
+  }
+
+  /// 付与ごとの割り当て結果をログに出す（N80）
+  void _printBalance(VacationBalance balance) {
+    for (final a in balance.accruals) {
+      final date = a.accrual.accrualDate.toIso8601String();
+      final carryOverMark = a.isCarryOverTarget ? '（持ち越し）' : '';
+      if (a.isExpired) {
+        debugPrint('⏰ Accrual expired: date=$date, starting=${a.startingDays}$carryOverMark, used=${a.usedDays}, expiry_date=${a.accrual.expiryDate.toIso8601String()}');
+      } else {
+        debugPrint('📊 Accrual: date=$date, starting=${a.startingDays}$carryOverMark, used=${a.usedDays}, remaining=${a.remainingDays}');
+      }
+    }
+    if (balance.unallocatedDays > 0) {
+      debugPrint('ℹ️ 付与が足りず割り当てなかった使用: ${balance.unallocatedDays}日');
+    }
+    debugPrint('✅ Total remaining days: ${balance.totalRemaining}');
+  }
+
+  /// 🌟 現在の残日数を計算（N80：使用を古い付与から順に割り当て、有効な付与の残りを合計）
+  Future<double> calculateRemainingDays(String userId) async {
+    final balance = await getVacationBalance(userId);
+
+    if (balance.accruals.isEmpty) {
       print('⚠️ No vacation accruals found for userId=$userId');
       return 0.0;
     }
 
-    double totalRemaining = 0.0;
-    final now = DateTime.now();
-
-    for (final accrual in accruals) {
-      // 失効日を過ぎた付与はスキップ
-      if (now.isAfter(accrual.expiryDate)) {
-        print('⏰ Accrual expired: accrual_date=${accrual.accrualDate.toIso8601String()}, expiry_date=${accrual.expiryDate.toIso8601String()}');
-        continue;
-      }
-
-      // この付与期間内の使用日数を計算
-      // 注：付与日から失効日までの期間を対象
-      final usageInPeriod = await _getTotalDaysUsedInRange(
-        userId,
-        accrual.accrualDate,
-        accrual.expiryDate,
-      );
-
-      // この付与の残日数
-      final remainingForThisAccrual = accrual.daysGranted - usageInPeriod;
-      totalRemaining += remainingForThisAccrual;
-
-      print('📊 Accrual: date=${accrual.accrualDate.toIso8601String()}, granted=${accrual.daysGranted}, used=$usageInPeriod, remaining=$remainingForThisAccrual');
-    }
-
-    print('✅ Total remaining days: $totalRemaining');
-    return totalRemaining;
-  }
-
-  /// 指定期間内の使用日数を計算（ヘルパー）
-  Future<double> _getTotalDaysUsedInRange(
-    String userId,
-    DateTime startDate,
-    DateTime endDate,
-  ) async {
-    final db = await _dbHelper.database;
-    final result = await db.rawQuery(
-      'SELECT SUM(days_used) as total FROM vacation_usage WHERE user_id = ? AND usage_date BETWEEN ? AND ?',
-      [
-        userId,
-        startDate.toIso8601String(),
-        endDate.toIso8601String(),
-      ],
-    );
-
-    if (result.isEmpty || result.first['total'] == null) {
-      return 0.0;
-    }
-
-    return (result.first['total'] as num).toDouble();
+    _printBalance(balance);
+    return balance.totalRemaining;
   }
 
   /// 付与サマリーを取得（UI表示用）
+  /// N80：付与・使用・残りは有効な付与だけで数える（付与 − 使用 = 残り）
   Future<VacationSummary?> getAccrualSummary(String userId) async {
-    final accruals = await getVacationAccrualsByUser(userId);
-    if (accruals.isEmpty) return null;
+    final balance = await getVacationBalance(userId);
+    if (balance.accruals.isEmpty) return null;
 
-    final totalGranted = accruals.fold<double>(
-      0,
-      (sum, accrual) => sum + accrual.daysGranted,
-    );
-
-    final remaining = await calculateRemainingDays(userId);
+    _printBalance(balance);
     final expiringAccruals = await getExpiringAccruals(userId);
 
     return VacationSummary(
-      totalGranted: totalGranted,
-      totalUsed: totalGranted - remaining,
-      totalRemaining: remaining,
+      totalGranted: balance.totalGranted,
+      totalUsed: balance.totalUsed,
+      totalRemaining: balance.totalRemaining,
       expiringCount: expiringAccruals.length,
       nextExpiryDate: expiringAccruals.isNotEmpty
           ? expiringAccruals.first.expiryDate
@@ -493,8 +471,76 @@ class VacationRepository {
     }
   }
 
+  /// 持ち越し日数と基準日を読む（N80）。日数が 0 以下か、基準日がなければ null
+  Future<CarryOver?> getCarryOver(String userId) async {
+    try {
+      final db = await _dbHelper.database;
+      final results = await db.query(
+        'app_settings',
+        columns: ['carried_over_days', 'carried_over_base_date'],
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      if (results.isEmpty) return null;
+
+      final days = (results.first['carried_over_days'] as num?)?.toDouble() ?? 0.0;
+      final baseDateStr = results.first['carried_over_base_date'] as String?;
+      if (days <= 0 || baseDateStr == null) return null;
+
+      return CarryOver(baseDate: DateTime.parse(baseDateStr), days: days);
+    } catch (e) {
+      debugPrint('❌ Error getting carry over: $e');
+      return null;
+    }
+  }
+
+  /// 今日の時点の直近の付与日（初回付与日から 1 年ごと）。初回付与日がないか、まだ付与が来ていなければ null（N80）
+  Future<DateTime?> _latestAccrualDateUntilToday(String userId) async {
+    final firstAccrualDate = await getFirstAccrualDate(userId);
+    if (firstAccrualDate == null) return null;
+    final accruals = accrualsUntilToday(firstAccrualDate);
+    return accruals.isEmpty ? null : accruals.last.date;
+  }
+
+  /// 持ち越しを保存するときの基準日を決める（N80）
+  /// - 日数が 0 なら null
+  /// - 日数が DB の値と同じで、対象の付与（基準日より前でいちばん新しい付与）がまだ有効なら、基準日を変えない
+  /// - それ以外（日数が変わった・基準日が空・対象の付与が失効した）は、その時点の直近の付与日
+  Future<DateTime?> _carriedOverBaseDateToSave(
+    String userId,
+    int carriedOverDays,
+    Map<String, Object?>? stored,
+  ) async {
+    if (carriedOverDays <= 0) return null;
+
+    final storedDays = (stored?['carried_over_days'] as num?)?.toInt() ?? 0;
+    final storedBaseDateStr = stored?['carried_over_base_date'] as String?;
+    if (storedDays == carriedOverDays && storedBaseDateStr != null) {
+      final storedBaseDate = DateTime.parse(storedBaseDateStr);
+      final balance = allocateUsage(
+        accruals: await getVacationAccrualsByUser(userId),
+        usages: const [],
+        today: DateTime.now(),
+        carryOver: CarryOver(baseDate: storedBaseDate, days: storedDays.toDouble()),
+      );
+      final targetIsValid = balance.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
+      if (targetIsValid) {
+        debugPrint('ℹ️ N80: 持ち越しの日数が同じで対象の付与も有効なので、基準日は ${storedBaseDateStr.split('T')[0]} のまま');
+        return storedBaseDate;
+      }
+    }
+
+    final latestAccrualDate = await _latestAccrualDateUntilToday(userId);
+    if (latestAccrualDate == null) {
+      debugPrint('⚠️ N80: 直近の付与日がわからないため、持ち越しの基準日は空のまま');
+    } else {
+      debugPrint('🔄 N80: 持ち越しの基準日を ${latestAccrualDate.toIso8601String().split('T')[0]} に設定');
+    }
+    return latestAccrualDate;
+  }
+
   /// 今年度に消滅予定の日数を計算
-  /// 
+  ///
   /// 昨年度から持ち越された有休で、今年度中に失効する分の日数
   Future<double?> getDaysExpiringThisYear(String userId) async {
     try {
@@ -564,7 +610,14 @@ class VacationRepository {
         where: 'user_id = ?',
         whereArgs: [userId],
       );
-      
+
+      // N80：持ち越しの基準日
+      final baseDate = await _carriedOverBaseDateToSave(
+        userId,
+        carriedOverDays,
+        results.isEmpty ? null : results.first,
+      );
+
       if (results.isEmpty) {
         // レコードがない場合は INSERT（デフォルト値を含める）
         await db.insert(
@@ -577,6 +630,7 @@ class VacationRepository {
             'advice_promo_visible': 1,  // デフォルト値
             'is_premium_user': 0,  // デフォルト値
             'carried_over_days': carriedOverDays,
+            'carried_over_base_date': baseDate?.toIso8601String(),
             'created_at': DateTime.now().toIso8601String(),
             'updated_at': DateTime.now().toIso8601String(),
           },
@@ -589,6 +643,7 @@ class VacationRepository {
           'app_settings',
           {
             'carried_over_days': carriedOverDays,
+            'carried_over_base_date': baseDate?.toIso8601String(),
             'updated_at': DateTime.now().toIso8601String(),
           },
           where: 'user_id = ?',
@@ -703,8 +758,8 @@ class VacationRepository {
   /// ]
   Future<List<Map<String, dynamic>>> getExpirationSchedule(String userId) async {
     try {
-      final accruals = await getVacationAccrualsByUser(userId);
-      if (accruals.isEmpty) {
+      final balance = await getVacationBalance(userId);
+      if (balance.accruals.isEmpty) {
         print('⚠️ getExpirationSchedule: 付与履歴がありません (userId=$userId)');
         return [];
       }
@@ -712,33 +767,12 @@ class VacationRepository {
       List<Map<String, dynamic>> schedule = [];
       final now = DateTime.now();
 
-      for (final accrual in accruals) {
-        // この付与期間内の使用日数を計算
-        final usageInPeriod = await _getTotalDaysUsedInRange(
-          userId,
-          accrual.accrualDate,
-          accrual.expiryDate,
-        );
+      // N80：付与ごとの使用・残りは allocateUsage の割り当て結果を使う
+      for (final a in balance.accruals) {
+        final accrual = a.accrual;
+        schedule.add(_accrualBalanceToMap(a, now));
 
-        final isExpired = now.isAfter(accrual.expiryDate);
-        final daysUntilExpiry = accrual.expiryDate.difference(now).inDays;
-        final daysRemaining = accrual.daysGranted - usageInPeriod;
-
-        schedule.add({
-          'accrualDate': accrual.accrualDate.toIso8601String().split('T')[0],
-          'accrualMonth': accrual.accrualDate.month,
-          'accrualDay': accrual.accrualDate.day,
-          'daysGranted': accrual.daysGranted,
-          'expiryDate': accrual.expiryDate.toIso8601String().split('T')[0],
-          'expiryMonth': accrual.expiryDate.month,
-          'expiryDay': accrual.expiryDate.day,
-          'daysRemaining': daysRemaining,
-          'daysUsed': usageInPeriod,
-          'isExpired': isExpired,
-          'daysUntilExpiry': daysUntilExpiry,
-        });
-
-        print('📅 [Expiration Schedule] ${accrual.accrualDate.month}月${accrual.accrualDate.day}日付与: ${accrual.daysGranted}日 → ${accrual.expiryDate.month}月${accrual.expiryDate.day}日失効（残${daysRemaining}日）');
+        debugPrint('📅 [Expiration Schedule] ${accrual.accrualDate.month}月${accrual.accrualDate.day}日付与: ${a.startingDays}日 → ${accrual.expiryDate.month}月${accrual.expiryDate.day}日失効（残${a.remainingDays}日）');
       }
 
       // 消滅日順でソート
@@ -981,52 +1015,15 @@ class VacationRepository {
   /// null の場合は消滅予定なし
   Future<Map<String, dynamic>?> getNextExpiringAccrual(String userId) async {
     try {
-      final accruals = await getVacationAccrualsByUser(userId);
-      if (accruals.isEmpty) {
+      final balance = await getVacationBalance(userId);
+      if (balance.accruals.isEmpty) {
         print('⚠️ getNextExpiringAccrual: 付与履歴がありません (userId=$userId)');
         return null;
       }
 
-      final now = DateTime.now();
-
-      // 来年度付与までに消滅する付与を探す（失効日が未来で、最も近い1件）
-      Map<String, dynamic>? nextExpiring;
-      DateTime? closestExpiryDate;
-
-      for (final accrual in accruals) {
-        // 失効日が過去か現在かチェック
-        if (now.isAfter(accrual.expiryDate)) {
-          continue;  // 既に失効済みはスキップ
-        }
-
-        // この付与期間内の使用日数を計算
-        final usageInPeriod = await _getTotalDaysUsedInRange(
-          userId,
-          accrual.accrualDate,
-          accrual.expiryDate,
-        );
-
-        final daysRemaining = accrual.daysGranted - usageInPeriod;
-        final expiryDate = accrual.expiryDate;
-
-        // 最も近い失効日を更新
-        if (closestExpiryDate == null || expiryDate.isBefore(closestExpiryDate)) {
-          closestExpiryDate = expiryDate;
-          nextExpiring = {
-            'accrualDate': accrual.accrualDate.toIso8601String().split('T')[0],
-            'accrualMonth': accrual.accrualDate.month,
-            'accrualDay': accrual.accrualDate.day,
-            'daysGranted': accrual.daysGranted,
-            'expiryDate': expiryDate.toIso8601String().split('T')[0],
-            'expiryMonth': expiryDate.month,
-            'expiryDay': expiryDate.day,
-            'daysRemaining': daysRemaining,
-            'daysUsed': usageInPeriod,
-            'isExpired': false,
-            'daysUntilExpiry': expiryDate.difference(now).inDays,
-          };
-        }
-      }
+      // N80：有効な付与のうち失効がいちばん早いもの（残りは allocateUsage の割り当て結果）
+      final next = balance.nextExpiring;
+      final nextExpiring = next == null ? null : _accrualBalanceToMap(next, DateTime.now());
 
       if (nextExpiring != null) {
         print('📅 [getNextExpiringAccrual] ${nextExpiring['accrualMonth']}月${nextExpiring['accrualDay']}日付与：残${nextExpiring['daysRemaining']}日 → ${nextExpiring['expiryMonth']}月${nextExpiring['expiryDay']}日失効');
@@ -1037,6 +1034,25 @@ class VacationRepository {
       print('❌ Error getting next expiring accrual: $e');
       return null;
     }
+  }
+
+  /// 付与の割り当て結果を、消滅予定の画面で使う Map にする（N80）
+  /// daysGranted は最初の日数（持ち越しの対象なら持ち越し日数）
+  static Map<String, dynamic> _accrualBalanceToMap(AccrualBalance a, DateTime now) {
+    final accrual = a.accrual;
+    return {
+      'accrualDate': accrual.accrualDate.toIso8601String().split('T')[0],
+      'accrualMonth': accrual.accrualDate.month,
+      'accrualDay': accrual.accrualDate.day,
+      'daysGranted': a.startingDays,
+      'expiryDate': accrual.expiryDate.toIso8601String().split('T')[0],
+      'expiryMonth': accrual.expiryDate.month,
+      'expiryDay': accrual.expiryDate.day,
+      'daysRemaining': a.remainingDays,
+      'daysUsed': a.usedDays,
+      'isExpired': a.isExpired,
+      'daysUntilExpiry': accrual.expiryDate.difference(now).inDays,
+    };
   }
 }
 

@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
+import 'package:shiftsleep/repositories/vacation_repository.dart' show VacationRepository;
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -27,7 +29,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 18,  // 17 → 18（N58・N60・N53）
+      version: 19,  // 18 → 19（N80）
       onCreate: _createTables,
       onUpgrade: (db, oldVersion, newVersion) async {
         // ========== Week 3 Day 6-2 修正: shift_patterns テーブル + shifts テーブルの pattern_id カラム追加 ==========
@@ -359,6 +361,48 @@ class DatabaseHelper {
           }
         }
         // ========================================================================
+        // ========== v19（N80）==========
+        // ・app_settings に carried_over_base_date（持ち越しの基準日）がなければ足す
+        // ・持ち越しが 0 より大きく初回付与日があれば、移行した日の時点の直近の付与日を基準日に入れる
+        if (oldVersion < 19) {
+          debugPrint('🔧 Database upgrade: v$oldVersion → v19');
+          try {
+            final columns = await db.rawQuery('PRAGMA table_info(app_settings)');
+            final hasBaseDate = columns.any((c) => c['name'] == 'carried_over_base_date');
+            if (!hasBaseDate) {
+              await db.execute(
+                'ALTER TABLE app_settings ADD COLUMN carried_over_base_date TEXT',
+              );
+              debugPrint('✅ DB v19: carried_over_base_date を追加しました');
+            } else {
+              debugPrint('ℹ️ DB v19: carried_over_base_date はすでにあります（スキップ）');
+            }
+
+            final settingsRows = await db.query(
+              'app_settings',
+              columns: ['user_id', 'carried_over_days', 'first_accrual_date'],
+            );
+            for (final row in settingsRows) {
+              final carriedOverDays = (row['carried_over_days'] as num?) ?? 0;
+              final firstAccrualDateStr = row['first_accrual_date'] as String?;
+              if (carriedOverDays <= 0 || firstAccrualDateStr == null) continue;
+
+              final accruals = VacationRepository.accrualsUntilToday(DateTime.parse(firstAccrualDateStr));
+              if (accruals.isEmpty) continue;
+              final baseDate = accruals.last.date;
+              await db.update(
+                'app_settings',
+                {'carried_over_base_date': baseDate.toIso8601String()},
+                where: 'user_id = ?',
+                whereArgs: [row['user_id']],
+              );
+              debugPrint('🔄 v19: 持ち越しの基準日を ${baseDate.toIso8601String().split('T')[0]} に設定 (userId=${row['user_id']})');
+            }
+          } catch (e) {
+            debugPrint('⚠️ DB v19 Migration error: $e');
+          }
+        }
+        // ========================================================================
       },
     );
   }
@@ -451,6 +495,7 @@ class DatabaseHelper {
         is_premium_user INTEGER DEFAULT 0,
         carried_over_days INTEGER DEFAULT 0,
         first_accrual_date TEXT,
+        carried_over_base_date TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )

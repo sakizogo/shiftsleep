@@ -27,6 +27,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   VacationSettings? _settings;
   VacationSummary? _summary;
   ({DateTime date, int days})? _nextAccrual;  // N63：次の付与日と付与日数（初回付与日が未登録なら null）
+  DateTime? _carriedOverBaseDate;  // N80：持ち越しの基準日（対象の付与が有効なあいだだけ。説明に添える）
   bool _isLoading = true;
 
   @override
@@ -56,7 +57,13 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
     // ========== Week 13追加: 持ち越し有休数を読み込む ==========
     final carriedOverDays = await _repository.getCarriedOverDays(widget.userId);
     // ===============================================================================
-    
+
+    // N80：持ち越しの基準日と、持ち越しの対象の付与が失効しているか
+    final carryOver = await _repository.getCarryOver(widget.userId);
+    final balance = await _repository.getVacationBalance(widget.userId);
+    final carryOverTargets = balance.accruals.where((a) => a.isCarryOverTarget);
+    final carryOverExpired = carryOverTargets.isNotEmpty && carryOverTargets.first.isExpired;
+
     // ========== Week 16追加: 初回付与日を読み込む ==========
     final firstAccrualDate = await _repository.getFirstAccrualDate(widget.userId);
     // ===============================================================================
@@ -73,7 +80,12 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
         _annualDaysController.text = settings.annualDays.toString();
         
         // ========== Week 13追加: 持ち越し有休数を入力欄に反映 ==========
-        if (carriedOverDays != null && carriedOverDays > 0) {
+        // N80：対象の付与が失効していたら空で表示する（画面を開いただけでは DB に書かない）
+        _carriedOverBaseDate =
+            carryOver != null && carryOverTargets.isNotEmpty && !carryOverExpired
+                ? carryOver.baseDate
+                : null;
+        if (carriedOverDays != null && carriedOverDays > 0 && !carryOverExpired) {
           _carriedOverDaysController.text = carriedOverDays.toStringAsFixed(0);
         } else {
           _carriedOverDaysController.text = '';  // 持ち越しがなければ空
@@ -566,7 +578,8 @@ Future<void> _generateAccrualSchedule() async {
                     ),
                     const SizedBox(height: 8.0),
                     Text(
-                      '※ 前年度から持ち越した有休がある場合は入力してください。\n入力しない場合は持ち越し有休は 0 日として計算されます。',
+                      '※ 前年度から持ち越した有休がある場合は入力してください。\n入力しない場合は持ち越し有休は 0 日として計算されます。'
+                      '${_carriedOverBaseDate != null ? '\nいまの持ち越しは ${DateFormat('yyyy/M/d').format(_carriedOverBaseDate!)} 時点の日数です。' : ''}',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
