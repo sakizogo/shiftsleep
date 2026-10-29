@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
+import 'package:shiftsleep/services/vacation_allocation.dart';
 import 'package:shiftsleep/constants/colors.dart';  // ← Week 27 追加
 
 class VacationStatsWidget extends StatefulWidget {
@@ -18,8 +19,7 @@ class VacationStatsWidget extends StatefulWidget {
 class _VacationStatsWidgetState extends State<VacationStatsWidget> {
   late VacationRepository _repository;
   double _totalUsed = 0.0;
-  double _remaining = 0.0;
-  double _carriedOverDays = 0.0;
+  VacationBalance? _balance;  // N66：残日数と内訳は付与の割り当て結果から出す
   Map<String, dynamic>? _nextExpiringAccrual;
   bool _isLoading = true;
 
@@ -33,14 +33,14 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
   Future<void> _loadStats() async {
     try {
       final totalUsed = await _repository.getTotalDaysUsedThisYear(widget.userId);
-      final remaining = await _repository.getRemainingDaysThisYear(widget.userId);
-      final carriedOverDays = await _repository.getCarriedOverDays(widget.userId) ?? 0.0;
+      final balance = await _repository.getVacationBalance(widget.userId);
       final nextExpiringAccrual = await _repository.getNextExpiringAccrual(widget.userId);
+      debugPrint('📊 N66: 有給統計 残日数=${balance.totalRemaining}, 有効な付与=${balance.totalGranted}, '
+          'うち持ち越し=${_carriedOverPart(balance)}, 使用=${balance.totalUsed}');
 
       setState(() {
         _totalUsed = totalUsed;
-        _remaining = remaining;
-        _carriedOverDays = carriedOverDays;
+        _balance = balance;
         _nextExpiringAccrual = nextExpiringAccrual;
         _isLoading = false;
       });
@@ -50,6 +50,13 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
         _isLoading = false;
       });
     }
+  }
+
+  /// 有効な付与のうち、持ち越しの対象の付与の最初の日数（N65）。なければ 0
+  static double _carriedOverPart(VacationBalance balance) {
+    return balance.validAccruals
+        .where((a) => a.isCarryOverTarget)
+        .fold(0.0, (sum, a) => sum + a.startingDays);
   }
 
   @override
@@ -133,16 +140,19 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                             ),
                             Text(
-                              '${_remaining.toStringAsFixed(1)}日',
+                              '${(_balance?.totalRemaining ?? 0.0).toStringAsFixed(1)}日',
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.vacationRemainingText,
                               ),
                             ),
-                            if (_carriedOverDays > 0)
+                            // N65：内訳は割り当て結果から作る（有効な付与 − 有効な付与から使った分 ＝ 残日数）
+                            if (_balance != null && _balance!.totalGranted > 0)
                               Text(
-                                '(内訳: 付与20日 + 持ち越し${_carriedOverDays.toStringAsFixed(0)}日 - 使用${_totalUsed.toStringAsFixed(1)}日)',
+                                '(内訳: 有効な付与 ${_balance!.totalGranted.toStringAsFixed(1)}日'
+                                '${_carriedOverPart(_balance!) > 0 ? '〈うち持ち越し ${_carriedOverPart(_balance!).toStringAsFixed(1)}日〉' : ''}'
+                                ' − 使用 ${_balance!.totalUsed.toStringAsFixed(1)}日)',
                                 style: TextStyle(fontSize: 10, color: AppColors.textMuted),
                               ),
                           ],
@@ -156,7 +166,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
           ),
         ),
         
-        // ========== Week 27 修正：有給消滝予定カード（黄色警告系）==========
+        // ========== Week 27 修正：有給消滅予定カード（黄色警告系）==========
         if (_nextExpiringAccrual != null)
           Padding(
             padding: const EdgeInsets.only(top: 12.0),
@@ -182,7 +192,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '⏰ 有給消滝予定',
+                            '⏰ 有給消滅予定',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
