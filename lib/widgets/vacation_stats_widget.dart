@@ -19,6 +19,7 @@ class VacationStatsWidget extends StatefulWidget {
 class _VacationStatsWidgetState extends State<VacationStatsWidget> {
   late VacationRepository _repository;
   double _totalUsed = 0.0;
+  FiscalYear? _fiscalYear;  // N66：使用日数を数える付与年度（求まらなければ暦年）
   VacationBalance? _balance;  // N66：残日数と内訳は付与の割り当て結果から出す
   Map<String, dynamic>? _nextExpiringAccrual;
   bool _isLoading = true;
@@ -32,14 +33,21 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
 
   Future<void> _loadStats() async {
     try {
-      final totalUsed = await _repository.getTotalDaysUsedThisYear(widget.userId);
+      // N66：使用日数は付与年度（今日より後の予定も含む）で数える
+      final fiscalYear = await _repository.getCurrentFiscalYear(widget.userId);
+      final fiscalYearUsages = await _repository.getVacationUsageInFiscalYear(widget.userId, fiscalYear);
+      final totalUsed = VacationRepository.usedDaysInFiscalYear(fiscalYearUsages, fiscalYear);
       final balance = await _repository.getVacationBalance(widget.userId);
       final nextExpiringAccrual = await _repository.getNextExpiringAccrual(widget.userId);
       debugPrint('📊 N66: 有給統計 残日数=${balance.totalRemaining}, 有効な付与=${balance.totalGranted}, '
           'うち持ち越し=${_carriedOverPart(balance)}, 使用=${balance.totalUsed}');
+      debugPrint('📅 N66: 付与年度 ${fiscalYear.start.toIso8601String().split('T')[0]}〜'
+          '${fiscalYear.end.toIso8601String().split('T')[0]}${fiscalYear.isCalendarYear ? '（暦年）' : ''}, '
+          '使用 ${fiscalYearUsages.length} 件・$totalUsed 日');
 
       setState(() {
         _totalUsed = totalUsed;
+        _fiscalYear = fiscalYear;
         _balance = balance;
         _nextExpiringAccrual = nextExpiringAccrual;
         _isLoading = false;
@@ -84,7 +92,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '📅 今年の有給統計',
+                  '📅 今年度の有給統計',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
@@ -106,7 +114,10 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '使用日数',
+                              // N66：付与年度の開始日を出す（暦年に戻したときは「使用日数」だけ）
+                              _fiscalYear == null || _fiscalYear!.isCalendarYear
+                                  ? '使用日数'
+                                  : '使用日数（${_fiscalYear!.start.month}/${_fiscalYear!.start.day}〜）',
                               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                             ),
                             Text(
@@ -147,20 +158,23 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                                 color: AppColors.vacationRemainingText,
                               ),
                             ),
-                            // N65：内訳は割り当て結果から作る（有効な付与 − 有効な付与から使った分 ＝ 残日数）
-                            if (_balance != null && _balance!.totalGranted > 0)
-                              Text(
-                                '(内訳: 有効な付与 ${_balance!.totalGranted.toStringAsFixed(1)}日'
-                                '${_carriedOverPart(_balance!) > 0 ? '〈うち持ち越し ${_carriedOverPart(_balance!).toStringAsFixed(1)}日〉' : ''}'
-                                ' − 使用 ${_balance!.totalUsed.toStringAsFixed(1)}日)',
-                                style: TextStyle(fontSize: 10, color: AppColors.textMuted),
-                              ),
                           ],
                         ),
                       ),
                     ),
                   ],
                 ),
+                // N65：内訳は割り当て結果から作る（有効な付与 − 有効な付与から使った分 ＝ 残日数）
+                // N66：2 つの枠の下に、横いっぱいの 1 行で出す
+                if (_balance != null && _balance!.totalGranted > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '(内訳: 有効な付与 ${_balance!.totalGranted.toStringAsFixed(1)}日'
+                    '${_carriedOverPart(_balance!) > 0 ? '〈うち持ち越し ${_carriedOverPart(_balance!).toStringAsFixed(1)}日〉' : ''}'
+                    ' − 使用 ${_balance!.totalUsed.toStringAsFixed(1)}日)',
+                    style: TextStyle(fontSize: 10, color: AppColors.textMuted),
+                  ),
+                ],
               ],
             ),
           ),

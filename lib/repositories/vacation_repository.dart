@@ -248,6 +248,41 @@ class VacationRepository {
     return result.map((map) => VacationUsage.fromMap(map)).toList();
   }
 
+  /// いまの付与年度（N66）。初回付与日がないか、まだ初回の付与が来ていなければ暦年（1/1〜12/31）
+  Future<FiscalYear> getCurrentFiscalYear(String userId) async {
+    final now = DateTime.now();
+    final firstAccrualDate = await getFirstAccrualDate(userId);
+    final fiscalYear =
+        firstAccrualDate == null ? null : fiscalYearOn(firstAccrualDate, now);
+    return fiscalYear ??
+        FiscalYear(
+          start: DateTime(now.year, 1, 1),
+          end: DateTime(now.year, 12, 31),
+          isCalendarYear: true,
+        );
+  }
+
+  /// 付与年度の有給使用（新しい順）（N66）。今日より後の使用（予定）も入れる
+  /// N64 と同じく「開始日の 'YYYY-MM-DD' 以上、終了日の翌日の 'YYYY-MM-DD' 未満」で比べる（Z があってもなくても当たる）
+  Future<List<VacationUsage>> getVacationUsageInFiscalYear(
+    String userId,
+    FiscalYear fiscalYear,
+  ) async {
+    final db = await _dbHelper.database;
+    final end = fiscalYear.end;
+    final startString = fiscalYear.start.toIso8601String().split('T')[0];
+    final nextDayString = DateTime(end.year, end.month, end.day + 1).toIso8601String().split('T')[0];
+
+    final result = await db.query(
+      'vacation_usage',
+      where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
+      whereArgs: [userId, startString, nextDayString],
+      orderBy: 'usage_date DESC',
+    );
+
+    return result.map((map) => VacationUsage.fromMap(map)).toList();
+  }
+
   /// ========== 今年の使用日数合計を計算 ==========
   /// ✅ 【修正版：ステップ1～3のデバッグログ付き】
   Future<double> getTotalDaysUsedThisYear(String userId) async {
@@ -882,6 +917,33 @@ class VacationRepository {
     return (date: accrualDateForYear(first, i), days: days);
   }
 
+  /// today を含む付与年度（N66）：今日以前でいちばん新しい付与日 〜 次の付与日の前日
+  /// 今日が初回付与日より前なら null。日付は年・月・日だけで比べる
+  static FiscalYear? fiscalYearOn(DateTime firstAccrualDate, DateTime today) {
+    final todayDate = DateTime(today.year, today.month, today.day);
+    DateTime? start;
+    for (int i = 0; i < 100; i++) {  // 万一のための上限
+      final date = accrualDateForYear(firstAccrualDate, i);
+      if (date.isAfter(todayDate)) {
+        if (start == null) return null;
+        return FiscalYear(
+          start: start,
+          end: DateTime(date.year, date.month, date.day - 1),
+        );
+      }
+      start = date;
+    }
+    return null;
+  }
+
+  /// 付与年度に入る使用の合計（N66）。今日より後の使用（予定）も足す
+  /// 使用日は年・月・日のまま比べる（toLocal() は通さない。Z つきの行も同じ日になる）
+  static double usedDaysInFiscalYear(List<VacationUsage> usages, FiscalYear fiscalYear) {
+    return usages
+        .where((u) => fiscalYear.contains(u.usageDate))
+        .fold(0.0, (sum, u) => sum + u.daysUsed);
+  }
+
   /// 最初の付与日から、今日までに来た付与の一覧（古い順）（N61・N62）
   static List<({DateTime date, int days})> accrualsUntilToday(DateTime firstAccrualDate) {
     final now = DateTime.now();
@@ -1053,6 +1115,25 @@ class VacationRepository {
       'isExpired': a.isExpired,
       'daysUntilExpiry': accrual.expiryDate.difference(now).inDays,
     };
+  }
+}
+
+/// 付与年度（N66）。start〜end はどちらもその日を含む（年・月・日だけ）
+class FiscalYear {
+  final DateTime start;
+  final DateTime end;
+  final bool isCalendarYear;  // 付与年度が求まらず、暦年（1/1〜12/31）にしたとき true
+
+  const FiscalYear({
+    required this.start,
+    required this.end,
+    this.isCalendarYear = false,
+  });
+
+  /// その日が付与年度に入るか（年・月・日だけで比べる。toLocal() は通さない）
+  bool contains(DateTime day) {
+    final date = DateTime(day.year, day.month, day.day);
+    return !date.isBefore(start) && !date.isAfter(end);
   }
 }
 

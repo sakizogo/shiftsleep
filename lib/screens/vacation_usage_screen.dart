@@ -48,11 +48,11 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       final remaining = await _repository.calculateRemainingDays(widget.userId);
       final summary = await _repository.getAccrualSummary(widget.userId);
       
-      final now = DateTime.now();
-      final usageList = await _repository.getVacationUsageInRange(
+      // N66：一覧は付与年度（今日より後の予定も含む）。求まらなければ暦年
+      final fiscalYear = await _repository.getCurrentFiscalYear(widget.userId);
+      final usageList = await _repository.getVacationUsageInFiscalYear(
         widget.userId,
-        DateTime(now.year, 1, 1),
-        now,
+        fiscalYear,
       );
 
       setState(() {
@@ -194,53 +194,63 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                     const SizedBox(height: 16),
                     
                     // メインの残日数表示
+                    // N66：ラベルが長くなったので、各列を Expanded にして折り返せるようにする（横にはみ出さない）
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('累計付与日数',
-                                style: TextStyle(color: Colors.grey)),
-                            Text(
-                              '${_summary?.totalGranted ?? 0}日',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('有効な付与日数（持ち越し含む）',
+                                  style: TextStyle(color: Colors.grey)),
+                              Text(
+                                '${_summary?.totalGranted ?? 0}日',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('累計使用日数',
-                                style: TextStyle(color: Colors.grey)),
-                            Text(
-                              '${_summary?.totalUsed.toStringAsFixed(1) ?? '0'}日',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('うち使用（予定含む）',
+                                  style: TextStyle(color: Colors.grey)),
+                              Text(
+                                '${_summary?.totalUsed.toStringAsFixed(1) ?? '0'}日',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.red,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('残日数',
-                                style: TextStyle(color: Colors.grey)),
-                            Text(
-                              '${_totalRemainingDays.toStringAsFixed(1)}日',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('残日数',
+                                  style: TextStyle(color: Colors.grey)),
+                              Text(
+                                '${_totalRemainingDays.toStringAsFixed(1)}日',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -472,6 +482,10 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                     itemCount: _usageList.length,
                     itemBuilder: (context, index) {
                       final usage = _usageList[index];
+                      // N66：今日より後の使用は「予定」。色だけでなく文字でも分かるようにする
+                      final now = DateTime.now();
+                      final isPlanned = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day)
+                          .isAfter(DateTime(now.year, now.month, now.day));
                       return Card(
                         elevation: 1,
                         margin: const EdgeInsets.only(bottom: 12),
@@ -493,17 +507,40 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                               ),
                             ),
                           ),
-                          title: Text(
-                            DateFormat('M月d日(E)', 'ja_JP')
-                                .format(usage.usageDate),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          title: Row(
+                            children: [
+                              Text(
+                                DateFormat('M月d日(E)', 'ja_JP')
+                                    .format(usage.usageDate),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              if (isPlanned) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade600),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '予定',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 4),
                               Text(
-                                '${usage.daysUsed.toStringAsFixed(1)}日使用',
+                                isPlanned
+                                    ? '${usage.daysUsed.toStringAsFixed(1)}日使用（予定）'
+                                    : '${usage.daysUsed.toStringAsFixed(1)}日使用',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey,
