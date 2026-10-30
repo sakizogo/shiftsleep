@@ -242,31 +242,49 @@ Future<void> _generateAccrualSchedule() async {
     }
     // ===============================================================================
 
-    await _repository.saveVacationSettings(
-      widget.userId,
-      _selectedHiredDate!,
-      annualDays,
-    );
+    // N82：入社日がなければ保存しない（_selectedHiredDate! の例外を防ぐ）
+    final hiredDate = _selectedHiredDate;
+    if (hiredDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 入社日を選択してください')),
+      );
+      return;
+    }
 
-    // ========== Week 13 追加: 持ち越し有休数を DB に保存 ==========
-        // ========== Week 13 追加: 持ち越し有休数を DB に保存 ==========
-    await _repository.saveCarriedOverDays(widget.userId, carriedOverDays);
-    // ===============================================================================
-
-    // ========== Week 16 追加: 初回付与日を DB に保存 ==========
+    // N82：初回付与日は保存の前に変換する（「2026年10月1日」形式。未入力なら保存しない）
+    DateTime? firstAccrualDate;
     if (_firstAccrualDateController.text.isNotEmpty) {
       try {
-        final firstAccrualDateStr = _firstAccrualDateController.text;
-        // 「2026年10月1日」形式から DateTime に変換
-        final format = DateFormat('yyyy年M月d日');
-        final firstAccrualDate = format.parse(firstAccrualDateStr);
-        
-        await _repository.saveFirstAccrualDate(widget.userId, firstAccrualDate);
+        firstAccrualDate = DateFormat('yyyy年M月d日').parse(_firstAccrualDateController.text);
       } catch (e) {
-        print('❌ Error parsing first accrual date: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('⚠️ 初回付与日を選び直してください')),
+        );
+        return;
       }
     }
-    // ===============================================================================
+
+    // N82：どれかが失敗したら成功を出さない。失敗したときは入力をそのまま残す
+    // N84：持ち越しの基準日は DB の初回付与日から決まるので、初回付与日を先に保存する
+    try {
+      await _repository.saveVacationSettings(
+        widget.userId,
+        hiredDate,
+        annualDays,
+      );
+      if (firstAccrualDate != null) {
+        await _repository.saveFirstAccrualDate(widget.userId, firstAccrualDate);
+      }
+      await _repository.saveCarriedOverDays(widget.userId, carriedOverDays);
+    } catch (e) {
+      debugPrint('❌ N82: 有給設定の保存に失敗: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ 有給設定の保存に失敗しました: $e')),
+        );
+      }
+      return;
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

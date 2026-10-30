@@ -530,6 +530,7 @@ class VacationRepository {
       }
     } catch (e) {
       print('❌ Error saving carried over days: $e');
+      rethrow;  // N82：画面で失敗を知らせる
     }
   }
 
@@ -587,6 +588,7 @@ class VacationRepository {
       }
     } catch (e) {
       print('❌ Error saving first accrual date: $e');
+      rethrow;  // N82：画面で失敗を知らせる
     }
   }
 
