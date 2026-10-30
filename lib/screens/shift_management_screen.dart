@@ -1,5 +1,4 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
@@ -1068,60 +1067,6 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       _selectedDay = now;
     });
   }
-        void _showDeleteShiftDialog(DateTime selectedDay, ShiftData shiftData) {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('${selectedDay.month}月${selectedDay.day}日'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('登録内容: ${shiftData.pattern?.patternName ?? "不明"}'),
-                    const SizedBox(height: 8),
-                    const Text('このシフトを削除しますか？'),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('キャンセル'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-
-                      final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
-                      setState(() {
-                        _shiftMap.remove(dateKey);
-                      });
-
-                      if (shiftData.pattern?.patternType == ShiftType.vacation ||
-                          shiftData.pattern?.patternType == ShiftType.halfVacation) {
-                        _vacationRepository.deleteVacationUsageByDate(
-                          'test_user',
-                          selectedDay,
-                        );
-                      }
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('✅ シフトを削除しました'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    },
-                    child: const Text(
-                      '削除',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        }
 
   Map<String, dynamic> _getDeleteTargetsForDate(DateTime date) {
     final normalizedDate = DateTime(date.year, date.month, date.day);
