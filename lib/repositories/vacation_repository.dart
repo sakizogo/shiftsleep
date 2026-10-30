@@ -150,26 +150,26 @@ class VacationRepository {
     );
   }
 
-  /// 🌟 失効予定の付与（残り30日以内）を取得
-  Future<List<VacationAccrual>> getExpiringAccruals(
-    String userId, {
+  /// 失効の警告に使う失効日を選ぶ（N89）
+  /// 残りがある（0.5 日でも）付与のうち、失効日が today〜today+daysThreshold 日のいちばん早いもの。なければ null
+  /// 日付は年・月・日だけで比べる（失効日の当日は入る・翌日からは入らない）
+  static DateTime? expiryDateForWarning(
+    Iterable<AccrualBalance> accruals,
+    DateTime today, {
     int daysThreshold = 30,
-  }) async {
-    final db = await _dbHelper.database;
-    final now = DateTime.now();
-    final thirtyDaysLater = now.add(Duration(days: daysThreshold));
+  }) {
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final lastDate = DateTime(today.year, today.month, today.day + daysThreshold);
 
-    // N70：BETWEEN をやめ、今日の日付以上・30 日後の翌日の日付未満で比べる（30 日後の日も丸ごと入る）
-    final range = dayRangeForSql(now, thirtyDaysLater);
-    final result = await db.query(
-      'vacation_accruals',
-      where: 'user_id = ? AND expiry_date >= ? AND expiry_date < ?',
-      whereArgs: [userId, range.start, range.endExclusive],
-      orderBy: 'expiry_date ASC',
-    );
-    debugPrint('⏰ N70: 失効予定の付与 expiry_date ${range.start} 以上 ${range.endExclusive} 未満 → ${result.length} 件');
-
-    return result.map((map) => VacationAccrual.fromMap(map)).toList();
+    DateTime? earliest;
+    for (final a in accruals) {
+      if (a.remainingDays <= 0) continue;
+      final expiry = a.accrual.expiryDate;
+      final expiryDate = DateTime(expiry.year, expiry.month, expiry.day);
+      if (expiryDate.isBefore(todayDate) || expiryDate.isAfter(lastDate)) continue;
+      if (earliest == null || expiry.isBefore(earliest)) earliest = expiry;
+    }
+    return earliest;
   }
 
   /// ========== 有給使用管理 ==========
@@ -363,15 +363,15 @@ class VacationRepository {
     if (balance.accruals.isEmpty) return null;
 
     _printBalance(balance);
-    final expiringAccruals = await getExpiringAccruals(userId);
+    // N89：使い切った付与は警告に出さない（残りは allocateUsage の割り当て結果）
+    final nextExpiryDate = expiryDateForWarning(balance.validAccruals, DateTime.now());
+    debugPrint('⏰ N89: 失効の警告に使う失効日 → ${nextExpiryDate?.toIso8601String() ?? 'なし'}');
 
     return VacationSummary(
       totalGranted: balance.totalGranted,
       totalUsed: balance.totalUsed,
       totalRemaining: balance.totalRemaining,
-      nextExpiryDate: expiringAccruals.isNotEmpty
-          ? expiringAccruals.first.expiryDate
-          : null,
+      nextExpiryDate: nextExpiryDate,
     );
   }
 
@@ -872,14 +872,21 @@ class VacationSummary {
   /// 失効予定がある場合、警告メッセージを生成
   String? get expiryWarningMessage {
     if (nextExpiryDate == null) return null;
+    return expiryWarningMessageFor(nextExpiryDate!, DateTime.now());
+  }
 
-    final accrual = nextExpiryDate!;
-    final days = accrual.difference(DateTime.now()).inDays;
+  /// 失効日と today から警告の文言を作る（N90）
+  /// 日数は年・月・日だけで数える（失効日は最後に使える日の 23:59:59.999 なので、時刻込みだと当日が 0 になる）
+  /// 当日：最後の日、1〜30 日前：消滅の予告、それ以外（失効した翌日以降・31 日以上先）：null
+  static String? expiryWarningMessageFor(DateTime expiryDate, DateTime today) {
+    final expiryDay = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final days = expiryDay.difference(todayDate).inDays;
 
-    if (days <= 0) {
-      return '⚠️ 有給が本日失効しました！';
-    } else if (days <= 30) {
-      final monthStr = '${accrual.month}月${accrual.day}日';
+    if (days == 0) {
+      return '⚠️ 本日が有給を使える最後の日です';
+    } else if (days >= 1 && days <= 30) {
+      final monthStr = '${expiryDate.month}月${expiryDate.day}日';
       return '⚠️ $monthStr までに使わないと有給が消滅してしまいます。計画的に使いましょう！';
     }
 
