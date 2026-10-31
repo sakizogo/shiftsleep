@@ -193,21 +193,37 @@ Future<void> _generateAccrualSchedule() async {
     if (confirmed != true) return;
 
     // autoGenerateAccruals() を呼び出して DB に保存
-    await _repository.autoGenerateAccruals(
-      widget.userId,
-      _selectedHiredDate!,
-      firstAccrualDate,
-    );
-
-    if (mounted) {
+    // N91：作った件数で文言を分ける。失敗しても途中まで作られていることがあるので、どの場合も画面を DB に合わせる
+    final int createdCount;
+    try {
+      createdCount = await _repository.autoGenerateAccruals(
+        widget.userId,
+        _selectedHiredDate!,
+        firstAccrualDate,
+      );
+    } catch (e) {
+      debugPrint('❌ N91: 付与の自動生成に失敗: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ 付与スケジュールを自動生成しました'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text('❌ 付与の自動生成に失敗しました: $e\nもう一度押すと残りを作ります'),
+          duration: const Duration(seconds: 4),
         ),
       );
       _loadSettings();
+      return;
     }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(createdCount > 0
+            ? '✅ 付与を $createdCount 件作りました'
+            : 'ℹ️ 付与はすべて登録済みです'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    _loadSettings();
   } catch (e) {
     print('❌ Error generating accruals: $e');
     if (mounted) {

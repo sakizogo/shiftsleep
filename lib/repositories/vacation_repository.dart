@@ -788,6 +788,8 @@ class VacationRepository {
       print('✅ autoGenerateAccruals() 完了');
     } catch (e) {
       print('❌ Error auto-generating accruals: $e');
+      // N91：失敗を呼んだ側に伝える（途中まで作った分は残る。同じ日付はスキップするので再実行で埋まる）
+      rethrow;
     }
     return createdCount;
   }

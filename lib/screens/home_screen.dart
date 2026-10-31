@@ -85,7 +85,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _shiftManagementKey = GlobalKey<ShiftManagementScreenState>();
 
     // N62：今日までに来た付与を自動生成（await しない）
-    VacationRepository().autoGenerateAccrualsFromSettings('test_user');
+    // N91：失敗はログだけ。ホームでは何も表示しない
+    VacationRepository().autoGenerateAccrualsFromSettings('test_user').catchError((e) {
+      debugPrint('❌ N91: 起動時の付与の自動生成に失敗: $e');
+      return 0;
+    });
   }
 
   @override
@@ -101,7 +105,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _handlePendingAlarmStop();
 
       // N62：起動したまま付与日をまたいだときも、付与を自動生成（await しない）
-      VacationRepository().autoGenerateAccrualsFromSettings('test_user');
+      // N91：失敗はログだけ。ホームでは何も表示しない
+      VacationRepository().autoGenerateAccrualsFromSettings('test_user').catchError((e) {
+        debugPrint('❌ N91: 再開時の付与の自動生成に失敗: $e');
+        return 0;
+      });
     }
   }
 
