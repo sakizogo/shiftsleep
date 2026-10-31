@@ -465,7 +465,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   SnackBar(
                     content: Text(
                       '✅ ${_selectedPattern!.patternName}を登録しました'
-                      '${replacedWork ? '\n「シフト保存」を押すと出勤前アラームが取り消されます' : ''}',
+                      '${replacedWork ? '\n「シフトを確定」を押すと出勤前アラームが取り消されます' : ''}',
                     ),
                     duration: const Duration(seconds: 2),
                   ),
@@ -900,7 +900,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ),
             ),
             child: Text(
-              '保存',
+              'シフト保存',
               style: AppTextStyles.bodyTextStyle.copyWith(
                 color: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
                     ? Colors.white
@@ -946,9 +946,31 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
       DateTime current = _rangeStartDate!;
       var vacationChanged = false;
+      // N100：有休で置き換えた今日以降の出勤の日数（保存で出勤前アラームが取り消されるので案内する）
+      // 半休はシフトと共存させるので置き換えず、数えない
+      final isFullVacation = _selectedPattern!.patternType == ShiftType.vacation;
+      final isHalfVacation = _selectedPattern!.patternType == ShiftType.halfVacation;
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      var replacedWorkDays = 0;
       while (!current.isAfter(_rangeEndDate!)) {
         final normalized = DateTime(current.year, current.month, current.day);
-        _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
+        if (isFullVacation &&
+            !normalized.isBefore(today) &&
+            _shiftMap[normalized]?.pattern?.patternType == ShiftType.work) {
+          replacedWorkDays++;
+        }
+        if (isHalfVacation) {
+          // N100（B 案）：半休は出勤・休日などと共存させる（タップの半休と同じ）
+          // 有休パターンの日だけ、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
+          if (_shiftMap[normalized]?.pattern?.patternType == ShiftType.vacation) {
+            await _shiftRepository.deleteShift(normalized);
+            _shiftMap.remove(normalized);
+            await AlarmService.cancelPreAlarm(normalized);
+          }
+        } else {
+          _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
+        }
 
         if (_selectedPattern!.patternType == ShiftType.vacation) {
           await _vacationRepository.recordVacationUsage(
@@ -977,11 +999,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       setState(() {
         if (vacationChanged) _vacationStatsVersion++;
       });
+      final rangeDays = _rangeEndDate!.difference(_rangeStartDate!).inDays + 1;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${_rangeEndDate!.difference(_rangeStartDate!).inDays + 1}日追加'),
+          content: Text(
+            '${isHalfVacation ? '半休 $rangeDays日を登録しました' : '$rangeDays日追加'}'
+            '${replacedWorkDays > 0 ? '\n出勤 $replacedWorkDays日を${_selectedPattern!.patternName}にしました。「シフトを確定」を押すと、その日の出勤前アラームが取り消されます' : ''}',
+          ),
           backgroundColor: AppColors.primaryGradientStart,
-          duration: const Duration(seconds: 2),
+          duration: Duration(seconds: replacedWorkDays > 0 ? 4 : 2),
         ),
       );
     }
