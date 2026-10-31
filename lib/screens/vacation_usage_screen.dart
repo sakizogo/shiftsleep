@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
+import 'package:shiftsleep/services/alarm_service.dart';
 
 class VacationUsageScreen extends StatefulWidget {
   final String userId;
@@ -17,6 +20,7 @@ class VacationUsageScreen extends StatefulWidget {
 
 class _VacationUsageScreenState extends State<VacationUsageScreen> {
   late VacationRepository _repository;
+  final ShiftRepository _shiftRepository = ShiftRepository();  // N101
   late TextEditingController _reasonController;
 
   DateTime? _selectedUsageDate;
@@ -102,12 +106,34 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       return;
     }
 
-    await _repository.recordVacationUsage(
-      widget.userId,
-      _selectedUsageDate!,
-      _selectedDaysUsed!,  // ボタンで選択した 1.0 or 0.5 を使う
-      _reasonController.text.isEmpty ? null : _reasonController.text,
-    );
+    final usageDate = _selectedUsageDate!;
+    final day = DateTime(usageDate.year, usageDate.month, usageDate.day);
+    final daysUsed = _selectedDaysUsed!;  // ボタンで選択した 1.0 or 0.5 を使う
+
+    try {
+      // N101：有休パターンの日に半休を入れたら、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
+      // 出勤・休日などは残す（N77 の共存）。1.0 はシフトに触らない
+      if (daysUsed == 0.5 && await _shiftTypeOn(day) == ShiftType.vacation) {
+        await _shiftRepository.deleteShift(day);
+        await AlarmService.cancelPreAlarm(day);
+      }
+      await _repository.recordVacationUsage(
+        widget.userId,
+        usageDate,
+        daysUsed,
+        _reasonController.text.isEmpty ? null : _reasonController.text,
+      );
+    } catch (e) {
+      debugPrint('Error recording vacation usage: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ 有給使用の記録に失敗しました: $e')),
+      );
+      // シフトだけ消えて行が入らなかった場合もあるので、画面を DB に合わせる
+      _loadData();
+      return;
+    }
+    if (!mounted) return;
 
     setState(() {
       _reasonController.clear();
@@ -116,16 +142,24 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       _showAddForm = false;
     });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ 有給使用を記録しました')),
-      );
-      _loadData();
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('✅ 有給使用を記録しました')),
+    );
+    _loadData();
+  }
+
+  /// N101：その日のシフトのパターンの種類（シフトがない・読めないときは null ＝シフトなし扱い）
+  Future<ShiftType?> _shiftTypeOn(DateTime day) async {
+    final shifts = await _shiftRepository.getShiftsForDateRange(day, day);
+    if (shifts.isEmpty) return null;
+    final patternId = shifts.first['pattern_id'] as String?;
+    if (patternId == null) return null;
+    final pattern = await _shiftRepository.getPatternById(patternId);
+    return pattern?.patternType;
   }
 
   // 使用履歴を削除
-  Future<void> _deleteVacationUsage(String usageId) async {
+  Future<void> _deleteVacationUsage(VacationUsage usage) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -144,15 +178,36 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       ),
     );
 
-    if (confirmed == true) {
-      await _repository.deleteVacationUsage(usageId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ 使用履歴を削除しました')),
-        );
-        _loadData();
+    if (confirmed != true) return;
+
+    // 年・月・日の数字をそのまま使う（Z つきの行も toLocal() は通さない）
+    final day = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
+    try {
+      // N101：有休パターン＋1.0／半休パターン＋0.5 の日は、N98 と同じくシフトも一緒に消す
+      // シフトを先に消す（行の削除で失敗しても 🏖️／🌤️ の行だけ残る状態になるように）
+      final shiftType = await _shiftTypeOn(day);
+      final removeShift = (usage.daysUsed == 1.0 && shiftType == ShiftType.vacation) ||
+          (usage.daysUsed == 0.5 && shiftType == ShiftType.halfVacation);
+      if (removeShift) {
+        await _shiftRepository.deleteShift(day);
+        await AlarmService.cancelPreAlarm(day);
       }
+      await _repository.deleteVacationUsage(usage.id);
+    } catch (e) {
+      debugPrint('Error deleting vacation usage: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ 削除に失敗しました: $e')),
+      );
+      // シフトだけ消えて行が残った場合もあるので、画面を DB に合わせる
+      _loadData();
+      return;
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('✅ 使用履歴を削除しました')),
+    );
+    _loadData();
   }
 
   @override
@@ -563,7 +618,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                             icon: const Icon(Icons.delete_outline,
                                 color: Colors.red),
                             onPressed: () =>
-                                _deleteVacationUsage(usage.id),
+                                _deleteVacationUsage(usage),
                           ),
                         ),
                       );
