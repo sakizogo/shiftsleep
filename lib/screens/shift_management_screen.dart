@@ -393,12 +393,37 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               final selectedDate = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
               if (_selectedPattern?.patternType == ShiftType.halfVacation) {
-                await _vacationRepository.recordVacationUsage(
-                  'test_user',
-                  selectedDay,
-                  0.5,
-                  'カレンダーから登録（半休）',
-                );
+                // N99：有休パターンの日に半休を入れたら、有休パターンを外す（シフトなし＋半休にする）
+                // 出勤・休日などは今までどおり残す（N77 の共存）
+                final removeVacationShift =
+                    _shiftMap[selectedDate]?.pattern?.patternType == ShiftType.vacation;
+                var vacationShiftRemoved = false;
+                try {
+                  if (removeVacationShift) {
+                    // 保存前に開き直しても有休パターンが戻らないよう、DB からもすぐ消す（N98 の長押し削除と同じ）
+                    await _shiftRepository.deleteShift(selectedDate);
+                    _shiftMap.remove(selectedDate);
+                    vacationShiftRemoved = true;
+                    // N78 で出勤を有休に置き換えて未保存なら、出勤前アラームが残っているので取り消す
+                    await AlarmService.cancelPreAlarm(selectedDate);
+                  }
+                  await _vacationRepository.recordVacationUsage(
+                    'test_user',
+                    selectedDay,
+                    0.5,
+                    'カレンダーから登録（半休）',
+                  );
+                } catch (e) {
+                  debugPrint('Error recording half vacation: $e');
+                  if (!mounted) return;
+                  // 有休パターンを外せたあとで失敗したときは、外した分だけ画面に出す
+                  if (vacationShiftRemoved) setState(() {});
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('❌ 半休の登録に失敗しました: $e')),
+                  );
+                  return;
+                }
+                if (!mounted) return;
                 setState(() {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
