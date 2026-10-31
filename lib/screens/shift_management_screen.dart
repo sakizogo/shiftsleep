@@ -987,21 +987,37 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     }
   }
   
+  /// N95・N96：有休・半休の行はすぐ消し、シフトの DB 行は保存まで残す
+  /// 有休の削除に失敗したら、_shiftMap・_vacationMap は残して失敗を知らせる
   Future<void> _deleteShiftEntry(DateTime dateKey) async {
     final shiftData = _shiftMap[dateKey];
-    
-    _shiftMap.remove(dateKey);
-    
-    if (shiftData?.pattern?.patternType == ShiftType.vacation ||
-        shiftData?.pattern?.patternType == ShiftType.halfVacation) {
-      await _vacationRepository.deleteVacationUsageByDate(
-        'test_user',
-        dateKey,
+    var vacationDeleted = false;
+
+    try {
+      if (shiftData?.pattern?.patternType == ShiftType.vacation ||
+          shiftData?.pattern?.patternType == ShiftType.halfVacation) {
+        await _vacationRepository.deleteVacationUsageByDate(
+          'test_user',
+          dateKey,
+        );
+        _vacationMap.remove(dateKey);
+        vacationDeleted = true;
+        print('[ShiftManagementScreen] ✅ 有休・半休をキャンセル: ${dateKey.month}月${dateKey.day}日');
+      }
+    } catch (e) {
+      debugPrint('Error deleting shift entry: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ 削除に失敗しました: $e')),
       );
-      print('[ShiftManagementScreen] ✅ 有休・半休をキャンセル: ${dateKey.month}月${dateKey.day}日');
+      return;
     }
-    
-    setState(() {});
+    if (!mounted) return;
+
+    setState(() {
+      _shiftMap.remove(dateKey);
+      if (vacationDeleted) _vacationStatsVersion++;
+    });
   }
 
   Future<void> loadShifts() async {
@@ -1191,7 +1207,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Future<bool> _deleteSelectedItems(DateTime date, Set<String> selectedItems) async {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     const userId = 'test_user';
-    
+    var vacationDeleted = false;  // N95：有休の行を消せたら統計を読み直す（途中で失敗しても）
+
     try {
       if (selectedItems.contains('shift') && _shiftMap.containsKey(normalizedDate)) {
         await _shiftRepository.deleteShift(normalizedDate);
@@ -1204,6 +1221,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           _vacationMap.containsKey(normalizedDate)) {
         await _vacationRepository.deleteVacationUsageByDate(userId, normalizedDate);
         _vacationMap.remove(normalizedDate);
+        vacationDeleted = true;
       }
       
       if (selectedItems.contains('event')) {
@@ -1214,7 +1232,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         });
       }
 
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          if (vacationDeleted) _vacationStatsVersion++;
+        });
+      }
       return true;
     } catch (e) {
       debugPrint('Error deleting items: $e');
@@ -1223,7 +1245,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           SnackBar(content: Text('削除に失敗しました: $e')),
         );
       }
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {
+          if (vacationDeleted) _vacationStatsVersion++;
+        });
+      }
       return false;
     }
   }
