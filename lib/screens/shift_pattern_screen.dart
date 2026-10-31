@@ -666,7 +666,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
 
     // 次の colorIndex を計算（1～5 をループ）
-    // colorIndex=0 は削除対象なので避ける
+    // 0 番の色は休日と同じなので避ける（N103 で削除処理はなくした）
     int nextColorIndex = (maxColorIndex + 1) % 6;
     if (nextColorIndex == 0) {
       nextColorIndex = 1;  // 0 は避けて 1 にする

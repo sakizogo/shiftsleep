@@ -133,24 +133,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadPatterns() async {
 
     try {
+      // N103：colorIndex 0 のパターンを消す処理はなくした（使っていたシフトが休日になるため）
       final patterns = await _shiftRepository.getAllPatterns();
-    
-      // ========== 古いパターン（colorIndex=0）を削除 ==========
-      for (final pattern in patterns) {
-        if (pattern.colorIndex == 0) {
-          await _shiftRepository.deletePattern(pattern.id);
-          print('🗑️  古いパターンを削除: ${pattern.patternName}');
-        }
-      }
-    
-      // 削除後に再度ロード
-      final updatedPatterns = await _shiftRepository.getAllPatterns();
-      // ====================================================
-    
       setState(() {
-        _patterns = updatedPatterns;
+        _patterns = patterns;
       });
-      print('Loaded ${updatedPatterns.length} patterns from DB');
+      print('Loaded ${patterns.length} patterns from DB');
     } catch (e) {
       print('Error loading patterns: $e');
     }
