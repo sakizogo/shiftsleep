@@ -1084,11 +1084,21 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     });
   }
 
+  /// N98：シフトが有休の行と対になっている日か（有休パターン＋1.0、半休パターン＋0.5）
+  /// この日は削除ダイアログで有休・半休の 1 行だけにし、消すときはシフトも一緒に消す
+  bool _isPairedVacationShift(DateTime normalizedDate) {
+    final patternType = _shiftMap[normalizedDate]?.pattern?.patternType;
+    final daysUsed = _vacationMap[normalizedDate];
+    return (patternType == ShiftType.vacation && daysUsed == 1.0) ||
+        (patternType == ShiftType.halfVacation && daysUsed == 0.5);
+  }
+
   Map<String, dynamic> _getDeleteTargetsForDate(DateTime date) {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final targets = <String, dynamic>{};
-    
-    if (_shiftMap.containsKey(normalizedDate)) {
+
+    // N98：有休・半休と対になったシフトは、有休・半休の行にまとめる
+    if (_shiftMap.containsKey(normalizedDate) && !_isPairedVacationShift(normalizedDate)) {
       final shiftData = _shiftMap[normalizedDate]!;
       final patternName = shiftData.pattern?.patternName ?? '?';
       targets['shift'] = 'シフト：$patternName';
@@ -1209,16 +1219,24 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     const userId = 'test_user';
     var vacationDeleted = false;  // N95：有休の行を消せたら統計を読み直す（途中で失敗しても）
 
+    final deleteVacation =
+        (selectedItems.contains('vacation_full') || selectedItems.contains('vacation_half')) &&
+            _vacationMap.containsKey(normalizedDate);
+    // N98：有休・半休と対になったシフトは、有休・半休と一緒に消す（'shift' と両方選ばれても 1 回だけ）
+    final deleteShift = _shiftMap.containsKey(normalizedDate) &&
+        (selectedItems.contains('shift') ||
+            (deleteVacation && _isPairedVacationShift(normalizedDate)));
+
     try {
-      if (selectedItems.contains('shift') && _shiftMap.containsKey(normalizedDate)) {
+      // N98：シフトを先に消す（有休の削除で失敗しても 🏖️／🌤️ だけ残る状態になるように）
+      if (deleteShift) {
         await _shiftRepository.deleteShift(normalizedDate);
         // ✅ H3: 削除した日の出勤前アラーム（pre）だけをキャンセル（起床アラーム main は残す）
         await AlarmService.cancelPreAlarm(normalizedDate);
         _shiftMap.remove(normalizedDate);
       }
-      
-      if ((selectedItems.contains('vacation_full') || selectedItems.contains('vacation_half')) &&
-          _vacationMap.containsKey(normalizedDate)) {
+
+      if (deleteVacation) {
         await _vacationRepository.deleteVacationUsageByDate(userId, normalizedDate);
         _vacationMap.remove(normalizedDate);
         vacationDeleted = true;
