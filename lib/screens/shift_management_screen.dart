@@ -808,7 +808,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                       child: child!,
                     ),
                   );
-                  if (picked != null) setState(() => _rangeStartDate = picked);
+                  if (picked == null) return;
+                  setState(() {
+                    _rangeStartDate = picked;
+                    // N102：終了日が新しい開始日より前なら、終了日を開始日に合わせる
+                    if (_rangeEndDate != null && DateUtils.dateOnly(_rangeEndDate!).isBefore(DateUtils.dateOnly(picked))) {
+                      _rangeEndDate = picked;
+                    }
+                  });
                 },
               ),
             ),
@@ -818,10 +825,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 label: '終了',
                 date: _rangeEndDate,
                 onTap: () async {
+                  // N102：開始日より前は選べなくする。initialDate は「開始日・終了日（未設定なら今日）の遅いほう」
+                  final endInitial = _rangeEndDate ?? DateTime.now();
+                  final initialDate = _rangeStartDate != null && endInitial.isBefore(_rangeStartDate!)
+                      ? _rangeStartDate!
+                      : endInitial;
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: CalendarRange.clamp(_rangeEndDate ?? DateTime.now()),  // N67
-                    firstDate: CalendarRange.firstDate,
+                    initialDate: CalendarRange.clamp(initialDate),  // N67
+                    firstDate: _rangeStartDate ?? CalendarRange.firstDate,
                     lastDate: CalendarRange.lastDate,
                     builder: (context, child) => Theme(
                       data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: AppColors.primaryGradientStart)),
@@ -944,6 +956,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   Future<void> _applyRangeShift() async {
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
+      // N102：開始日 > 終了日なら止める（ピッカーでも選べないが念のため。日付だけで比べる）
+      if (DateUtils.dateOnly(_rangeStartDate!).isAfter(DateUtils.dateOnly(_rangeEndDate!))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ 終了日は開始日以降を選んでください'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
       DateTime current = _rangeStartDate!;
       var vacationChanged = false;
       // N100：有休で置き換えた今日以降の出勤の日数（保存で出勤前アラームが取り消されるので案内する）
