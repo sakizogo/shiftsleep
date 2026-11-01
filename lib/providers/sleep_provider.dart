@@ -456,22 +456,19 @@ class SleepProvider extends ChangeNotifier {
   }
 
   /// 睡眠記録を更新（修正機能用）
+  ///
+  /// N107：addManualSleepRecord と同じく _isLoading には触らない。
+  /// 失敗したら例外を投げ直す（呼んだ側で知らせる）
   Future<void> updateSleepRecord(SleepRecord record) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
-
       await _repository.updateSleepRecord(record);
-
-      // 更新後、データを再ロード
       await loadAllSleepData();
-
-      print('[SleepProvider] Record updated: ${record.id}');
+      debugPrint('[SleepProvider] ✅ N107: 睡眠記録を更新: ${record.id}');
     } catch (e) {
       _errorMessage = 'Failed to update sleep record: $e';
-      print('[SleepProvider] Error: $_errorMessage');
+      debugPrint('[SleepProvider] ❌ N107: 睡眠記録の更新に失敗: $e');
       notifyListeners();
+      rethrow;
     }
   }
 

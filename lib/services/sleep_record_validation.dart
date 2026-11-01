@@ -1,12 +1,13 @@
 import 'package:shiftsleep/models/sleep_record.dart';
 
-/// 睡眠を手で追加するときの日時の決め方と保存前のチェック（N106）
+/// 睡眠を手で追加・修正するときの日時の決め方と保存前のチェック（N106・N107）
 ///
 /// DB にも Flutter にも依存しない。今の時刻・既存の記録はすべて引数で受ける
 
 /// 保存を止める理由
 enum ManualSleepError {
   tooShort,  // 10 分以下
+  tooLong,   // 20 時間を超える（N107）
   future,    // 起床が今より後
   overlap,   // ほかの記録と重なる
 }
@@ -16,6 +17,8 @@ extension ManualSleepErrorMessage on ManualSleepError {
     switch (this) {
       case ManualSleepError.tooShort:
         return '⚠️ 10 分以下の睡眠は記録されません';
+      case ManualSleepError.tooLong:
+        return '⚠️ 20 時間を超える睡眠は記録できません';
       case ManualSleepError.future:
         return '⚠️ 未来の時刻は記録できません';
       case ManualSleepError.overlap:
@@ -30,6 +33,9 @@ class SleepRecordValidation {
 
   /// これ以下の睡眠は記録しない（N35 で数えない長さと同じ）
   static const Duration minDurationExclusive = Duration(minutes: 10);
+
+  /// これを超える睡眠は記録しない（N107。ちょうど 20:00 は記録できる）
+  static const Duration maxSleepDuration = Duration(hours: 20);
 
   /// 入眠日として選べる最も古い日（今日の 30 日前の 0:00）
   static DateTime earliestBedDate(DateTime now) {
@@ -111,7 +117,9 @@ class SleepRecordValidation {
   }
 
   /// 保存前のチェック。問題なければ null
-  /// 順番：10 分以下 → 未来 → 重なり
+  /// 順番：10 分以下 → 20 時間超 → 未来 → 重なり
+  ///
+  /// excludeRecordId：重なり判定から外す記録の ID（修正のときの自分自身。N107）
   static ManualSleepError? validate({
     required DateTime start,
     required DateTime end,
@@ -119,9 +127,15 @@ class SleepRecordValidation {
     required List<SleepRecord> existingRecords,
     String? sleepingRecordId,
     DateTime? sleepingStartTime,
+    String? excludeRecordId,
   }) {
     if (end.difference(start) <= minDurationExclusive) {
       return ManualSleepError.tooShort;
+    }
+
+    // 分単位で判定する
+    if (end.difference(start).inMinutes > maxSleepDuration.inMinutes) {
+      return ManualSleepError.tooLong;
     }
 
     if (end.isAfter(now)) {
@@ -130,6 +144,8 @@ class SleepRecordValidation {
 
     final range = (start: start, end: end);
     for (final record in existingRecords) {
+      if (excludeRecordId != null && record.id == excludeRecordId) continue;
+
       final occupied = occupiedRange(
         record,
         now: now,

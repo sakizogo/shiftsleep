@@ -466,6 +466,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   children: [
                                 // N106：記録があっても別の睡眠を追加できる
                                 _buildAddSleepButton('＋ 追加'),
+                                // N107：睡眠中は進行中の記録が開くことがあるので「修正」を出さない
+                                if (!sleepProvider.isSleepingNow) ...[
                                 const SizedBox(width: AppDimensions.paddingSmall),
                                 GestureDetector(
                                   onTap: () {
@@ -502,6 +504,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
                                 ),
+                                ],
                                   ],
                                 ),
                               ],

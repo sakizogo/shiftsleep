@@ -234,4 +234,71 @@ void main() {
       );
     });
   });
+
+  // N107：長すぎる睡眠の上限と、修正のときの自分自身の除外
+  group('20 時間の上限', () {
+    test('25. 20 時間ちょうどは通る', () {
+      final start = DateTime(2026, 10, 31, 15, 0);
+      expect(
+        SleepRecordValidation.validate(
+          start: start, end: start.add(const Duration(hours: 20)), now: now, existingRecords: const [],
+        ),
+        isNull,
+      );
+    });
+
+    test('26. 20 時間 1 分は tooLong', () {
+      final start = DateTime(2026, 10, 31, 15, 0);
+      expect(
+        SleepRecordValidation.validate(
+          start: start, end: start.add(const Duration(hours: 20, minutes: 1)), now: now, existingRecords: const [],
+        ),
+        ManualSleepError.tooLong,
+      );
+    });
+
+    test('27. 追加の 7:00 → 7:00（24 時間）は tooLong', () {
+      final t = SleepRecordValidation.resolveTimes(
+        bedDate: DateTime(2026, 10, 30),
+        bedHour: 7, bedMinute: 0, wakeHour: 7, wakeMinute: 0,
+      );
+      expect(
+        SleepRecordValidation.validate(start: t.start, end: t.end, now: now, existingRecords: const []),
+        ManualSleepError.tooLong,
+      );
+    });
+  });
+
+  group('修正のときの自分自身の除外', () {
+    // 修正する記録：10/31 23:00 → 11/1 7:00
+    final self = record('self', DateTime(2026, 10, 31, 23, 0), DateTime(2026, 11, 1, 7, 0));
+    // ほかの記録：11/1 8:00 → 11/1 9:00
+    final other = record('other', DateTime(2026, 11, 1, 8, 0), DateTime(2026, 11, 1, 9, 0));
+
+    test('28. excludeRecordId を渡すと自分自身とは重ならない', () {
+      expect(
+        SleepRecordValidation.validate(
+          start: DateTime(2026, 10, 31, 23, 30),
+          end: DateTime(2026, 11, 1, 7, 30),
+          now: now,
+          existingRecords: [self, other],
+          excludeRecordId: 'self',
+        ),
+        isNull,
+      );
+    });
+
+    test('29. excludeRecordId を渡しても、ほかの記録との重なりは overlap', () {
+      expect(
+        SleepRecordValidation.validate(
+          start: DateTime(2026, 10, 31, 23, 30),
+          end: DateTime(2026, 11, 1, 8, 30),
+          now: now,
+          existingRecords: [self, other],
+          excludeRecordId: 'self',
+        ),
+        ManualSleepError.overlap,
+      );
+    });
+  });
 }

@@ -66,14 +66,18 @@ class SleepRepository {
   }
 
   // Update a sleep record
+  // N107：対象の記録がなく 1 件も更新されなかったら例外を投げる
   Future<void> updateSleepRecord(SleepRecord record) async {
     final Database db = await _dbHelper.database;
-    await db.update(
+    final count = await db.update(
       'sleep_records',
       record.toJson(),
       where: 'id = ?',
       whereArgs: [record.id],
     );
+    if (count == 0) {
+      throw Exception('Sleep record not found: ${record.id}');
+    }
   }
 
   // Delete a sleep record
@@ -87,13 +91,14 @@ class SleepRepository {
   }
 
   // Get latest sleep record for a user
+  // N107：同じ日の記録は入眠時刻が遅いほうを選ぶ
   Future<SleepRecord?> getLatestSleepRecord(String userId) async {
     final Database db = await _dbHelper.database;
     final List<Map<String, dynamic>> result = await db.query(
       'sleep_records',
       where: 'user_id = ?',
       whereArgs: [userId],
-      orderBy: 'sleep_date DESC',
+      orderBy: 'sleep_date DESC, sleep_start_time DESC',
       limit: 1,
     );
 

@@ -29,7 +29,6 @@ class EditSleepRecordScreen extends StatefulWidget {
 class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   late DateTime _editedBedtime;
   late DateTime _editedWakeTime;
-  bool _hasChanges = false;
 
   // ========== N106: 追加モード ==========
   late DateTime _bedDate;  // 入眠日（0:00）
@@ -37,10 +36,10 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
   bool get _isAddMode => widget.record == null;
 
-  /// 保存ボタンを押せるか（追加モードは最初から押せる。修正モードは変更があるときだけ）
-  bool get _canSave => _isAddMode ? !_isSaving : _hasChanges;
+  /// 保存ボタンを押せるか（N107：修正モードも常に押せる。変わっていなければ保存時に何もせず閉じる）
+  bool get _canSave => !_isSaving;
 
-  /// 追加モードの入眠・起床の日時（起床の時刻が入眠以下なら翌日）
+  /// 入眠・起床の日時（起床の時刻が入眠以下なら翌日。N107 で修正モードも同じ）
   ({DateTime start, DateTime end}) get _resolvedTimes => SleepRecordValidation.resolveTimes(
         bedDate: _bedDate,
         bedHour: _editedBedtime.hour,
@@ -55,9 +54,10 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     super.initState();
     final record = widget.record;
     if (record != null) {
+      // N107：入眠日は入眠時刻の日付。30 日の範囲外でもそのまま表示し、保存時に止める
       _editedBedtime = record.bedtime;
       _editedWakeTime = record.wakeTime;
-      _bedDate = DateTime(record.sleepDate.year, record.sleepDate.month, record.sleepDate.day);
+      _bedDate = DateTime(record.bedtime.year, record.bedtime.month, record.bedtime.day);
     } else {
       // N106：入眠日は 30 日前〜今日に収める。時刻の初期値は 23:00 → 7:00
       final now = DateTime.now();
@@ -111,12 +111,10 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ========================
-              // N106: 入眠日の選択（追加モードのみ）
+              // N106: 入眠日の選択（N107 で修正モードにも出す）
               // ========================
-              if (_isAddMode) ...[
-                _buildBedDateSection(),
-                const SizedBox(height: AppDimensions.paddingXLarge),
-              ],
+              _buildBedDateSection(),
+              const SizedBox(height: AppDimensions.paddingXLarge),
 
               // ========================
               // 入眠時刻の編集
@@ -128,7 +126,6 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                 onTimeChanged: (newTime) {
                   setState(() {
                     _editedBedtime = newTime;
-                    _hasChanges = true;
                   });
                 },
               ),
@@ -145,7 +142,6 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                 onTimeChanged: (newTime) {
                   setState(() {
                     _editedWakeTime = newTime;
-                    _hasChanges = true;
                   });
                 },
               ),
@@ -424,10 +420,8 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
   /// 睡眠時間表示（改善版）
   Widget _buildSleepDurationDisplay() {
-    // N106：追加モードは起床日を自動で決めた日時から計算する
-    final duration = _isAddMode
-        ? _resolvedTimes.end.difference(_resolvedTimes.start)
-        : _editedWakeTime.difference(_editedBedtime);
+    // N106：起床日を自動で決めた日時から計算する（N107 で修正モードも同じ）
+    final duration = _resolvedTimes.end.difference(_resolvedTimes.start);
 
     // 翌日にまたがる場合
     final adjustedDuration =
@@ -531,11 +525,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
               ),
             ),
             child: Text(
-              _isAddMode
-                  ? '入眠: ${_formatDateTime(_resolvedTimes.start)} → 起床: ${_formatDateTime(_resolvedTimes.end)}'
-                  : '入眠: ${_editedBedtime.hour.toString().padLeft(2, '0')}:${_editedBedtime.minute.toString().padLeft(2, '0')} '
-                    '→ '
-                    '起床: ${_editedWakeTime.hour.toString().padLeft(2, '0')}:${_editedWakeTime.minute.toString().padLeft(2, '0')}',
+              '入眠: ${_formatDateTime(_resolvedTimes.start)} → 起床: ${_formatDateTime(_resolvedTimes.end)}',
               style: AppTextStyles.bodyTextStyle.copyWith(
                 fontSize: 12,
                 color: AppColors.textMuted,
@@ -615,11 +605,18 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   /// 入眠日をピッカーで選ぶ（今日から 30 日前まで）
   Future<void> _pickBedDate() async {
     final now = DateTime.now();
+    final firstDate = SleepRecordValidation.earliestBedDate(now);
+    final lastDate = SleepRecordValidation.latestBedDate(now);
+    // N107：修正する記録の入眠日が範囲外でもピッカーが落ちないよう、初期値だけ範囲に収める
+    var initialDate = _bedDate;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(lastDate)) initialDate = lastDate;
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: _bedDate,
-      firstDate: SleepRecordValidation.earliestBedDate(now),
-      lastDate: SleepRecordValidation.latestBedDate(now),
+      initialDate: initialDate,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
     if (picked == null || !mounted) return;
 
@@ -634,12 +631,41 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   }
 
   void _showWarning(ScaffoldMessengerState messenger, String text) {
+    // N107：前の SnackBar を消してから出す（積み重なって保存ボタンを覆わないように）
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
         content: Text(text),
         backgroundColor: Colors.orange,
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  /// 保存前のチェック（追加・修正で共通）。問題なければ null
+  /// excludeRecordId：修正のときの自分自身の ID（重なり判定から外す。N107）
+  Future<ManualSleepError?> _validateTimes(
+    ({DateTime start, DateTime end}) times,
+    DateTime now,
+    SleepProvider provider, {
+    String? excludeRecordId,
+  }) async {
+    // 重なりは DB から入眠日の前後の記録を読んで判定する（Provider のリストだけに頼らない）
+    final nearbyRecords = await SleepRepository().getSleepRecordsByDateRange(
+      'test_user',
+      DateTime(_bedDate.year, _bedDate.month, _bedDate.day - 2),
+      DateTime(_bedDate.year, _bedDate.month, _bedDate.day + 2, 23, 59, 59),
+    );
+
+    final isSleeping = provider.isSleepingNow;
+    return SleepRecordValidation.validate(
+      start: times.start,
+      end: times.end,
+      now: now,
+      existingRecords: nearbyRecords,
+      sleepingRecordId: isSleeping ? provider.currentSleepRecordIdNow : null,
+      sleepingStartTime: isSleeping ? provider.sleepStartTime : null,
+      excludeRecordId: excludeRecordId,
     );
   }
 
@@ -659,22 +685,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
     setState(() => _isSaving = true);
     try {
-      // 重なりは DB から入眠日の前後の記録を読んで判定する（Provider のリストだけに頼らない）
-      final nearbyRecords = await SleepRepository().getSleepRecordsByDateRange(
-        'test_user',
-        DateTime(_bedDate.year, _bedDate.month, _bedDate.day - 2),
-        DateTime(_bedDate.year, _bedDate.month, _bedDate.day + 2, 23, 59, 59),
-      );
-
-      final isSleeping = provider.isSleepingNow;
-      final error = SleepRecordValidation.validate(
-        start: times.start,
-        end: times.end,
-        now: now,
-        existingRecords: nearbyRecords,
-        sleepingRecordId: isSleeping ? provider.currentSleepRecordIdNow : null,
-        sleepingStartTime: isSleeping ? provider.sleepStartTime : null,
-      );
+      final error = await _validateTimes(times, now, provider);
       if (error != null) {
         _showWarning(messenger, error.message);
         return;
@@ -703,6 +714,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
       await provider.addManualSleepRecord(record);
 
       navigator.pop();
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
           content: const Text('✅ 睡眠を追加しました'),
@@ -711,6 +723,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
         ),
       );
     } catch (e) {
+      messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
           content: Text('❌ 睡眠の追加に失敗しました: $e'),
@@ -724,6 +737,77 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
   }
   // ======================================
 
+  /// 秒・ミリ秒を切り捨てた日時（分単位で比べるため）
+  DateTime _toMinute(DateTime t) => DateTime(t.year, t.month, t.day, t.hour, t.minute);
+
+  /// N107：修正した記録を保存（流れは _saveNewRecord と同じ）
+  Future<void> _saveEditedRecord() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final provider = context.read<SleepProvider>();
+    final original = widget.record!;
+
+    final now = DateTime.now();
+    final times = _resolvedTimes;
+
+    // 入眠・起床が元の記録と分単位で同じなら、DB を書き換えずに閉じる（modifiedCount を増やさない）
+    // 入眠日は times.start の日付に入っているので、start の比較で一緒に見ている
+    if (_toMinute(times.start) == _toMinute(original.sleepStartTime) &&
+        _toMinute(times.end) == _toMinute(original.sleepEndTime)) {
+      navigator.pop();
+      return;
+    }
+
+    if (!SleepRecordValidation.isBedDateInRange(_bedDate, now)) {
+      _showWarning(messenger, '⚠️ 入眠日は今日から ${SleepRecordValidation.maxDaysBack} 日前までを選んでください');
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final error = await _validateTimes(times, now, provider, excludeRecordId: original.id);
+      if (error != null) {
+        _showWarning(messenger, error.message);
+        return;
+      }
+
+      final updatedRecord = original.copyWith(
+        sleepDate: _bedDate,
+        sleepStartTime: times.start,
+        sleepStartAuto: false,
+        sleepEndTime: times.end,
+        sleepEndAuto: false,
+        durationMinutes: times.end.difference(times.start).inMinutes,
+        modifiedCount: original.modifiedCount + 1,
+        lastModifiedAt: now,
+        updatedAt: now,
+      );
+
+      await provider.updateSleepRecord(updatedRecord);
+
+      navigator.pop();
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('睡眠記録を更新しました'),
+          backgroundColor: AppColors.primaryGradientStart,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ 更新に失敗しました: $e'),
+          backgroundColor: AppColors.warningRed,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
   /// 変更を保存
   void _saveChanges() async {
     // N106：追加モードは別の保存処理
@@ -731,59 +815,6 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
       await _saveNewRecord();
       return;
     }
-
-    // 編集した内容で新しい SleepRecord を作成
-    // 睡眠時間を計算
-    final duration = _editedWakeTime.difference(_editedBedtime);
-    final durationMinutes = duration.isNegative 
-      ? duration.inMinutes + (24 * 60)  // 日付をまたぐ場合
-      : duration.inMinutes;
-
-    final updatedRecord = widget.record!.copyWith(
-      sleepStartTime: _editedBedtime,
-      sleepEndTime: _editedWakeTime,
-      durationMinutes: durationMinutes,  // ← ここ追加！
-      updatedAt: DateTime.now(),
-    );
-
-    try {
-      // Provider 経由で更新を保存
-      await context.read<SleepProvider>().updateSleepRecord(updatedRecord);
-
-      // 保存成功時、前画面に戻る
-      if (mounted) {
-        Navigator.pop(context);
-
-        // 成功メッセージ
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('睡眠記録を更新しました'),
-            backgroundColor: AppColors.primaryGradientStart,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                AppDimensions.borderRadiusSmall,
-              ),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        // エラー表示
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('更新に失敗しました: $e'),
-            backgroundColor: AppColors.warningRed,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                AppDimensions.borderRadiusSmall,
-              ),
-            ),
-          ),
-        );
-      }
-    }
+    await _saveEditedRecord();
   }
 }
