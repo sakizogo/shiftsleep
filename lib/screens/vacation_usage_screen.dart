@@ -92,6 +92,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   // 有給使用を記録
   Future<void> _recordVacationUsage() async {
     if (_selectedUsageDate == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('⚠️ 使用日を選択してください')),
       );
@@ -100,6 +101,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
 
     // ========== Week 14 修正：_selectedDaysUsed をチェック ==========
     if (_selectedDaysUsed == null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('⚠️ 使用日数を選択してください')),
       );
@@ -126,6 +128,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     } catch (e) {
       debugPrint('Error recording vacation usage: $e');
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('❌ 有給使用の記録に失敗しました: $e')),
       );
@@ -142,6 +145,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       _showAddForm = false;
     });
 
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ 有給使用を記録しました')),
     );
@@ -196,6 +200,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     } catch (e) {
       debugPrint('Error deleting vacation usage: $e');
       if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('❌ 削除に失敗しました: $e')),
       );
@@ -204,6 +209,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       return;
     }
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('✅ 使用履歴を削除しました')),
     );

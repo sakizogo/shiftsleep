@@ -394,6 +394,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               final selectedDate = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
               if (_selectedPattern?.patternType == ShiftType.halfVacation) {
+                // N93：await のあいだにパターンの選択が変わっても、押したときのパターンで続ける
+                final pattern = _selectedPattern!;
                 // N99：有休パターンの日に半休を入れたら、有休パターンを外す（シフトなし＋半休にする）
                 // 出勤・休日などは今までどおり残す（N77 の共存）
                 final removeVacationShift =
@@ -419,9 +421,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   if (!mounted) return;
                   // 有休パターンを外せたあとで失敗したときは、外した分だけ画面に出す
                   if (vacationShiftRemoved) setState(() {});
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('❌ 半休の登録に失敗しました: $e')),
-                  );
+                  _showTapError('❌ 半休の登録に失敗しました: $e');
                   return;
                 }
                 if (!mounted) return;
@@ -432,21 +432,33 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   _vacationMap[dateKey] = 0.5;
                   _vacationStatsVersion++;
                 });
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
+                    content: Text('✅ ${pattern.patternName}を登録しました'),
                     duration: const Duration(seconds: 2),
                   ),
                 );
                 print('[ShiftManagementScreen] ✅ 半休を登録: ${selectedDay.month}月${selectedDay.day}日');
                 return;
               } else if (_selectedPattern?.patternType == ShiftType.vacation) {
-                await _vacationRepository.recordVacationUsage(
-                  'test_user',
-                  selectedDay,
-                  1.0,
-                  'カレンダーから登録（有休）',
-                );
+                // N93：await のあいだにパターンの選択が変わっても、押したときのパターンで続ける
+                final pattern = _selectedPattern!;
+                try {
+                  await _vacationRepository.recordVacationUsage(
+                    'test_user',
+                    selectedDay,
+                    1.0,
+                    'カレンダーから登録（有休）',
+                  );
+                } catch (e) {
+                  // N93：有休の行が入らなかったので、_vacationMap・_shiftMap はそのまま（その日は元のまま）
+                  debugPrint('Error recording vacation: $e');
+                  if (!mounted) return;
+                  _showTapError('❌ 有休の登録に失敗しました: $e');
+                  return;
+                }
+                if (!mounted) return;
                 // N78：置き換える前のシフト（出勤のシフトなら、保存でアラームが取り消されることを知らせる）
                 final previousPattern = _shiftMap[selectedDate]?.pattern;
                 final replacedWork = previousPattern?.patternType == ShiftType.work;
@@ -457,15 +469,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   _vacationMap[dateKey] = 1.0;
                   _vacationStatsVersion++;
                   // N78：期間指定の有休と同じく、その日のシフトも「有休」にする
-                  _shiftMap[dateKey] = ShiftData(date: dateKey, pattern: _selectedPattern);
+                  _shiftMap[dateKey] = ShiftData(date: dateKey, pattern: pattern);
                 });
-                if (previousPattern != null && previousPattern.id != _selectedPattern!.id) {
-                  debugPrint('🔁 N78: ${selectedDate.month}/${selectedDate.day} の ${previousPattern.patternName} を${_selectedPattern!.patternName}に置き換え');
+                if (previousPattern != null && previousPattern.id != pattern.id) {
+                  debugPrint('🔁 N78: ${selectedDate.month}/${selectedDate.day} の ${previousPattern.patternName} を${pattern.patternName}に置き換え');
                 }
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      '✅ ${_selectedPattern!.patternName}を登録しました'
+                      '✅ ${pattern.patternName}を登録しました'
                       '${replacedWork ? '\n「シフトを確定」を押すと出勤前アラームが取り消されます' : ''}',
                     ),
                     duration: const Duration(seconds: 2),
@@ -475,30 +488,48 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 return;
               }
 
+              final pattern = _selectedPattern;
+              if (pattern == null) {
+                // パターンを選んでいなければ、日を選ぶだけ
+                setState(() {
+                  _selectedDay = selectedDay;
+                  _focusedDay = focusedDay;
+                });
+                return;
+              }
+
               // N77：有休（1.0）の日なら有休を消す
-              final removedVacation = _selectedPattern != null &&
-                  await _removeFullVacationIfOverwritten(selectedDate, _selectedPattern!);
+              final bool removedVacation;
+              try {
+                removedVacation = await _removeFullVacationIfOverwritten(selectedDate, pattern);
+              } catch (e) {
+                // N93：有休を消せなかったので、有休も _shiftMap もそのまま（その日は元のまま）
+                debugPrint('Error removing vacation: $e');
+                if (!mounted) return;
+                _showTapError('❌ 有休の削除に失敗しました: $e');
+                return;
+              }
               if (!mounted) return;
 
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
                 if (removedVacation) _vacationStatsVersion++;
-                if (_selectedPattern != null) {
-                  _shiftMap[selectedDate] = ShiftData(
-                    date: selectedDay,
-                    pattern: _selectedPattern,
-                    customStartTime: null,
-                    customEndTime: null,
-                  );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('✅ ${_selectedPattern!.patternName}を登録しました'),
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
-                }
+                _shiftMap[selectedDate] = ShiftData(
+                  date: selectedDay,
+                  pattern: pattern,
+                  customStartTime: null,
+                  customEndTime: null,
+                );
               });
+              // N93：SnackBar は setState の外で出す
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('✅ ${pattern.patternName}を登録しました'),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
             },
             onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),  // N67：見出しの「○月 ○年」も更新する
             calendarStyle: CalendarStyle(
@@ -1034,6 +1065,19 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         ),
       );
     }
+
+  /// N93：マスのタップで失敗したときの SnackBar（前の SnackBar は消す。赤・4 秒は N104・N115 とそろえる）
+  void _showTapError(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.warningRed,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
 
   /// N77：有休（1.0）の日に普通のシフト・休日を入れたら、その日の有休を消す
   /// 半休（0.5）は消さない（Week 20 の「半休＋シフト共存」）。消したら true を返す
