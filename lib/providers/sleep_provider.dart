@@ -533,6 +533,23 @@ class SleepProvider extends ChangeNotifier {
     }
   }
 
+  /// N106：あとから手で睡眠記録を追加する（「今から寝る」の押し忘れ用）
+  ///
+  /// insertSleepRecord と違い、睡眠中フラグ・SharedPreferences・currentSleepRecordIdNow には触らない。
+  /// 失敗したら例外を投げ直す（呼んだ側で知らせる）
+  Future<void> addManualSleepRecord(SleepRecord record) async {
+    try {
+      await _repository.insertSleepRecord(record);
+      await loadAllSleepData();
+      debugPrint('[SleepProvider] ✅ N106: 手で追加した睡眠記録を保存: ${record.id}');
+    } catch (e) {
+      _errorMessage = 'Failed to add manual sleep record: $e';
+      debugPrint('[SleepProvider] ❌ N106: 睡眠記録の追加に失敗: $e');
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// 手動でメトリクスを再計算（デバッグ用）
   void recalculateMetrics() {
     _calculateMetrics();

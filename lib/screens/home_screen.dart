@@ -392,13 +392,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   fontSize: 42,
                                 ),
                               )
-                            else
+                            else ...[
                               Text(
                                 'まだ記録がありません',
                                 style: AppTextStyles.bodyTextStyle.copyWith(
                                   color: AppColors.textMuted,
                                 ),
                               ),
+                              // N106：押し忘れた睡眠をあとから追加
+                              const SizedBox(height: AppDimensions.paddingSmall),
+                              _buildAddSleepButton('＋ 睡眠を追加'),
+                            ],
                             const SizedBox(
                                 height: AppDimensions.paddingMedium),
                                 if (sleepProvider.lastSleepDuration.inMinutes < 60 ||
@@ -424,6 +428,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                 color: Colors.black87,
                                               ),
                                             ),
+                                          ),
+                                          // N106：入眠日を昨日にして追加画面を開く
+                                          _buildAddSleepButton(
+                                            '追加する',
+                                            initialBedDate: DateTime.now().subtract(const Duration(days: 1)),
                                           ),
                                         ],
                                       ),
@@ -453,6 +462,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
                                 ),
+                                Row(
+                                  children: [
+                                // N106：記録があっても別の睡眠を追加できる
+                                _buildAddSleepButton('＋ 追加'),
+                                const SizedBox(width: AppDimensions.paddingSmall),
                                 GestureDetector(
                                   onTap: () {
                                     Navigator.push(
@@ -488,6 +502,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     ),
                                   ),
                                 ),
+                                  ],
+                                ),
                               ],
                             ),
                           ],
@@ -495,6 +511,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       )
                     else
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(
                           AppDimensions.paddingMedium,
                         ),
@@ -504,11 +521,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             AppDimensions.borderRadiusMedium,
                           ),
                         ),
-                        child: Text(
-                          'まだ記録がありません',
-                          style: AppTextStyles.bodyTextStyle.copyWith(
-                            color: AppColors.textMuted,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'まだ記録がありません',
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            // N106：押し忘れた睡眠をあとから追加
+                            const SizedBox(height: AppDimensions.paddingSmall),
+                            _buildAddSleepButton('＋ 睡眠を追加'),
+                          ],
                         ),
                       ),
                   ],
@@ -1519,6 +1544,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         );
       },
+    );
+  }
+
+  /// N106：睡眠の追加画面を開くボタン（「修正」と同じ見た目）
+  /// 保存すると addManualSleepRecord が読み直すので、戻ったときにはホームが更新されている
+  Widget _buildAddSleepButton(String label, {DateTime? initialBedDate}) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => EditSleepRecordScreen(
+              initialBedDate: initialBedDate,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppDimensions.paddingSmall,
+          vertical: AppDimensions.paddingXSmall,
+        ),
+        decoration: BoxDecoration(
+          color: AppColors.primaryGradientStart.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(
+            AppDimensions.borderRadiusSmall,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.labelStyle.copyWith(
+            color: AppColors.primaryGradientStart,
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+        ),
+      ),
     );
   }
 
