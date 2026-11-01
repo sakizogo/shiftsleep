@@ -6,6 +6,7 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
+import 'package:shiftsleep/services/pattern_usage.dart';
 
 
 class ShiftPatternScreen extends StatefulWidget {
@@ -575,25 +576,95 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
               color: AppColors.textMuted,
               size: 20,
             ),
-            onPressed: () async {
-              // DB から削除
-              await _shiftRepository.deletePattern(pattern.id);
-              
-              setState(() {
-                _patterns.removeWhere((p) => p.id == pattern.id);
-              });
-              
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('「${pattern.patternName}」を削除しました'),
-                  backgroundColor: AppColors.warningRed,
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
+            onPressed: () => _deletePattern(pattern),
           ),
           // ========================================================================
         ],
+      ),
+    );
+  }
+
+  /// N104：✕ で削除する。今日以降で使われていれば止め、それ以外は確認してから消す
+  Future<void> _deletePattern(ShiftPatternModel pattern) async {
+    final name = pattern.patternName;
+
+    final ({int futureCount, String? firstFutureDate, int pastCount}) usage;
+    try {
+      final dates = await _shiftRepository.getShiftDatesByPatternId(pattern.id);
+      usage = classifyPatternUsage(dates, DateTime.now());
+    } catch (e) {
+      _showDeleteResult('❌ 削除に失敗しました: $e', isError: true);
+      return;
+    }
+    if (!mounted) return;
+
+    // 今日以降で使われている：消さずに止める（出勤前アラームに関わるため）
+    if (usage.futureCount >= 1) {
+      final parts = usage.firstFutureDate!.split('-');
+      final firstDay = '${int.parse(parts[1])}/${int.parse(parts[2])}';
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          content: Text(
+            '⚠️ 『$name』は今日以降の ${usage.futureCount} 日（最初は $firstDay）で使われています。'
+            '先にカレンダーで別のパターンに変えてから削除してください。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final message = usage.pastCount >= 1
+        ? '『$name』を削除しますか？\n過去の ${usage.pastCount} 日で使われています。カレンダーでは「削除済み」として表示されます。'
+        : '『$name』を削除しますか？';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text('削除', style: TextStyle(color: AppColors.warningRed)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _shiftRepository.deletePattern(pattern.id);
+    } catch (e) {
+      _showDeleteResult('❌ 削除に失敗しました: $e', isError: true);
+      return;
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _patterns.removeWhere((p) => p.id == pattern.id);
+    });
+    _showDeleteResult('✅ 『$name』を削除しました', isError: false);
+  }
+
+  /// N104：削除の結果を SnackBar で出す（前の SnackBar は消す）
+  void _showDeleteResult(String message, {required bool isError}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.warningRed : AppColors.primaryGradientStart,
+        duration: Duration(seconds: isError ? 4 : 2),
       ),
     );
   }

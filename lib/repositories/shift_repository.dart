@@ -126,19 +126,37 @@ class ShiftRepository {
   }
 
   /// パターンを削除
+  /// N104：失敗を呼び出し元に知らせる（消した行が 0 件でも例外）
   Future<void> deletePattern(String patternId) async {
     try {
       final db = await _databaseHelper.database;
-      await db.delete(
+      final count = await db.delete(
         _tableName,
         where: 'id = ?',
         whereArgs: [patternId],
       );
+      if (count == 0) {
+        throw StateError('パターンが見つかりません（id=$patternId）');
+      }
 
       print('Pattern deleted: $patternId');
     } catch (e) {
       print('Error deleting pattern: $e');
+      rethrow;
     }
+  }
+
+  /// N104：そのパターンを使っているシフトの日付（YYYY-MM-DD・昇順）
+  Future<List<String>> getShiftDatesByPatternId(String patternId) async {
+    final db = await _databaseHelper.database;
+    final results = await db.query(
+      'shifts',
+      columns: ['shift_date'],
+      where: 'user_id = ? AND pattern_id = ?',
+      whereArgs: [_userId, patternId],
+      orderBy: 'shift_date ASC',
+    );
+    return results.map((row) => row['shift_date'] as String).toList();
   }
 
   // ========== Week 3 Day 5 追加: Shifts テーブル操作メソッド ==========
