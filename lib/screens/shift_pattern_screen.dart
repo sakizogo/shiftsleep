@@ -36,6 +36,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
   TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
   late List<ShiftPatternModel> _patterns;
   final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 8 追加 ==========
+  bool _isAdding = false;  // N115：追加の処理中（二度押しで 2 件入らないように）
 
   @override
   void initState() {
@@ -389,7 +390,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _addPattern,
+                          onPressed: _isAdding ? null : _addPattern,  // N115：処理中は押せない
                           style: ElevatedButton.styleFrom(
                             backgroundColor:
                                 AppColors.primaryGradientStart,
@@ -715,8 +716,11 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
   }
 
-  void _addPattern() async {
+  /// N115：DB に入れられたときだけ一覧に加える。失敗したら入力欄はそのまま残して知らせる
+  Future<void> _addPattern() async {
+    if (_isAdding) return;
     if (_patternNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('シフト体系名を入力してください'),
@@ -726,6 +730,16 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       return;
     }
 
+    setState(() => _isAdding = true);
+    try {
+      await _insertNewPattern();
+    } finally {
+      if (mounted) setState(() => _isAdding = false);
+    }
+  }
+
+  /// N115：新しいパターンを DB に入れ、結果を一覧と SnackBar に出す
+  Future<void> _insertNewPattern() async {
     // ========== Week 8 Phase 6 修正: colorIndex=0 を避ける ==========
     final dbPatterns = await _shiftRepository.getAllPatterns();
 
@@ -753,7 +767,23 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       colorIndex: nextColorIndex,
     );
 
-    await _shiftRepository.createPattern(newPattern);
+    try {
+      await _shiftRepository.createPattern(newPattern);
+    } catch (e) {
+      // 一覧には加えず、入力欄もそのまま（入れ直さずにもう一度押せるように）
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ パターンの追加に失敗しました: $e'),
+          backgroundColor: AppColors.warningRed,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
 
     setState(() {
       _patterns.add(newPattern);
@@ -762,9 +792,11 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
       _endTime = const TimeOfDay(hour: 17, minute: 0);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
-        content: Text('「${newPattern.patternName}」を追加しました'),
+        content: Text('✅ 『${newPattern.patternName}』を追加しました'),
         backgroundColor: AppColors.primaryGradientStart,
         duration: const Duration(seconds: 2),
       ),

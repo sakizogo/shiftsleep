@@ -236,7 +236,9 @@ class CalendarEventScreenState extends State<CalendarEventScreen> {
     } catch (e) {
       print('Error saving event: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラー: $e'), backgroundColor: AppColors.warningRed));
+        // N115：createCalendarEvent が失敗を投げるようになったので、ほかの画面と同じ文言で知らせる
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ イベントの保存に失敗しました: $e'), backgroundColor: AppColors.warningRed));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

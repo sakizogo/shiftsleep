@@ -94,6 +94,7 @@ class ShiftRepository {
   }
 
   /// パターンを作成（単数）
+  /// N115：失敗を呼び出し元に知らせる
   Future<void> createPattern(ShiftPatternModel pattern) async {
     try {
       final db = await _databaseHelper.database;
@@ -121,7 +122,8 @@ class ShiftRepository {
 
       print('Pattern created: ${pattern.patternName}');
     } catch (e) {
-      print('Error creating pattern: $e');
+      debugPrint('Error creating pattern: $e');
+      rethrow;  // N115：画面で失敗を知らせ、一覧に加えない
     }
   }
 
@@ -310,6 +312,7 @@ class ShiftRepository {
       print('✅ createCalendarEvent() 完了: $dateStr');
     } catch (e) {
       print('❌ Error creating calendar event: $e');
+      rethrow;  // N115：失敗を呼び出し元に知らせる
     }
   }
 
