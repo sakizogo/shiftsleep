@@ -10,9 +10,13 @@ class ShiftPatternModel {
   final TimeOfDay? startTime;
   final TimeOfDay? endTime;
   final int colorIndex;  // ← 新規追加：色のインデックス
-  
-  /// colorIndex から自動で色を決定
-  Color get color => _ColorPalette.getColorByIndex(colorIndex);
+  final bool isDeleted;  // N104：消えたパターンの日に使う「削除済み」の仮パターンなら true
+
+  /// N104：削除済みの文字・枠の色（灰色。色だけに頼らず「削除済み」の文字も出す）
+  static const Color deletedColor = Color(0xFF757575);
+
+  /// colorIndex から自動で色を決定（削除済みは灰色）
+  Color get color => isDeleted ? deletedColor : _ColorPalette.getColorByIndex(colorIndex);
 
   ShiftPatternModel({
     required this.id,
@@ -21,11 +25,23 @@ class ShiftPatternModel {
     this.startTime,
     this.endTime,
     int? colorIndex,
-  }) : colorIndex = colorIndex ?? 0;
+  })  : colorIndex = colorIndex ?? 0,
+        isDeleted = false;
+
+  /// N104：「削除済み」の仮パターン
+  /// id は元の pattern_id のまま（シフトを確定しても同じ ID で保存されるように）
+  /// 種類は休日（dayOff）にして、出勤・有休・半休の判定に入らないようにする
+  ShiftPatternModel.deleted(this.id)
+      : patternName = '削除済み',
+        patternType = ShiftType.dayOff,
+        startTime = null,
+        endTime = null,
+        colorIndex = 0,
+        isDeleted = true;
 
   @override
   String toString() {
-    return 'ShiftPatternModel(id: $id, name: $patternName, type: $patternType, colorIndex: $colorIndex)';
+    return 'ShiftPatternModel(id: $id, name: $patternName, type: $patternType, colorIndex: $colorIndex, isDeleted: $isDeleted)';
   }
 }
 

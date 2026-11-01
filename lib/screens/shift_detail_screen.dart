@@ -271,7 +271,8 @@ const SizedBox(height: AppDimensions.paddingLarge),
                   fontSize: 14,
                 ),
               ),
-              if (pattern?.patternType == ShiftType.dayOff)
+              // N104：削除済みの仮パターンも種類は dayOff だが、「休日」の札は出さない
+              if (pattern?.patternType == ShiftType.dayOff && pattern?.isDeleted != true)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppDimensions.paddingSmall,

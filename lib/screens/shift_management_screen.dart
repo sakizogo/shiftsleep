@@ -10,6 +10,7 @@ import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
+import 'package:shiftsleep/services/pattern_usage.dart';  // N104
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 import 'package:shiftsleep/constants/calendar_range.dart';
@@ -1106,15 +1107,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           final patternId = record['pattern_id'] as String?;
           final date = DateTime.parse(dateStr);
           final normalized = DateTime(date.year, date.month, date.day);
-          ShiftPatternModel? matchingPattern;
-          if (patternId != null) {
-            matchingPattern = _patterns.firstWhere(
-              (p) => p.id == patternId,
-              orElse: () => _defaultDayOffPattern,
-            );
-          } else {
-            matchingPattern = _defaultDayOffPattern;
-          }
+          // N104：見つからないパターンの日は休日ではなく「削除済み」（元の pattern_id のまま）
+          final matchingPattern =
+              resolvePatternForShift(patternId, _patterns, _defaultDayOffPattern);
           _shiftMap[normalized] = ShiftData(date: normalized, pattern: matchingPattern);
         }
       });
