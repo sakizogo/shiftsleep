@@ -473,22 +473,19 @@ class SleepProvider extends ChangeNotifier {
   }
 
   /// 睡眠記録を削除
+  ///
+  /// N108：updateSleepRecord と同じく _isLoading には触らない。
+  /// 失敗したら例外を投げ直す（呼んだ側で知らせる）
   Future<void> deleteSleepRecord(String recordId) async {
     try {
-      _isLoading = true;
-      _errorMessage = null;
-      notifyListeners();
-
       await _repository.deleteSleepRecord(recordId);
-
-      // 更新後、データを再ロード
       await loadAllSleepData();
-
-      print('[SleepProvider] Record deleted: $recordId');
+      debugPrint('[SleepProvider] ✅ N108: 睡眠記録を削除: $recordId');
     } catch (e) {
       _errorMessage = 'Failed to delete sleep record: $e';
-      print('[SleepProvider] Error: $_errorMessage');
+      debugPrint('[SleepProvider] ❌ N108: 睡眠記録の削除に失敗: $e');
       notifyListeners();
+      rethrow;
     }
   }
 

@@ -32,13 +32,14 @@ class SleepRepository {
   }
 
   // Get all sleep records for a user
+  // N108：同じ日の記録は入眠時刻が遅い順
   Future<List<SleepRecord>> getSleepRecordsByUserId(String userId) async {
     final Database db = await _dbHelper.database;
     final List<Map<String, dynamic>> result = await db.query(
       'sleep_records',
       where: 'user_id = ?',
       whereArgs: [userId],
-      orderBy: 'sleep_date DESC',
+      orderBy: 'sleep_date DESC, sleep_start_time DESC',
     );
 
     return result.map((json) => SleepRecord.fromJson(json)).toList();
@@ -81,13 +82,17 @@ class SleepRepository {
   }
 
   // Delete a sleep record
+  // N108：対象の記録がなく 1 件も削除されなかったら例外を投げる
   Future<void> deleteSleepRecord(String id) async {
     final Database db = await _dbHelper.database;
-    await db.delete(
+    final count = await db.delete(
       'sleep_records',
       where: 'id = ?',
       whereArgs: [id],
     );
+    if (count == 0) {
+      throw Exception('Sleep record not found: $id');
+    }
   }
 
   // Get latest sleep record for a user
