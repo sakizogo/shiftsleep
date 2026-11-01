@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shiftsleep/constants/calendar_range.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
@@ -6,6 +7,7 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/confirm_alarm_plan.dart';
 import 'shift_management_screen.dart';
 
 class ShiftDetailScreen extends StatefulWidget {
@@ -444,18 +446,15 @@ const SizedBox(height: AppDimensions.paddingLarge),
                 ),
                 const SizedBox(height: 8.0),
                 GestureDetector(
-                  onTap: () async {
+                  onTap: () {
                     print('🔍 削除ボタンタップ開始 - date: $date');
-                    
+
+                    // N117：ここではアラームを取り消さない（DB はまだ変わらないため）
+                    // 「シフトを確定」で DB に書けたあと、消した日の pre はまとめて取り消される
                     setState(() {
                       widget.shiftDataMap.remove(date);
                     });
-                    
-                    print('🔍 AlarmService.cancelAlarm 呼び出し前');
-                    // ✅ H3: pre だけをキャンセル（cancelAlarm は main＝起床アラームまで消すため）
-                    await AlarmService.cancelPreAlarm(date);
-                    print('🔔 アラームキャンセル: $date');
-                    
+
                     print('🔍 ダイアログを閉じる');
                     Navigator.pop(context);
                   },
@@ -519,136 +518,27 @@ const SizedBox(height: AppDimensions.paddingLarge),
   }
 
   Future<void> _saveShiftsAndScheduleAlarms() async {
+    // ========== デバッグログ追加 ==========
+    print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
+    print('💾 保存データ:');
+    for (final entry in widget.shiftDataMap.entries) {
+      print('  - ${entry.key.toIso8601String()}: ${entry.value.pattern?.patternName}');
+    }
+    // ====================================
+
+    // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
+    final Map<DateTime, ShiftPatternModel?> patternMap = {};
+    for (final entry in widget.shiftDataMap.entries) {
+      patternMap[entry.key] = entry.value.pattern;
+    }
+
+    // N117：全件削除と作り直しを 1 つのトランザクションで行う（失敗したら確定前の行に戻る）
+    // アラームはこれが成功してから動かす（失敗したらアラームには一切触らない）
+    final List<({String shiftDate, String? patternId})> oldShifts;
     try {
-      // ========== デバッグログ追加 ==========
-      print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
-      print('💾 保存データ:');
-      for (final entry in widget.shiftDataMap.entries) {
-        print('  - ${entry.key.toIso8601String()}: ${entry.value.pattern?.patternName}');
-      }
-      // ====================================
-
-      // Map<DateTime, ShiftData> を Map<DateTime, ShiftPatternModel?> に変換
-      final Map<DateTime, ShiftPatternModel?> patternMap = {};
-      for (final entry in widget.shiftDataMap.entries) {
-        patternMap[entry.key] = entry.value.pattern;
-      }
-
-      // ✅ H3: DB 更新前に、既存シフト日（今日〜1年後）の出勤前アラーム（pre）だけをキャンセル
-      //    → 削除・休日に変更した日の pre は消え、残った出勤日の pre は後続処理で再登録される（main は残す）
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final existingShifts = await _shiftRepository.getShiftsForDateRange(
-        today,
-        today.add(const Duration(days: 365)),
-      );
-      for (final shift in existingShifts) {
-        final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
-        if (shiftDate == null) continue;
-        await AlarmService.cancelPreAlarm(shiftDate);
-      }
-      print('🔕 既存シフトの出勤前アラーム（pre）をキャンセル: ${existingShifts.length}件');
-
-      // N117：全件削除と作り直しを 1 つのトランザクションで行う（失敗したら確定前の行に戻る）
-      try {
-        await _shiftRepository.replaceAllShifts(patternMap);
-      } catch (e) {
-        // 詳細確認画面に残り（編集した内容はそのまま）、アラームの登録には進まない
-        debugPrint('Error saving shifts: $e');
-        if (!mounted) return;
-        final messenger = ScaffoldMessenger.of(context);
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('❌ シフトの保存に失敗しました: $e'),
-            backgroundColor: AppColors.warningRed,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-        return;
-      }
-
-      print('✅ DB保存完了');
-
-      // ✅ ========== Phase 3.2 追加: アラームをスケジュール ==========
-      print('⏰ アラームスケジュール開始...');
-      String? alarmErrorCode;  // ✅ Step2-2: ループ中の登録失敗を記録（EXACT_ALARM_DENIED を優先）
-      // N117：シフトは保存できているので、ここで例外が起きても「保存に失敗」にはせず、アラームの ⚠️ で知らせる
-      try {
-        // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
-        final alarmSettings = await _shiftRepository.getAppSettings('test_user');
-        final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
-        if (alarmTimeBeforeShift <= 0) {
-          print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
-        }
-        for (final entry in widget.shiftDataMap.entries) {
-          final date = entry.key;
-          final shiftData = entry.value;
-          final pattern = shiftData.pattern;
-
-          // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
-          if (alarmTimeBeforeShift <= 0) {
-            continue;
-          }
-
-          // 勤務シフトの場合のみアラームをスケジュール
-          if (pattern != null &&
-              pattern.patternType == ShiftType.work &&
-              pattern.startTime != null) {
-            print('🔔 アラームスケジュール: $date, 出勤時刻: ${pattern.startTime!.hour}:${pattern.startTime!.minute}');
-
-            final errorCode = await AlarmService.scheduleAlarmForShift(
-              shiftDate: date,
-              alarmTime: pattern.startTime!,
-              mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
-              preAlarmEnabled: true,
-              preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
-              selectedAlarmSound: 'default',
-            );
-            if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
-              alarmErrorCode = errorCode;
-            }
-          } else {
-            print('⊘ スキップ: $date (非勤務シフト)');
-          }
-        }
-        // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
-        print('📨 アラーム登録処理を実行完了 ※登録/スキップの結果は [AlarmService] ログを参照');
-      } catch (e) {
-        debugPrint('Error scheduling shift alarms: $e');
-        if (alarmErrorCode != 'EXACT_ALARM_DENIED') alarmErrorCode = 'SCHEDULE_FAILED';
-      }
-      // ==============================================================
-
-      // 成功メッセージ
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('✅ シフトを保存しました'),
-          backgroundColor: AppColors.primaryGradientStart,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      // ✅ Step2-2: アラーム登録に失敗した場合は、保存完了の後に警告を1回だけ表示
-      final alarmError = AlarmService.alarmErrorMessage(alarmErrorCode);
-      if (alarmError != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(alarmError),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
-
-      // onBack コールバック実行で戻る
-      if (widget.onBack != null) {
-        widget.onBack!();
-      }
+      oldShifts = await _shiftRepository.replaceAllShifts(patternMap);
     } catch (e) {
-      // 古いアラームの取り消し（DB に書く前）で失敗したとき。シフトの DB はまだ変えていない
+      // 詳細確認画面に残り（編集した内容はそのまま）、アラームには進まない
       debugPrint('Error saving shifts: $e');
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -660,6 +550,87 @@ const SizedBox(height: AppDimensions.paddingLarge),
           duration: const Duration(seconds: 4),
         ),
       );
+      return;
+    }
+
+    print('✅ DB保存完了');
+
+    // N117：古い行の日の pre を取り消し、新しい出勤日の pre を登録する（どちらも今日〜CalendarRange の終わり）
+    final plan = confirmAlarmPlan(oldShifts, patternMap, DateTime.now(), CalendarRange.lastDate);
+    String? alarmErrorCode;  // ✅ Step2-2: 取り消し・登録の失敗を記録（EXACT_ALARM_DENIED を優先）
+
+    // ✅ H3: pre だけを取り消す（main＝起床アラームは残す）。1 日失敗しても最後まで続ける
+    for (final date in plan.cancel) {
+      try {
+        await AlarmService.cancelPreAlarm(date);
+      } catch (e) {
+        debugPrint('Error cancelling pre alarm ($date): $e');
+        if (alarmErrorCode != 'EXACT_ALARM_DENIED') alarmErrorCode = 'SCHEDULE_FAILED';
+      }
+    }
+    print('🔕 古いシフトの出勤前アラーム（pre）を取り消し: ${plan.cancel.length}件');
+
+    // ✅ ========== Phase 3.2 追加: アラームをスケジュール ==========
+    print('⏰ アラームスケジュール開始...');
+    // N117：シフトは保存できているので、ここで例外が起きても「保存に失敗」にはせず、アラームの ⚠️ で知らせる
+    try {
+      // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
+      final alarmSettings = await _shiftRepository.getAppSettings('test_user');
+      final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
+      // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
+      if (alarmTimeBeforeShift <= 0) {
+        print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
+      } else {
+        for (final shift in plan.schedule) {
+          print('🔔 アラームスケジュール: ${shift.date}, 出勤時刻: ${shift.startTime.hour}:${shift.startTime.minute}');
+
+          final errorCode = await AlarmService.scheduleAlarmForShift(
+            shiftDate: shift.date,
+            alarmTime: shift.startTime,
+            mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
+            preAlarmEnabled: true,
+            preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
+            selectedAlarmSound: 'default',
+          );
+          if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
+            alarmErrorCode = errorCode;
+          }
+        }
+      }
+      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
+      print('📨 アラーム登録処理を実行完了（${plan.schedule.length}件） ※登録/スキップの結果は [AlarmService] ログを参照');
+    } catch (e) {
+      debugPrint('Error scheduling shift alarms: $e');
+      if (alarmErrorCode != 'EXACT_ALARM_DENIED') alarmErrorCode = 'SCHEDULE_FAILED';
+    }
+    // ==============================================================
+
+    // 成功メッセージ
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('✅ シフトを保存しました'),
+        backgroundColor: AppColors.primaryGradientStart,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    // ✅ Step2-2: アラームの取り消し・登録に失敗した場合は、保存完了の後に警告を1回だけ表示
+    final alarmError = AlarmService.alarmErrorMessage(alarmErrorCode);
+    if (alarmError != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(alarmError),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+
+    // onBack コールバック実行で戻る
+    if (widget.onBack != null) {
+      widget.onBack!();
     }
   }
   // ==============================================================================
