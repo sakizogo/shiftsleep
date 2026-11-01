@@ -31,6 +31,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
   late TimeOfDay _customStartTime;
   late TimeOfDay _customEndTime;
   final ShiftRepository _shiftRepository = ShiftRepository();  // ========== Week 3 Day 6-2 追加 ==========
+  bool _isSaving = false;  // N117：確定の処理中（上下 2 つの確定ボタンを押せなくする）
 
   @override
   void initState() {
@@ -126,7 +127,7 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _saveShifts,
+                  onPressed: _isSaving ? null : _saveShifts,  // N117：処理中は押せない
                   style: ElevatedButton.styleFrom(
                      backgroundColor: AppColors.primaryGradientStart,
                      padding: EdgeInsets.symmetric(
@@ -191,7 +192,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _saveShifts,
+                  onPressed: _isSaving ? null : _saveShifts,  // N117：処理中は押せない
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryGradientStart,
                     padding: EdgeInsets.symmetric(
@@ -506,7 +507,18 @@ const SizedBox(height: AppDimensions.paddingLarge),
 
   /// ========== Phase 3.2 修正: シフト保存 + アラームスケジュール ==========
   /// シフトを保存 + アラームをスケジュール
+  /// N117：処理中は確定ボタンを押せない（二度押しで全件削除と作り直しが入り混じらないように）
   Future<void> _saveShifts() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      await _saveShiftsAndScheduleAlarms();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _saveShiftsAndScheduleAlarms() async {
     try {
       // ========== デバッグログ追加 ==========
       print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
@@ -537,80 +549,98 @@ const SizedBox(height: AppDimensions.paddingLarge),
       }
       print('🔕 既存シフトの出勤前アラーム（pre）をキャンセル: ${existingShifts.length}件');
 
-      // ========== Week 9-2 修正: 先に全シフトを削除 ==========
-      await _shiftRepository.deleteAllShifts();
-      print('🗑️ 既存シフトをすべて削除');
-      // =====================================================
-
-      // DB に保存
-      await _shiftRepository.createShifts(patternMap);
+      // N117：全件削除と作り直しを 1 つのトランザクションで行う（失敗したら確定前の行に戻る）
+      try {
+        await _shiftRepository.replaceAllShifts(patternMap);
+      } catch (e) {
+        // 詳細確認画面に残り（編集した内容はそのまま）、アラームの登録には進まない
+        debugPrint('Error saving shifts: $e');
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('❌ シフトの保存に失敗しました: $e'),
+            backgroundColor: AppColors.warningRed,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
 
       print('✅ DB保存完了');
 
       // ✅ ========== Phase 3.2 追加: アラームをスケジュール ==========
       print('⏰ アラームスケジュール開始...');
-      // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
-      final alarmSettings = await _shiftRepository.getAppSettings('test_user');
-      final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
-      if (alarmTimeBeforeShift <= 0) {
-        print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
-      }
       String? alarmErrorCode;  // ✅ Step2-2: ループ中の登録失敗を記録（EXACT_ALARM_DENIED を優先）
-      for (final entry in widget.shiftDataMap.entries) {
-        final date = entry.key;
-        final shiftData = entry.value;
-        final pattern = shiftData.pattern;
-
-        // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
+      // N117：シフトは保存できているので、ここで例外が起きても「保存に失敗」にはせず、アラームの ⚠️ で知らせる
+      try {
+        // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
+        final alarmSettings = await _shiftRepository.getAppSettings('test_user');
+        final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
         if (alarmTimeBeforeShift <= 0) {
-          continue;
+          print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
         }
+        for (final entry in widget.shiftDataMap.entries) {
+          final date = entry.key;
+          final shiftData = entry.value;
+          final pattern = shiftData.pattern;
 
-        // 勤務シフトの場合のみアラームをスケジュール
-        if (pattern != null && 
-            pattern.patternType == ShiftType.work && 
-            pattern.startTime != null) {
-          print('🔔 アラームスケジュール: $date, 出勤時刻: ${pattern.startTime!.hour}:${pattern.startTime!.minute}');
-
-          final errorCode = await AlarmService.scheduleAlarmForShift(
-            shiftDate: date,
-            alarmTime: pattern.startTime!,
-            mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
-            preAlarmEnabled: true,
-            preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
-            selectedAlarmSound: 'default',
-          );
-          if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
-            alarmErrorCode = errorCode;
+          // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
+          if (alarmTimeBeforeShift <= 0) {
+            continue;
           }
-        } else {
-          print('⊘ スキップ: $date (非勤務シフト)');
+
+          // 勤務シフトの場合のみアラームをスケジュール
+          if (pattern != null &&
+              pattern.patternType == ShiftType.work &&
+              pattern.startTime != null) {
+            print('🔔 アラームスケジュール: $date, 出勤時刻: ${pattern.startTime!.hour}:${pattern.startTime!.minute}');
+
+            final errorCode = await AlarmService.scheduleAlarmForShift(
+              shiftDate: date,
+              alarmTime: pattern.startTime!,
+              mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
+              preAlarmEnabled: true,
+              preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
+              selectedAlarmSound: 'default',
+            );
+            if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
+              alarmErrorCode = errorCode;
+            }
+          } else {
+            print('⊘ スキップ: $date (非勤務シフト)');
+          }
         }
+        // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
+        print('📨 アラーム登録処理を実行完了 ※登録/スキップの結果は [AlarmService] ログを参照');
+      } catch (e) {
+        debugPrint('Error scheduling shift alarms: $e');
+        if (alarmErrorCode != 'EXACT_ALARM_DENIED') alarmErrorCode = 'SCHEDULE_FAILED';
       }
-      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
-      print('📨 アラーム登録処理を実行完了 ※登録/スキップの結果は [AlarmService] ログを参照');
       // ==============================================================
 
       // 成功メッセージ
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('✅ シフトを保存しました'),
+          backgroundColor: AppColors.primaryGradientStart,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      // ✅ Step2-2: アラーム登録に失敗した場合は、保存完了の後に警告を1回だけ表示
+      final alarmError = AlarmService.alarmErrorMessage(alarmErrorCode);
+      if (alarmError != null) {
+        messenger.showSnackBar(
           SnackBar(
-            content: Text('${widget.shiftDataMap.length}日間のシフトを保存しました'),
-            backgroundColor: AppColors.primaryGradientStart,
-            duration: const Duration(seconds: 2),
+            content: Text(alarmError),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
           ),
         );
-        // ✅ Step2-2: アラーム登録に失敗した場合は、保存完了の後に警告を1回だけ表示
-        final alarmError = AlarmService.alarmErrorMessage(alarmErrorCode);
-        if (alarmError != null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(alarmError),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 6),
-            ),
-          );
-        }
       }
 
       // onBack コールバック実行で戻る
@@ -618,16 +648,18 @@ const SizedBox(height: AppDimensions.paddingLarge),
         widget.onBack!();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('シフト保存に失敗しました: $e'),
-            backgroundColor: AppColors.warningRed,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-      print('Error saving shifts: $e');
+      // 古いアラームの取り消し（DB に書く前）で失敗したとき。シフトの DB はまだ変えていない
+      debugPrint('Error saving shifts: $e');
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ シフトの保存に失敗しました: $e'),
+          backgroundColor: AppColors.warningRed,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
   // ==============================================================================

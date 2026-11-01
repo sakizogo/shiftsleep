@@ -163,48 +163,64 @@ class ShiftRepository {
 
   // ========== Week 3 Day 5 追加: Shifts テーブル操作メソッド ==========
 
-  /// シフトを作成（単数）
-  Future<void> createShift(DateTime date, ShiftPatternModel pattern) async {
-    try {
-      final db = await _databaseHelper.database;
-      
-      // 日付を正規化（時刻なし）
+  /// 確定で shifts に入れる行の一覧（N117。DB には触らない）
+  /// - pattern が null の日は飛ばす
+  /// - shift_date は時刻を捨てた 'YYYY-MM-DD'
+  /// - N104 の「削除済み」も元の pattern_id のまま入れる
+  /// - id は入れない（N113 で扱う）
+  static List<Map<String, Object?>> shiftRowsForSave(
+    Map<DateTime, ShiftPatternModel?> shiftMap,
+    String now,
+  ) {
+    final rows = <Map<String, Object?>>[];
+    for (final entry in shiftMap.entries) {
+      final pattern = entry.value;
+      if (pattern == null) continue;
+      final date = entry.key;
       final normalized = DateTime(date.year, date.month, date.day);
-      final dateStr = normalized.toIso8601String().split('T').first;  // 2026-08-06 形式
-      final now = DateTime.now().toIso8601String();  // ← 新規追加
-      
-      print('💾 createShift() - 保存: $dateStr / pattern_id=${pattern.id}');
-      
-      await db.insert(
-        'shifts',
-        {
-          'shift_date': dateStr,
-          'pattern_id': pattern.id,
-          'user_id': _userId,
-          'created_at': now,  // ← 新規追加
-          'updated_at': now,  // ← 新規追加
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,  // 同じ日付なら上書き
-      );
-      
-      print('✅ createShift() 完了: $dateStr');
-    } catch (e) {
-      print('❌ Error creating shift: $e');
+      rows.add({
+        'shift_date': normalized.toIso8601String().split('T').first,  // 2026-08-06 形式
+        'pattern_id': pattern.id,
+        'user_id': _userId,
+        'created_at': now,
+        'updated_at': now,
+      });
     }
+    return rows;
   }
 
-  /// シフトを作成（複数）
-  Future<void> createShifts(
-      Map<DateTime, ShiftPatternModel?> shiftMap) async {
+  /// 確定：shifts を全部消して shiftMap で作り直す（N117）
+  /// 1 つのトランザクションで行い、失敗したら確定前の行に戻して例外を投げる
+  /// 消す前の行（shift_date と pattern_id）を返す（出勤前アラームの取り消しに使う）
+  Future<List<({String shiftDate, String? patternId})>> replaceAllShifts(
+    Map<DateTime, ShiftPatternModel?> shiftMap,
+  ) async {
     try {
-      for (final entry in shiftMap.entries) {
-        if (entry.value != null) {
-          await createShift(entry.key, entry.value!);
+      final db = await _databaseHelper.database;
+      final rows = shiftRowsForSave(shiftMap, DateTime.now().toIso8601String());
+
+      final oldShifts = await db.transaction((txn) async {
+        final oldRows = await txn.query('shifts', columns: ['shift_date', 'pattern_id']);
+        // 今までの deleteAllShifts と同じく、user_id では絞らずに全部消す
+        await txn.delete('shifts');
+        final batch = txn.batch();
+        for (final row in rows) {
+          batch.insert('shifts', row, conflictAlgorithm: ConflictAlgorithm.replace);
         }
-      }
-      print('Created ${shiftMap.length} shifts');
+        await batch.commit(noResult: true);
+        return oldRows
+            .map((row) => (
+                  shiftDate: row['shift_date'] as String,
+                  patternId: row['pattern_id'] as String?,
+                ))
+            .toList();
+      });
+
+      debugPrint('✅ replaceAllShifts: 古い行 ${oldShifts.length} 件 → 新しい行 ${rows.length} 件');
+      return oldShifts;
     } catch (e) {
-      print('Error creating shifts: $e');
+      debugPrint('❌ Error replacing shifts: $e');
+      rethrow;  // N117：画面で失敗を知らせ、確定前の状態に残す
     }
   }
 
@@ -225,17 +241,6 @@ class ShiftRepository {
     } catch (e) {
       print('Error deleting shift: $e');
       rethrow;  // N74：失敗を呼び出し元に知らせる
-    }
-  }
-
-  /// 全シフトを削除
-  Future<void> deleteAllShifts() async {
-    try {
-      final db = await _databaseHelper.database;
-      await db.delete('shifts');
-      print('🗑️ 全シフトを削除完了');
-    } catch (e) {
-      print('Error deleting all shifts: $e');
     }
   }
 
