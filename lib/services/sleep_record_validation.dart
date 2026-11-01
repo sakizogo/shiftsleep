@@ -94,10 +94,7 @@ class SleepRecordValidation {
     DateTime? sleepingStartTime,
   }) {
     final start = record.sleepStartTime;
-    final isSleeping = (sleepingRecordId != null && record.id == sleepingRecordId) ||
-        (sleepingStartTime != null &&
-            start.millisecondsSinceEpoch == sleepingStartTime.millisecondsSinceEpoch);
-    if (isSleeping) {
+    if (_isSleepingRecord(record, sleepingRecordId, sleepingStartTime)) {
       return (start: start, end: now);
     }
 
@@ -106,6 +103,18 @@ class SleepRecordValidation {
       end = end.add(const Duration(days: 1));
     }
     return (start: start, end: end);
+  }
+
+  /// 睡眠中の記録か（記録 ID か開始時刻のミリ秒が一致するか）
+  static bool _isSleepingRecord(
+    SleepRecord record,
+    String? sleepingRecordId,
+    DateTime? sleepingStartTime,
+  ) {
+    return (sleepingRecordId != null && record.id == sleepingRecordId) ||
+        (sleepingStartTime != null &&
+            record.sleepStartTime.millisecondsSinceEpoch ==
+                sleepingStartTime.millisecondsSinceEpoch);
   }
 
   /// 2 つの時間が重なるか（端がちょうど同じ時刻は重なりにしない）
@@ -158,5 +167,78 @@ class SleepRecordValidation {
     }
 
     return null;
+  }
+
+  // ========== N111: どの記録と重なったか ==========
+
+  /// 重なる記録を探す。なければ null
+  /// - 判定は validate と同じ（occupiedRange・overlaps、excludeRecordId の記録は除く）
+  /// - 複数あれば、占める時間の start がいちばん早いものを返す。count は重なった件数
+  /// - start・end は occupiedRange の範囲（睡眠中の記録は end が now）
+  static ({SleepRecord record, DateTime start, DateTime end, bool isSleeping, int count})?
+      findOverlappingRecord({
+    required DateTime start,
+    required DateTime end,
+    required DateTime now,
+    required List<SleepRecord> existingRecords,
+    String? sleepingRecordId,
+    DateTime? sleepingStartTime,
+    String? excludeRecordId,
+  }) {
+    final range = (start: start, end: end);
+    SleepRecord? first;
+    ({DateTime start, DateTime end})? firstRange;
+    var count = 0;
+
+    for (final record in existingRecords) {
+      if (excludeRecordId != null && record.id == excludeRecordId) continue;
+
+      final occupied = occupiedRange(
+        record,
+        now: now,
+        sleepingRecordId: sleepingRecordId,
+        sleepingStartTime: sleepingStartTime,
+      );
+      if (!overlaps(range, occupied)) continue;
+
+      count++;
+      if (firstRange == null || occupied.start.isBefore(firstRange.start)) {
+        first = record;
+        firstRange = occupied;
+      }
+    }
+
+    if (first == null || firstRange == null) return null;
+    return (
+      record: first,
+      start: firstRange.start,
+      end: firstRange.end,
+      isSleeping: _isSleepingRecord(first, sleepingRecordId, sleepingStartTime),
+      count: count,
+    );
+  }
+
+  /// 重なりの警告の文言
+  /// 例：「⚠️ 10/31 23:00〜11/1 7:00 の記録と重なっています（ほか 1 件）」
+  /// - 日付は M/d、時刻は H:mm（0 埋めなし）。終了が開始と同じ日なら終了の日付は省く
+  /// - 睡眠中の記録は終了を「今（睡眠中）」にする
+  static String overlapMessage({
+    required DateTime start,
+    required DateTime end,
+    required bool isSleeping,
+    required int count,
+  }) {
+    String date(DateTime t) => '${t.month}/${t.day}';
+    String time(DateTime t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
+
+    final sameDay = start.year == end.year && start.month == end.month && start.day == end.day;
+    // 「今（睡眠中）」は全角の括弧で終わるので、後ろに空白を入れない
+    final endText = isSleeping
+        ? '今（睡眠中）'
+        : sameDay
+            ? '${time(end)} '
+            : '${date(end)} ${time(end)} ';
+    final others = count >= 2 ? '（ほか ${count - 1} 件）' : '';
+    return '⚠️ ${date(start)} ${time(start)}〜$endTextの記録と重なっています$others';
   }
 }

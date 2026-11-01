@@ -301,4 +301,99 @@ void main() {
       );
     });
   });
+
+  // N111：どの記録と重なったか
+  group('重なった記録を探す', () {
+    // a：10/31 18:29 → 20:29、b：10/31 23:00 → 11/1 7:00
+    final a = record('a', DateTime(2026, 10, 31, 18, 29), DateTime(2026, 10, 31, 20, 29));
+    final b = record('b', DateTime(2026, 10, 31, 23, 0), DateTime(2026, 11, 1, 7, 0));
+
+    test('30. 重ならないときは null', () {
+      expect(
+        SleepRecordValidation.findOverlappingRecord(
+          start: DateTime(2026, 10, 31, 21, 0), end: DateTime(2026, 10, 31, 23, 0), now: now, existingRecords: [a, b],
+        ),
+        isNull,
+      );
+    });
+
+    test('31. 1 件重なるとき、その記録と範囲が返る', () {
+      final result = SleepRecordValidation.findOverlappingRecord(
+        start: DateTime(2026, 10, 31, 20, 0), end: DateTime(2026, 10, 31, 22, 0), now: now, existingRecords: [a, b],
+      );
+      expect(result!.record.id, 'a');
+      expect(result.start, DateTime(2026, 10, 31, 18, 29));
+      expect(result.end, DateTime(2026, 10, 31, 20, 29));
+      expect(result.isSleeping, isFalse);
+      expect(result.count, 1);
+    });
+
+    test('32. excludeRecordId の記録は返らず、ほかと重なればそちらが返る', () {
+      final result = SleepRecordValidation.findOverlappingRecord(
+        start: DateTime(2026, 10, 31, 20, 0), end: DateTime(2026, 11, 1, 1, 0), now: now, existingRecords: [a, b],
+        excludeRecordId: 'a',
+      );
+      expect(result!.record.id, 'b');
+      expect(result.count, 1);
+    });
+
+    test('33. 睡眠中の記録は end が now になる', () {
+      // 睡眠中：11/1 10:00 開始（DB 上は 11/2 7:00 終了）。今は 12:00
+      final sleeping = record('s', DateTime(2026, 11, 1, 10, 0), DateTime(2026, 11, 2, 7, 0));
+      final result = SleepRecordValidation.findOverlappingRecord(
+        start: DateTime(2026, 11, 1, 9, 0), end: DateTime(2026, 11, 1, 11, 0), now: now, existingRecords: [sleeping],
+        sleepingRecordId: 's',
+      );
+      expect(result!.record.id, 's');
+      expect(result.end, now);
+      expect(result.isSleeping, isTrue);
+    });
+
+    test('34. 2 件重なるとき、start が早いほうと count 2 が返る', () {
+      // 並びが新しい順（b → a）でも、早い a が返る
+      final result = SleepRecordValidation.findOverlappingRecord(
+        start: DateTime(2026, 10, 31, 19, 0), end: DateTime(2026, 11, 1, 1, 0), now: now, existingRecords: [b, a],
+      );
+      expect(result!.record.id, 'a');
+      expect(result.count, 2);
+    });
+  });
+
+  group('重なりの文言', () {
+    test('35. 基本', () {
+      expect(
+        SleepRecordValidation.overlapMessage(
+          start: DateTime(2026, 10, 31, 18, 29), end: DateTime(2026, 10, 31, 20, 29), isSleeping: false, count: 1,
+        ),
+        '⚠️ 10/31 18:29〜20:29 の記録と重なっています',
+      );
+    });
+
+    test('36. 日をまたぐ', () {
+      expect(
+        SleepRecordValidation.overlapMessage(
+          start: DateTime(2026, 10, 31, 23, 0), end: DateTime(2026, 11, 1, 7, 0), isSleeping: false, count: 1,
+        ),
+        '⚠️ 10/31 23:00〜11/1 7:00 の記録と重なっています',
+      );
+    });
+
+    test('37. 相手が睡眠中の記録', () {
+      expect(
+        SleepRecordValidation.overlapMessage(
+          start: DateTime(2026, 11, 1, 13, 0), end: DateTime(2026, 11, 1, 14, 0), isSleeping: true, count: 1,
+        ),
+        '⚠️ 11/1 13:00〜今（睡眠中）の記録と重なっています',
+      );
+    });
+
+    test('38. 2 件以上は「ほか N 件」を足す', () {
+      expect(
+        SleepRecordValidation.overlapMessage(
+          start: DateTime(2026, 10, 31, 18, 29), end: DateTime(2026, 10, 31, 20, 29), isSleeping: false, count: 2,
+        ),
+        '⚠️ 10/31 18:29〜20:29 の記録と重なっています（ほか 1 件）',
+      );
+    });
+  });
 }

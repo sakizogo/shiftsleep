@@ -642,9 +642,9 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     );
   }
 
-  /// 保存前のチェック（追加・修正で共通）。問題なければ null
+  /// 保存前のチェック（追加・修正で共通）。問題なければ null、問題があれば警告の文言
   /// excludeRecordId：修正のときの自分自身の ID（重なり判定から外す。N107）
-  Future<ManualSleepError?> _validateTimes(
+  Future<String?> _validateTimes(
     ({DateTime start, DateTime end}) times,
     DateTime now,
     SleepProvider provider, {
@@ -658,15 +658,40 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     );
 
     final isSleeping = provider.isSleepingNow;
-    return SleepRecordValidation.validate(
+    final sleepingRecordId = isSleeping ? provider.currentSleepRecordIdNow : null;
+    final sleepingStartTime = isSleeping ? provider.sleepStartTime : null;
+    final error = SleepRecordValidation.validate(
       start: times.start,
       end: times.end,
       now: now,
       existingRecords: nearbyRecords,
-      sleepingRecordId: isSleeping ? provider.currentSleepRecordIdNow : null,
-      sleepingStartTime: isSleeping ? provider.sleepStartTime : null,
+      sleepingRecordId: sleepingRecordId,
+      sleepingStartTime: sleepingStartTime,
       excludeRecordId: excludeRecordId,
     );
+    if (error == null) return null;
+
+    // N111：重なりのときは、どの記録と重なったかを出す（見つからなければ今の文言）
+    if (error == ManualSleepError.overlap) {
+      final overlap = SleepRecordValidation.findOverlappingRecord(
+        start: times.start,
+        end: times.end,
+        now: now,
+        existingRecords: nearbyRecords,
+        sleepingRecordId: sleepingRecordId,
+        sleepingStartTime: sleepingStartTime,
+        excludeRecordId: excludeRecordId,
+      );
+      if (overlap != null) {
+        return SleepRecordValidation.overlapMessage(
+          start: overlap.start,
+          end: overlap.end,
+          isSleeping: overlap.isSleeping,
+          count: overlap.count,
+        );
+      }
+    }
+    return error.message;
   }
 
   /// 新しい記録を保存
@@ -685,9 +710,9 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final error = await _validateTimes(times, now, provider);
-      if (error != null) {
-        _showWarning(messenger, error.message);
+      final warning = await _validateTimes(times, now, provider);
+      if (warning != null) {
+        _showWarning(messenger, warning);
         return;
       }
 
@@ -765,9 +790,9 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final error = await _validateTimes(times, now, provider, excludeRecordId: original.id);
-      if (error != null) {
-        _showWarning(messenger, error.message);
+      final warning = await _validateTimes(times, now, provider, excludeRecordId: original.id);
+      if (warning != null) {
+        _showWarning(messenger, warning);
         return;
       }
 
