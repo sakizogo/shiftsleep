@@ -11,6 +11,7 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
 import 'package:shiftsleep/services/pattern_usage.dart';  // N104
+import 'package:shiftsleep/services/range_apply_message.dart';  // N93
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 import 'package:shiftsleep/constants/calendar_range.dart';
@@ -60,6 +61,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late ShiftPatternModel _defaultVacationHalf;
   late List<ShiftPatternModel> _patterns;
   int _vacationStatsVersion = 0;  // N77・N69：増やすと VacationStatsWidget を作り直して残日数を読み直す
+  bool _isApplyingRange = false;  // N93：期間指定の処理中（二度押しで 2 回走らないように）
 
   @override
   void initState() {
@@ -900,7 +902,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null ? _applyRangeShift : null,
+            // N93：処理中は押せない
+            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null && !_isApplyingRange
+                ? _applyRangeShift
+                : null,
             style: ElevatedButton.styleFrom(
               backgroundColor: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null ? AppColors.primaryGradientStart : AppColors.borderDefault,
               padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingSmall),
@@ -987,9 +992,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
   Future<void> _applyRangeShift() async {
+      if (_isApplyingRange) return;
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
       // N102：開始日 > 終了日なら止める（ピッカーでも選べないが念のため。日付だけで比べる）
       if (DateUtils.dateOnly(_rangeStartDate!).isAfter(DateUtils.dateOnly(_rangeEndDate!))) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('⚠️ 終了日は開始日以降を選んでください'),
@@ -998,23 +1005,52 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         );
         return;
       }
-      DateTime current = _rangeStartDate!;
-      var vacationChanged = false;
-      // N100：有休で置き換えた今日以降の出勤の日数（保存で出勤前アラームが取り消されるので案内する）
-      // 半休はシフトと共存させるので置き換えず、数えない
-      final isFullVacation = _selectedPattern!.patternType == ShiftType.vacation;
-      final isHalfVacation = _selectedPattern!.patternType == ShiftType.halfVacation;
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      var replacedWorkDays = 0;
-      while (!current.isAfter(_rangeEndDate!)) {
+      // N93：await のあいだにパターン・日付の選択が変わっても、押したときの値で続ける
+      final pattern = _selectedPattern!;
+      final rangeStart = _rangeStartDate!;
+      final rangeEnd = _rangeEndDate!;
+
+      setState(() => _isApplyingRange = true);
+      try {
+        await _applyRangeDays(pattern, rangeStart, rangeEnd);
+      } finally {
+        if (mounted) setState(() => _isApplyingRange = false);
+      }
+    }
+
+  /// N93：期間の日を 1 日ずつ登録する
+  /// その日の DB への書き込みが済んでから _shiftMap・_vacationMap を書き換え、失敗した日で止める
+  /// それまでの日は残す（N68 で同じ日は上書きなので、同じ期間を登録し直せば続きが入る）
+  Future<void> _applyRangeDays(
+      ShiftPatternModel pattern, DateTime rangeStart, DateTime rangeEnd) async {
+    DateTime current = rangeStart;
+    DateTime? lastSucceeded;
+    var vacationChanged = false;  // 有休・半休の行を 1 日でも書き換えたら true
+    // N100：有休で置き換えた今日以降の出勤の日数（保存で出勤前アラームが取り消されるので案内する）
+    // 半休はシフトと共存させるので置き換えず、数えない
+    final isFullVacation = pattern.patternType == ShiftType.vacation;
+    final isHalfVacation = pattern.patternType == ShiftType.halfVacation;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    var replacedWorkDays = 0;
+    try {
+      while (!current.isAfter(rangeEnd)) {
         final normalized = DateTime(current.year, current.month, current.day);
-        if (isFullVacation &&
+        final replacesWork = isFullVacation &&
             !normalized.isBefore(today) &&
-            _shiftMap[normalized]?.pattern?.patternType == ShiftType.work) {
-          replacedWorkDays++;
-        }
-        if (isHalfVacation) {
+            _shiftMap[normalized]?.pattern?.patternType == ShiftType.work;
+
+        if (isFullVacation) {
+          await _vacationRepository.recordVacationUsage(
+            'test_user',
+            normalized,
+            1.0,
+            'カレンダーから登録（有休）',
+          );
+          vacationChanged = true;
+          _shiftMap[normalized] = ShiftData(date: normalized, pattern: pattern);
+          _vacationMap[normalized] = 1.0;  // N69：すぐ 🏖️ が出るように
+        } else if (isHalfVacation) {
           // N100（B 案）：半休は出勤・休日などと共存させる（タップの半休と同じ）
           // 有休パターンの日だけ、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
           if (_shiftMap[normalized]?.pattern?.patternType == ShiftType.vacation) {
@@ -1022,49 +1058,64 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             _shiftMap.remove(normalized);
             await AlarmService.cancelPreAlarm(normalized);
           }
-        } else {
-          _shiftMap[normalized] = ShiftData(date: normalized, pattern: _selectedPattern);
-        }
-
-        if (_selectedPattern!.patternType == ShiftType.vacation) {
-          await _vacationRepository.recordVacationUsage(
-            'test_user',
-            normalized,
-            1.0,
-            'カレンダーから登録（有休）',
-          );
-          _vacationMap[normalized] = 1.0;  // N69：すぐ 🏖️ が出るように
-          vacationChanged = true;
-        } else if (_selectedPattern!.patternType == ShiftType.halfVacation) {
           await _vacationRepository.recordVacationUsage(
             'test_user',
             normalized,
             0.5,
             'カレンダーから登録（半休）',
           );
-          _vacationMap[normalized] = 0.5;  // N69：すぐ 🌤️ が出るように
           vacationChanged = true;
-        } else if (await _removeFullVacationIfOverwritten(normalized, _selectedPattern!)) {
-          vacationChanged = true;  // N77
+          _vacationMap[normalized] = 0.5;  // N69：すぐ 🌤️ が出るように
+        } else {
+          if (await _removeFullVacationIfOverwritten(normalized, pattern)) {
+            vacationChanged = true;  // N77
+          }
+          _shiftMap[normalized] = ShiftData(date: normalized, pattern: pattern);
         }
 
+        if (replacesWork) replacedWorkDays++;
+        lastSucceeded = normalized;
         current = current.add(const Duration(days: 1));
       }
+    } catch (e) {
+      debugPrint('Error applying range shift: $e');
+      if (!mounted) return;
       setState(() {
         if (vacationChanged) _vacationStatsVersion++;
       });
-      final rangeDays = _rangeEndDate!.difference(_rangeStartDate!).inDays + 1;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final failed = DateTime(current.year, current.month, current.day);
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(
-          content: Text(
-            '${isHalfVacation ? '半休 $rangeDays日を登録しました' : '$rangeDays日追加'}'
-            '${replacedWorkDays > 0 ? '\n出勤 $replacedWorkDays日を${_selectedPattern!.patternName}にしました。「シフトを確定」を押すと、その日の出勤前アラームが取り消されます' : ''}',
-          ),
-          backgroundColor: AppColors.primaryGradientStart,
-          duration: Duration(seconds: replacedWorkDays > 0 ? 4 : 2),
+          content: Text(rangeApplyFailureMessage(rangeStart, lastSucceeded, failed, e)),
+          backgroundColor: AppColors.warningRed,
+          duration: Duration(seconds: lastSucceeded == null ? 4 : 6),
         ),
       );
+      // 念のため、有休・半休の表示を DB に合わせ直す
+      await _loadVacationData();
+      return;
     }
+    if (!mounted) return;
+
+    setState(() {
+      if (vacationChanged) _vacationStatsVersion++;
+    });
+    final rangeDays = rangeEnd.difference(rangeStart).inDays + 1;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          '${isHalfVacation ? '半休 $rangeDays日を登録しました' : '$rangeDays日追加'}'
+          '${replacedWorkDays > 0 ? '\n出勤 $replacedWorkDays日を${pattern.patternName}にしました。「シフトを確定」を押すと、その日の出勤前アラームが取り消されます' : ''}',
+        ),
+        backgroundColor: AppColors.primaryGradientStart,
+        duration: Duration(seconds: replacedWorkDays > 0 ? 4 : 2),
+      ),
+    );
+  }
 
   /// N93：マスのタップで失敗したときの SnackBar（前の SnackBar は消す。赤・4 秒は N104・N115 とそろえる）
   void _showTapError(String message) {
