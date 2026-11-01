@@ -151,21 +151,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
           today,
           today.add(const Duration(days: 1)),
         };
-        final shifts = await _shiftRepository.getShiftsForDateRange(
-          today,
-          today.add(const Duration(days: 365)),
-        );
-        for (final shift in shifts) {
-          final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
-          if (shiftDate != null) {
-            targetDates.add(DateTime(shiftDate.year, shiftDate.month, shiftDate.day));
+        // N118：シフトを読めなくても今日・明日の分は取り消し、スイッチは OFF のままで知らせる
+        var shiftsReadFailed = false;
+        try {
+          final shifts = await _shiftRepository.getShiftsForDateRange(
+            today,
+            today.add(const Duration(days: 365)),
+          );
+          for (final shift in shifts) {
+            final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
+            if (shiftDate != null) {
+              targetDates.add(DateTime(shiftDate.year, shiftDate.month, shiftDate.day));
+            }
           }
+        } catch (e) {
+          debugPrint('❌ [Settings] アラームOFF：シフトを読めませんでした: $e');
+          shiftsReadFailed = true;
         }
         for (final date in targetDates) {
           await AlarmService.cancelMainAlarm(date);
           await AlarmService.cancelPreAlarm(date);
         }
         print('🔕 [Settings] アラームOFF: ${targetDates.length}日分の main / pre をキャンセルしました');
+        if (shiftsReadFailed && mounted) {
+          final messenger = ScaffoldMessenger.of(context);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ 一部のアラームを取り消せませんでした。もう一度 OFF にしてください'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        }
       } catch (e) {
         print('❌ [Settings] アラームOFF時のキャンセルエラー: $e');
       }
@@ -1289,11 +1307,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   
   Future<void> _updateWakeUpTimeInProvider() async {
     try {
-      final shifts = await _shiftRepository.getShiftsForDateRange(
-        DateTime.now(),
-        DateTime.now().add(const Duration(days: 1)),
-      );
-      
+      // N118：シフトを読めなかったら「シフトが登録されていません」と誤表示しない（ログだけ）
+      final List<Map<String, dynamic>> shifts;
+      try {
+        shifts = await _shiftRepository.getShiftsForDateRange(
+          DateTime.now(),
+          DateTime.now().add(const Duration(days: 1)),
+        );
+      } catch (e) {
+        debugPrint('❌ 起床時刻の自動計算：シフトを読めませんでした: $e');
+        return;
+      }
+
       if (shifts.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

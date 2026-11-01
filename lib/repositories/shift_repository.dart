@@ -41,8 +41,8 @@ class ShiftRepository {
         );
       });
     } catch (e) {
-      print('Error getting patterns: $e');
-      return [];
+      debugPrint('Error getting patterns: $e');
+      rethrow;  // N118：「読めなかった」を「パターンがない」と分ける
     }
   }
 
@@ -272,8 +272,8 @@ class ShiftRepository {
     
       return results;
     } catch (e) {
-      print('❌ Error getting shifts for date range: $e');
-      return [];
+      debugPrint('❌ Error getting shifts for date range: $e');
+      rethrow;  // N118：「読めなかった」を「シフトがない」と分ける
     }
   }
 
@@ -391,8 +391,8 @@ class ShiftRepository {
 
       return results.map((map) => CalendarEvent.fromMap(map)).toList();
     } catch (e) {
-      print('❌ Error getting calendar events for date range: $e');
-      return [];
+      debugPrint('❌ Error getting calendar events for date range: $e');
+      rethrow;  // N118：「読めなかった」を「イベントがない」と分ける
     }
   }
 

@@ -148,7 +148,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
       print('Loaded ${patterns.length} patterns from DB');
     } catch (e) {
-      print('Error loading patterns: $e');
+      // N118：読めなかったら _patterns は古いまま残す（[] で上書きしない）
+      debugPrint('Error loading patterns: $e');
     }
   }
 

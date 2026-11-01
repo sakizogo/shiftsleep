@@ -10,8 +10,8 @@ import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
-import 'package:shiftsleep/services/pattern_usage.dart';  // N104
 import 'package:shiftsleep/services/range_apply_message.dart';  // N93
+import 'package:shiftsleep/services/shift_load.dart';  // N118
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
 import 'package:shiftsleep/constants/calendar_range.dart';
@@ -62,6 +62,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late List<ShiftPatternModel> _patterns;
   int _vacationStatsVersion = 0;  // N77・N69：増やすと VacationStatsWidget を作り直して残日数を読み直す
   bool _isApplyingRange = false;  // N93：期間指定の処理中（二度押しで 2 回走らないように）
+  // N118：読み込みに失敗している部分（空でないあいだは登録・保存を止め、バナーを出す）
+  final Set<ShiftLoadPart> _loadFailures = {};
+  bool _isReloading = false;  // N118：［再読み込み］の処理中
 
   @override
   void initState() {
@@ -124,64 +127,112 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       print('[ShiftManagementScreen] ⚠️ 初期化エラー: $e');
     }
   }
-  
+
+  /// N118：［再読み込み］。処理中は押せない
+  Future<void> _reloadAll() async {
+    if (_isReloading) return;
+    setState(() => _isReloading = true);
+    try {
+      await _initializeAllData();
+    } finally {
+      if (mounted) setState(() => _isReloading = false);
+    }
+  }
+
+  /// N118：読み込みに失敗した部分を覚えて知らせる（その部分の表示は消さずに残す）
+  void _onLoadFailed(ShiftLoadPart part, Object e) {
+    if (!mounted) return;
+    setState(() => _loadFailures.add(part));
+    _showTapError(loadFailureMessage(part, e));
+  }
+
+  /// N118：読み込みに失敗しているあいだは止める。止めたら false
+  bool _ensureLoaded() {
+    final message = loadBlockMessage(_loadFailures);
+    if (message == null) return true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+    return false;
+  }
+
+    /// N118：失敗したら _vacationMap は消さずに残す（setState の前で止まる）
     Future<void> _loadVacationData() async {
+      final loaded = <DateTime, double>{};
       try {
         // N67：カレンダーの範囲全体を読む（来年の 🏖️ も出るように）
         final startOfYear = CalendarRange.firstDate;
         final endOfYear = CalendarRange.lastDate;
-        
+
         print('[ShiftManagementScreen] 🔍 有休データ検索範囲: $startOfYear ～ $endOfYear');
-        
+
         final vacationUsages = await _vacationRepository.getVacationUsageInRange(
           'test_user',
           startOfYear,
           endOfYear,
         );
-        
+
         print('[ShiftManagementScreen] 📊 取得した有休レコード数: ${vacationUsages.length}');
-        
-        setState(() {
-          _vacationMap.clear();
-          for (final usage in vacationUsages) {
-            // 🔧 修正：UTC → ローカルに変換
-            final utcDate = usage.usageDate;
-            final localDate = utcDate.isUtc 
-                ? DateTime(utcDate.year, utcDate.month, utcDate.day)
-                : DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
-            
-            _vacationMap[localDate] = usage.daysUsed;
-            print('[ShiftManagementScreen] 📌 有休登録: ${localDate.month}月${localDate.day}日 = ${usage.daysUsed}日');
-          }
-        });
-        print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
+
+        for (final usage in vacationUsages) {
+          // 🔧 修正：UTC → ローカルに変換
+          final utcDate = usage.usageDate;
+          final localDate = utcDate.isUtc
+              ? DateTime(utcDate.year, utcDate.month, utcDate.day)
+              : DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
+
+          loaded[localDate] = usage.daysUsed;
+          print('[ShiftManagementScreen] 📌 有休登録: ${localDate.month}月${localDate.day}日 = ${usage.daysUsed}日');
+        }
       } catch (e) {
-        print('[ShiftManagementScreen] ⚠️  Error loading vacation data: $e');
+        debugPrint('[ShiftManagementScreen] ❌ Error loading vacation data: $e');
+        _onLoadFailed(ShiftLoadPart.vacation, e);
+        return;
       }
+      if (!mounted) return;
+      setState(() {
+        _loadFailures.remove(ShiftLoadPart.vacation);
+        _vacationMap
+          ..clear()
+          ..addAll(loaded);
+      });
+      print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
     }
 
+  /// N118：失敗したらパターン一覧は消さずに残す（setState の前で止まる）
   Future<void> _loadPatterns() async {
+    final List<ShiftPatternModel> dbPatterns;
     try {
-      final dbPatterns = await _shiftRepository.getAllPatterns();
-      setState(() {
-        _patterns = [
-          _defaultDayOffPattern,
-          _defaultVacation1Day,
-          _defaultVacationHalf,
-        ];
-        
-        for (final dbPattern in dbPatterns) {
-          if (dbPattern.id != 'default_dayoff' && 
-              dbPattern.id != 'default_vacation_1day' && 
-              dbPattern.id != 'default_vacation_half') {
-            _patterns.add(dbPattern);
-          }
-        }
-      });
-      print('[ShiftManagementScreen] Loaded ${_patterns.length} patterns');
+      dbPatterns = await _shiftRepository.getAllPatterns();
     } catch (e) {
-      print('[ShiftManagementScreen] Error loading patterns: $e');
+      debugPrint('[ShiftManagementScreen] ❌ Error loading patterns: $e');
+      _onLoadFailed(ShiftLoadPart.patterns, e);
+      return;
     }
+    if (!mounted) return;
+    setState(() {
+      _loadFailures.remove(ShiftLoadPart.patterns);
+      _patterns = [
+        _defaultDayOffPattern,
+        _defaultVacation1Day,
+        _defaultVacationHalf,
+      ];
+
+      for (final dbPattern in dbPatterns) {
+        if (dbPattern.id != 'default_dayoff' &&
+            dbPattern.id != 'default_vacation_1day' &&
+            dbPattern.id != 'default_vacation_half') {
+          _patterns.add(dbPattern);
+        }
+      }
+    });
+    print('[ShiftManagementScreen] Loaded ${_patterns.length} patterns');
   }
 
   @override
@@ -200,6 +251,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             // ===================================================
             // ========== Week 27+ Step 2：タブに基づいてコンテンツを表示 ==========
             // ========== Week 27+ Step 2 修正：イベント追加は remove ==========
+            // N118：読み込みに失敗しているあいだはバナーを出したままにする
+            if (_loadFailures.isNotEmpty) ...[
+              _buildLoadErrorBanner(),
+              const SizedBox(height: AppDimensions.paddingMedium),
+            ],
             _buildInputMethodTabs(),
             const SizedBox(height: AppDimensions.paddingLarge),
             if (_selectedInputMethod == 0)
@@ -210,6 +266,45 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             // ===================================================
           ],
         ),
+      ),
+    );
+  }
+
+  /// N118：読み込みに失敗したときのバナー（色だけに頼らず ⚠️ と文字でも示す）
+  Widget _buildLoadErrorBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppDimensions.paddingSmall),
+      decoration: BoxDecoration(
+        color: AppColors.cardBgAlert,
+        border: Border.all(color: AppColors.warningRed, width: 1.5),
+        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '⚠️ シフトを読み込めませんでした。再読み込みするまで、登録・保存はできません',
+            style: AppTextStyles.bodyTextStyle.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: AppDimensions.paddingSmall),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: _isReloading ? null : _reloadAll,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: Text(_isReloading ? '読み込み中…' : '再読み込み'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryGradientStart,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -394,6 +489,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             },
             onDaySelected: (selectedDay, focusedDay) async {
               final selectedDate = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
+
+              // N118：パターンを選んでいて、読み込みに失敗しているなら止める（日を選ぶだけなら止めない）
+              if (_selectedPattern != null && !_ensureLoaded()) return;
 
               if (_selectedPattern?.patternType == ShiftType.halfVacation) {
                 // N93：await のあいだにパターンの選択が変わっても、押したときのパターンで続ける
@@ -619,6 +717,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           child: ElevatedButton(
             onPressed: _shiftMap.isNotEmpty
                 ? () {
+                    if (!_ensureLoaded()) return;  // N118
                     if (widget.onNavigateToDetails != null) {
                       final result = widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                       if (result is Future) {
@@ -924,6 +1023,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           child: ElevatedButton(
             onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
                 ? () async {
+                    if (!_ensureLoaded()) return;  // N118
                     if (widget.onNavigateToDetails != null) {
                       final result = await widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                       if (result is Future) {
@@ -994,6 +1094,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Future<void> _applyRangeShift() async {
       if (_isApplyingRange) return;
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
+      if (!_ensureLoaded()) return;  // N118
       // N102：開始日 > 終了日なら止める（ピッカーでも選べないが念のため。日付だけで比べる）
       if (DateUtils.dateOnly(_rangeStartDate!).isAfter(DateUtils.dateOnly(_rangeEndDate!))) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -1118,6 +1219,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
   /// N93：マスのタップで失敗したときの SnackBar（前の SnackBar は消す。赤・4 秒は N104・N115 とそろえる）
+  /// N118：読み込みの失敗もこれで知らせる
   void _showTapError(String message) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
@@ -1141,19 +1243,25 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     return true;
   }
 
+  /// N118：失敗したらイベントは消さずに残し、知らせるだけ（登録・保存は止めない）
   Future<void> loadCalendarEvents() async {
+    final List<CalendarEvent> events;
     try {
       // N67：カレンダーの範囲全体を読む（来年のイベントも出るように）
       final startDate = CalendarRange.firstDate;
       final endDate = CalendarRange.lastDate;
-      final events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
-      setState(() {
-        _calendarEvents.clear();
-        _calendarEvents.addAll(events);
-      });
+      events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
     } catch (e) {
-      print('エラー: $e');
+      debugPrint('[ShiftManagementScreen] ❌ Error loading calendar events: $e');
+      if (!mounted) return;
+      _showTapError('❌ イベントの読み込みに失敗しました: $e');
+      return;
     }
+    if (!mounted) return;
+    setState(() {
+      _calendarEvents.clear();
+      _calendarEvents.addAll(events);
+    });
   }
   
   /// N95・N96：有休・半休の行はすぐ消し、シフトの DB 行は保存まで残す
@@ -1189,32 +1297,34 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     });
   }
 
+  /// N118：失敗したら _shiftMap は消さずに残す（空のまま確定してほかの日が消えないように）
+  /// 一度読めたあとの再読み込み（再開・タブ切り替え・確定後）が失敗したときも、表示は残す
   Future<void> loadShifts() async {
+    final Map<DateTime, ShiftPatternModel> loaded;
     try {
       // N67・N72：カレンダーの範囲全体を読む（読んでいない日のシフトが保存で消えないように）
       final startDate = CalendarRange.firstDate;
       final endDate = CalendarRange.lastDate;
       final shiftRecords = await _shiftRepository.getShiftsForDateRange(startDate, endDate);
-      setState(() {
-        _shiftMap.clear();
-        for (final record in shiftRecords) {
-          final dateStr = record['shift_date'] as String;
-          final patternId = record['pattern_id'] as String?;
-          final date = DateTime.parse(dateStr);
-          final normalized = DateTime(date.year, date.month, date.day);
-          // N104：見つからないパターンの日は休日ではなく「削除済み」（元の pattern_id のまま）
-          final matchingPattern =
-              resolvePatternForShift(patternId, _patterns, _defaultDayOffPattern);
-          _shiftMap[normalized] = ShiftData(date: normalized, pattern: matchingPattern);
-        }
-      });
-      print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
-      _shiftMap.forEach((key, value) {
-        print("  ${key.toString()}: ${value.pattern?.patternName}");
-      });
+      // N104：見つからないパターンの日は休日ではなく「削除済み」（元の pattern_id のまま）
+      loaded = shiftMapFromRows(shiftRecords, _patterns, _defaultDayOffPattern);
     } catch (e) {
-      print('エラー: $e');
+      debugPrint('[ShiftManagementScreen] ❌ Error loading shifts: $e');
+      _onLoadFailed(ShiftLoadPart.shifts, e);
+      return;
     }
+    if (!mounted) return;
+    setState(() {
+      _loadFailures.remove(ShiftLoadPart.shifts);
+      _shiftMap.clear();
+      loaded.forEach((date, pattern) {
+        _shiftMap[date] = ShiftData(date: date, pattern: pattern);
+      });
+    });
+    print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
+    _shiftMap.forEach((key, value) {
+      print("  ${key.toString()}: ${value.pattern?.patternName}");
+    });
   }
 
   String _getEventEmoji(String eventType) {

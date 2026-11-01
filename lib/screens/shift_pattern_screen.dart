@@ -738,10 +738,32 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     }
   }
 
+  /// N115・N118：失敗したときの SnackBar（前の SnackBar は消す。赤・4 秒）
+  void _showPatternError(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.warningRed,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   /// N115：新しいパターンを DB に入れ、結果を一覧と SnackBar に出す
   Future<void> _insertNewPattern() async {
     // ========== Week 8 Phase 6 修正: colorIndex=0 を避ける ==========
-    final dbPatterns = await _shiftRepository.getAllPatterns();
+    // N118：色を決めるためのパターンが読めなければ、追加をやめる（入力欄はそのまま）
+    final List<ShiftPatternModel> dbPatterns;
+    try {
+      dbPatterns = await _shiftRepository.getAllPatterns();
+    } catch (e) {
+      debugPrint('Error loading patterns for color: $e');
+      if (!mounted) return;
+      _showPatternError('❌ パターンの追加に失敗しました: $e');
+      return;
+    }
 
     int maxColorIndex = -1;
     for (final pattern in dbPatterns) {
@@ -772,15 +794,7 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
     } catch (e) {
       // 一覧には加えず、入力欄もそのまま（入れ直さずにもう一度押せるように）
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('❌ パターンの追加に失敗しました: $e'),
-          backgroundColor: AppColors.warningRed,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      _showPatternError('❌ パターンの追加に失敗しました: $e');
       return;
     }
     if (!mounted) return;
@@ -850,7 +864,17 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
 
   void _proceedToNextScreen() async {
     // ========== Fix：DB から最新のパターンをロードして返す ==========
-    final latestPatterns = await _shiftRepository.getAllPatterns();
+    // N118：読めなかったら画面に残る（ホームの _patterns を [] で上書きしない）
+    final List<ShiftPatternModel> latestPatterns;
+    try {
+      latestPatterns = await _shiftRepository.getAllPatterns();
+    } catch (e) {
+      debugPrint('Error loading patterns: $e');
+      if (!mounted) return;
+      _showPatternError('❌ パターンの読み込みに失敗しました: $e');
+      return;
+    }
+    if (!mounted) return;
     Navigator.pop(context, latestPatterns);
     // ==============================================================
   }
