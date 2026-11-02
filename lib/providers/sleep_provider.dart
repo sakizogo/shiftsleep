@@ -413,9 +413,14 @@ class SleepProvider extends ChangeNotifier {
       // ========== Week 7 Phase 2 追加: AppSettings から改善アドバイス表示設定を読み込む ==========
       // settings_screen.dart と同じリポジトリインスタンスを作成
       final shiftRepository = ShiftRepository();
-      final settings = await shiftRepository.getAppSettings('test_user');
-      if (settings != null) {
-        _advicePromoVisible = settings.advicePromoVisible;
+      // N118：読めなかったら表示設定は変えずにアドバイスを作る
+      try {
+        final settings = await shiftRepository.getAppSettings('test_user');
+        if (settings != null) {
+          _advicePromoVisible = settings.advicePromoVisible;
+        }
+      } catch (e) {
+        debugPrint('[SleepProvider] ⚠️ AppSettings を読めなかったため、改善アドバイスの表示設定は前のまま: $e');
       }
       // ====================================================================
       

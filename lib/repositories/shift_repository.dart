@@ -77,7 +77,7 @@ class ShiftRepository {
       );
     } catch (e) {
       print('❌ Error getting pattern by ID: $e');
-      return null;
+      rethrow;  // N118：「読めなかった」を「パターンがない」と分ける
     }
   }
   // ===============================================================================
@@ -565,7 +565,7 @@ class ShiftRepository {
       return AppSettings.fromMap(results.first);
     } catch (e) {
       print('✗ Error getting app settings: $e');
-      return null;
+      rethrow;  // N118：「読めなかった」を「行がない」と分ける（AppSettings.fromMap の例外も含む）
     }
   }
 }
