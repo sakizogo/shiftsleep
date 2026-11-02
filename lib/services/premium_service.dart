@@ -10,6 +10,7 @@
 /// Week 7 Phase 3: 新規作成
 
 import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 
 class PremiumService {
@@ -99,7 +100,14 @@ class PremiumService {
       print('[PremiumService] 💾 DB に有料版ステータスを保存中... (isPremium=$isPremium)');
 
       // 1️⃣ 現在の AppSettings を取得
-      final settings = await _shiftRepository.getAppSettings(userId);
+      // N118：読めなかったら DB 保存だけ諦める（呼び出し元は RevenueCat の結果をキャッシュに入れる）
+      final AppSettings? settings;
+      try {
+        settings = await _shiftRepository.getAppSettings(userId);
+      } catch (e) {
+        print('[PremiumService] ⚠️  AppSettings を読めなかったため DB 保存をスキップ: $e');
+        return;
+      }
 
       if (settings == null) {
         print('[PremiumService] ⚠️  AppSettings が見つかりません（新規作成します）');

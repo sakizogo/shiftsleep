@@ -532,6 +532,27 @@ const SizedBox(height: AppDimensions.paddingLarge),
       patternMap[entry.key] = entry.value.pattern;
     }
 
+    // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（行がなければ既定の30分）
+    // N118：読めなかったら確定ごとやめる（シフト・アラームには触らず、詳細確認画面に残る）
+    final int alarmTimeBeforeShift;
+    try {
+      final alarmSettings = await _shiftRepository.getAppSettings('test_user');
+      alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
+    } catch (e) {
+      debugPrint('Error loading settings before saving shifts: $e');
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('❌ 設定を読み込めなかったため、確定しませんでした。もう一度お試しください'),
+          backgroundColor: AppColors.warningRed,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
     // N117：全件削除と作り直しを 1 つのトランザクションで行う（失敗したら確定前の行に戻る）
     // アラームはこれが成功してから動かす（失敗したらアラームには一切触らない）
     final List<({String shiftDate, String? patternId})> oldShifts;
@@ -574,9 +595,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
     print('⏰ アラームスケジュール開始...');
     // N117：シフトは保存できているので、ここで例外が起きても「保存に失敗」にはせず、アラームの ⚠️ で知らせる
     try {
-      // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（取得できなければ既定の30分）
-      final alarmSettings = await _shiftRepository.getAppSettings('test_user');
-      final alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
+      // ✅ ShiftPre: 出勤前アラームの設定値は確定の前に読んだもの（N118）を使う
       // ✅ ShiftPre: 出勤前アラームが「無効（0）」なら登録しない
       if (alarmTimeBeforeShift <= 0) {
         print('ℹ️ 出勤前アラームが無効（0）のため、シフト勤務アラームは登録しません');
