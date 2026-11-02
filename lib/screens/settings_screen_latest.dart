@@ -2,14 +2,17 @@ import 'package:flutter/cupertino.dart';  // ← CupertinoSwitch 用
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // ========== Week 25+ 追加 ==========
+import 'package:shiftsleep/constants/calendar_range.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/vacation_settings_screen.dart';
 import 'package:shiftsleep/screens/vacation_usage_screen.dart';
+import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
@@ -36,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _advicePromoVisible = true;
   bool _isPremiumUser = false;
   bool _isAlarmEnabled = true;  // ✨ 🆕 追加：デフォルト true
+  bool _isAlarmToggleBusy = false;  // N123：ON の登録し直し・OFF の取り消しの処理中はスイッチを押せない
   bool _isLoading = false;
   String? _vacationAccrualDate;
   // ========== Week 25+ 新規追加：毎日設定チェックボックス ==========
@@ -45,6 +49,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   final PremiumService _premiumService = PremiumService();
+  // N123：shiftMapFromRows に渡す休日パターン（シフト管理画面の _defaultDayOffPattern と同じ中身）
+  final ShiftPatternModel _dayOffPattern = ShiftPatternModel(
+    id: 'default_dayoff',
+    patternName: '休日',
+    patternType: ShiftType.dayOff,
+    colorIndex: 0,
+  );
   AppSettings? _currentSettings;  // ← 追加：現在の設定を保持
 
   /// _currentSettings を デフォルト値で初期化
@@ -131,18 +142,142 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     /// SharedPreferences にアラーム有効フラグを保存
-    Future<void> _saveAlarmEnabledSetting(bool value) async {
+    /// N123：保存できたら true（ON の保存に失敗したら登録し直さないため）
+    Future<bool> _saveAlarmEnabledSetting(bool value) async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('is_alarm_enabled', value);
+        final saved = await prefs.setBool('is_alarm_enabled', value);
         print('✅ アラーム有効フラグを保存: $value');
+        return saved;
       } catch (e) {
         print('⚠️ アラーム有効フラグ保存エラー: $e');
+        return false;
+      }
+    }
+
+    // ✅ H4: 先に保存（以降の新規登録を止める）→ OFF なら既存の main / pre をキャンセル
+    // N123：ON なら DB のシフトから出勤前アラーム（pre）を登録し直す。処理中はスイッチを押せない
+    Future<void> _onAlarmEnabledChanged(bool value) async {
+      if (_isAlarmToggleBusy) return;
+      final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+      final sleepProvider = context.read<SleepProvider>();
+      setState(() {
+        _isAlarmEnabled = value;
+        _isAlarmToggleBusy = true;
+      });
+      try {
+        final saved = await _saveAlarmEnabledSetting(value);  // 保存
+        print('[Settings] アラーム有効: $value');
+        if (!value) {
+          await _cancelAllAlarmsForOff();
+        } else if (!saved) {
+          // N123：ON を保存できなかったら登録し直さず、スイッチを OFF に戻す
+          if (mounted) setState(() => _isAlarmEnabled = false);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ アラームの設定を保存できませんでした。もう一度お試しください'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        } else {
+          await _rescheduleAlarmsForOn(messenger, sleepProvider.isSleepingNow);
+        }
+      } finally {
+        if (mounted) setState(() => _isAlarmToggleBusy = false);
+      }
+    }
+
+    // N123：アラーム ON 時に、DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直す
+    //    分数・音は DB の設定（行がなければ確定と同じく 30 分・'default'）。手動起床（main）は戻さない
+    Future<void> _rescheduleAlarmsForOn(ScaffoldMessengerState messenger, bool isSleepingNow) async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      var minutesBefore = 30;
+      var selectedAlarmSound = 'default';
+      var targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
+      var readFailed = false;
+      try {
+        final settings = await _shiftRepository.getAppSettings('test_user');
+        minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
+        selectedAlarmSound = settings?.selectedAlarmSound ?? 'default';
+        if (minutesBefore > 0) {
+          final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
+          final patterns = await _shiftRepository.getAllPatterns();
+          targets = preAlarmRescheduleTargets(
+            rows,
+            patterns,
+            _dayOffPattern,
+            minutesBefore,
+            now,
+            CalendarRange.lastDate,
+          );
+        }
+      } catch (e) {
+        debugPrint('❌ [Settings] アラームON：設定・シフト・パターンを読めませんでした: $e');
+        readFailed = true;
+      }
+
+      final codes = <String?>[];
+      if (!readFailed) {
+        for (final target in targets) {
+          try {
+            codes.add(await AlarmService.scheduleAlarmForShift(
+              shiftDate: target.date,
+              alarmTime: target.startTime,
+              mainAlarmEnabled: false,  // 出勤時刻ちょうどのアラームは登録しない（確定と同じ）
+              preAlarmEnabled: true,
+              preAlarmMinutes: minutesBefore,
+              selectedAlarmSound: selectedAlarmSound,
+            ));
+          } catch (e) {
+            debugPrint('❌ [Settings] アラームON：pre を登録できませんでした (${target.date}): $e');
+            codes.add('SCHEDULE_FAILED');
+          }
+        }
+      }
+      final result = summarizeRescheduleResults(codes);
+      debugPrint('🔔 [Settings] アラームON: pre を ${result.count}/${targets.length}件 登録し直しました（エラー: ${result.errorCode}）');
+
+      final message = rescheduleMessage(
+        count: result.count,
+        errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
+        readFailed: readFailed,
+        alarmDisabled: minutesBefore <= 0,
+      );
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message.text),
+          backgroundColor: message.color,
+          duration: Duration(seconds: message.color == Colors.orange ? 6 : 3),
+        ),
+      );
+
+      // N123：睡眠中で手動起床が有効なら、起床アラーム（main）は戻らないことを知らせる
+      if (isSleepingNow) {
+        DateTime? manualWakeAt;
+        try {
+          manualWakeAt = await ManualWakeService.getActive();
+        } catch (e) {
+          debugPrint('❌ [Settings] アラームON：手動起床を読めませんでした: $e');
+        }
+        if (manualWakeAt != null) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ 起床アラームは戻りません。『起きる』→『今から寝る』をやり直してください'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        }
       }
     }
 
     // ✅ H4: アラームOFF時に、登録済みの main / pre をすべてキャンセル
-    //    対象：今日・明日 ＋ DB に存在する今日〜1年後のシフト日（Set で重複排除）
+    //    対象：今日・明日 ＋ DB に存在する今日〜CalendarRange の終わりのシフト日（Set で重複排除）
+    //    N123：範囲の終わりを確定の登録（CalendarRange.lastDate）にそろえる
     Future<void> _cancelAllAlarmsForOff() async {
       try {
         final now = DateTime.now();
@@ -156,7 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         try {
           final shifts = await _shiftRepository.getShiftsForDateRange(
             today,
-            today.add(const Duration(days: 365)),
+            CalendarRange.lastDate,
           );
           for (final shift in shifts) {
             final shiftDate = DateTime.tryParse(shift['shift_date'] as String? ?? '');
@@ -457,18 +592,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               // ✨ 🆕 追加：Toggle Switch
                               CupertinoSwitch(
                                 value: _isAlarmEnabled,
-                                onChanged: (value) async {
-                                  setState(() {
-                                    _isAlarmEnabled = value;
-                                  });
-                                  // ✅ H4: 先に保存（以降の新規登録を止める）→ OFF なら既存の main / pre をキャンセル
-                                  //    ON に戻しても自動再登録はしない
-                                  await _saveAlarmEnabledSetting(value);  // 保存
-                                  print('[Settings] アラーム有効: $value');
-                                  if (!value) {
-                                    await _cancelAllAlarmsForOff();
-                                  }
-                                },
+                                // N123：処理中は押せない（null で無効表示）
+                                onChanged: _isAlarmToggleBusy ? null : _onAlarmEnabledChanged,
                               ),
                               const SizedBox(width: 12),
                               
