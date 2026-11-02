@@ -2,6 +2,7 @@
 //
 // H4 の OFF は登録済みの main / pre をすべて取り消すため、ON に戻したら DB のシフトから pre を登録し直す
 // 登録する日は確定（N117）と同じ confirmAlarmPlan で決め、すでに過ぎた pre は除く（件数に入れないため）
+// N124：アラーム音を保存したときも、同じ処理で pre を新しい音で登録し直す（文言は soundSaveMessages）
 // DB・アラームには依存しない
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
@@ -82,4 +83,35 @@ List<({DateTime date, TimeOfDay startTime, DateTime preAt})> preAlarmRescheduleT
     return (text: 'ℹ️ 登録し直す出勤日はありません', color: null);
   }
   return (text: '✅ 出勤前アラームを $count件 登録し直しました', color: Colors.green);
+}
+
+/// アラーム音を保存できたときの文言（N124。アラームが OFF のときもこれだけを出す）
+const soundSavedText = '✅ アラーム音と音量を保存しました';
+
+/// アラーム音を保存して pre を登録し直したあとの SnackBar（N124）。順に出す（前を消さない）
+/// 優先順：読めなかった → エラー（AlarmService.alarmErrorMessage の文言） → 0 件・分が 0 → 成功
+/// - 読めなかった・エラーのときは、括弧なしの ✅ のあとにオレンジの 2 本目（件数は出さない）
+List<({String text, Color? color})> soundSaveMessages({
+  required int count,
+  required String? errorMessage,
+  required bool readFailed,
+  required bool alarmDisabled,
+}) {
+  const ({String text, Color? color}) soundSaved = (text: soundSavedText, color: null);
+  if (readFailed) {
+    return [
+      soundSaved,
+      (
+        text: '⚠️ 出勤前アラームに反映できませんでした。もう一度保存するか、シフトを確定し直してください',
+        color: Colors.orange,
+      ),
+    ];
+  }
+  if (errorMessage != null) {
+    return [soundSaved, (text: errorMessage, color: Colors.orange)];
+  }
+  if (alarmDisabled || count == 0) {
+    return [soundSaved];
+  }
+  return [(text: '$soundSavedText（出勤前アラーム $count件に反映）', color: null)];
 }

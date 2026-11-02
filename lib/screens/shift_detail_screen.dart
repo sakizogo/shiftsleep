@@ -534,10 +534,13 @@ const SizedBox(height: AppDimensions.paddingLarge),
 
     // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（行がなければ既定の30分）
     // N118：読めなかったら確定ごとやめる（シフト・アラームには触らず、詳細確認画面に残る）
+    // N124：音も同じ設定から読む（行がなければ 'default'）
     final int alarmTimeBeforeShift;
+    final String selectedAlarmSound;
     try {
       final alarmSettings = await _shiftRepository.getAppSettings('test_user');
       alarmTimeBeforeShift = alarmSettings?.alarmTimeBeforeShift ?? 30;
+      selectedAlarmSound = alarmSettings?.selectedAlarmSound ?? 'default';
     } catch (e) {
       debugPrint('Error loading settings before saving shifts: $e');
       if (!mounted) return;
@@ -609,7 +612,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
             mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
             preAlarmEnabled: true,
             preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
-            selectedAlarmSound: 'default',
+            selectedAlarmSound: selectedAlarmSound,  // N124：設定の音（確定の前に読んだもの）
           );
           if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {
             alarmErrorCode = errorCode;

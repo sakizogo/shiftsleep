@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
+import 'package:shiftsleep/services/alarm_service.dart';
 
 // N123：preAlarmRescheduleTargets・summarizeRescheduleResults・rescheduleMessage のテスト
+// N124：soundSaveMessages のテスト
 
 void main() {
   group('preAlarmRescheduleTargets', () {
@@ -163,6 +165,64 @@ void main() {
       final message = rescheduleMessage(count: 0, errorMessage: '⚠️ 権限', readFailed: true, alarmDisabled: true);
       expect(message.text, '⚠️ 出勤前アラームを登録し直せませんでした。もう一度 OFF → ON にするか、シフトを確定し直してください');
       expect(message.color, Colors.orange);
+    });
+  });
+
+  // N124：アラーム音の保存のあとの文言
+  group('soundSaveMessages', () {
+    test('1. 成功 n 件 → 括弧つきの ✅ 1 本（既定の色）', () {
+      final messages = soundSaveMessages(count: 3, errorMessage: null, readFailed: false, alarmDisabled: false);
+      expect(messages, hasLength(1));
+      expect(messages[0].text, '✅ アラーム音と音量を保存しました（出勤前アラーム 3件に反映）');
+      expect(messages[0].color, isNull);
+    });
+
+    test('2. 0 件 → 括弧なしの ✅ 1 本', () {
+      final messages = soundSaveMessages(count: 0, errorMessage: null, readFailed: false, alarmDisabled: false);
+      expect(messages.map((m) => m.text), [soundSavedText]);
+      expect(messages[0].color, isNull);
+    });
+
+    test('3. 分が 0 → 括弧なしの ✅ 1 本', () {
+      final messages = soundSaveMessages(count: 0, errorMessage: null, readFailed: false, alarmDisabled: true);
+      expect(messages.map((m) => m.text), [soundSavedText]);
+    });
+
+    test('4. エラーのみ → 括弧なしの ✅ のあとにエラーの文言（オレンジ）', () {
+      final messages = soundSaveMessages(count: 0, errorMessage: '⚠️ 失敗', readFailed: false, alarmDisabled: false);
+      expect(messages.map((m) => m.text), [soundSavedText, '⚠️ 失敗']);
+      expect(messages[0].color, isNull);
+      expect(messages[1].color, Colors.orange);
+    });
+
+    test('5. 一部成功＋エラー → 件数は出さず、括弧なしの ✅ とエラーの文言', () {
+      final messages = soundSaveMessages(count: 2, errorMessage: '⚠️ 失敗', readFailed: false, alarmDisabled: false);
+      expect(messages.map((m) => m.text), [soundSavedText, '⚠️ 失敗']);
+      expect(messages[1].color, Colors.orange);
+    });
+
+    test('6. 読み直し失敗 → 括弧なしの ✅ のあとに反映できなかった案内（ほかより優先・オレンジ）', () {
+      final messages = soundSaveMessages(count: 0, errorMessage: '⚠️ 失敗', readFailed: true, alarmDisabled: true);
+      expect(messages.map((m) => m.text), [
+        soundSavedText,
+        '⚠️ 出勤前アラームに反映できませんでした。もう一度保存するか、シフトを確定し直してください',
+      ]);
+      expect(messages[1].color, Colors.orange);
+    });
+
+    test('7. 権限エラーと失敗が混ざったら、権限エラーの文言を出す（AlarmService.alarmErrorMessage を通す）', () {
+      final result = summarizeRescheduleResults([null, 'EXACT_ALARM_DENIED', 'SCHEDULE_FAILED']);
+      final messages = soundSaveMessages(
+        count: result.count,
+        errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
+        readFailed: false,
+        alarmDisabled: false,
+      );
+      expect(messages.map((m) => m.text), [
+        soundSavedText,
+        AlarmService.alarmErrorMessage('EXACT_ALARM_DENIED'),
+      ]);
+      expect(messages[1].color, Colors.orange);
     });
   });
 }

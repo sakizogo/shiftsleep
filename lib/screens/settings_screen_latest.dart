@@ -39,7 +39,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _advicePromoVisible = true;
   bool _isPremiumUser = false;
   bool _isAlarmEnabled = true;  // ✨ 🆕 追加：デフォルト true
-  bool _isAlarmToggleBusy = false;  // N123：ON の登録し直し・OFF の取り消しの処理中はスイッチを押せない
+  // N123：ON の登録し直し・OFF の取り消しの処理中はスイッチを押せない
+  // N124：アラーム音の保存（登録し直し）とも共通の「アラーム処理中」フラグ。立っている間はスイッチと保存ボタンの両方を押せない
+  bool _isAlarmBusy = false;
   bool _isLoading = false;
   String? _vacationAccrualDate;
   // ========== Week 25+ 新規追加：毎日設定チェックボックス ==========
@@ -158,12 +160,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // ✅ H4: 先に保存（以降の新規登録を止める）→ OFF なら既存の main / pre をキャンセル
     // N123：ON なら DB のシフトから出勤前アラーム（pre）を登録し直す。処理中はスイッチを押せない
     Future<void> _onAlarmEnabledChanged(bool value) async {
-      if (_isAlarmToggleBusy) return;
+      if (_isAlarmBusy) return;
       final messenger = ScaffoldMessenger.of(context);  // await 前に取得
       final sleepProvider = context.read<SleepProvider>();
       setState(() {
         _isAlarmEnabled = value;
-        _isAlarmToggleBusy = true;
+        _isAlarmBusy = true;
       });
       try {
         final saved = await _saveAlarmEnabledSetting(value);  // 保存
@@ -185,66 +187,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await _rescheduleAlarmsForOn(messenger, sleepProvider.isSleepingNow);
         }
       } finally {
-        if (mounted) setState(() => _isAlarmToggleBusy = false);
+        if (mounted) setState(() => _isAlarmBusy = false);
       }
     }
 
     // N123：アラーム ON 時に、DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直す
     //    分数・音は DB の設定（行がなければ確定と同じく 30 分・'default'）。手動起床（main）は戻さない
     Future<void> _rescheduleAlarmsForOn(ScaffoldMessengerState messenger, bool isSleepingNow) async {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      var minutesBefore = 30;
-      var selectedAlarmSound = 'default';
-      var targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
-      var readFailed = false;
-      try {
-        final settings = await _shiftRepository.getAppSettings('test_user');
-        minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
-        selectedAlarmSound = settings?.selectedAlarmSound ?? 'default';
-        if (minutesBefore > 0) {
-          final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
-          final patterns = await _shiftRepository.getAllPatterns();
-          targets = preAlarmRescheduleTargets(
-            rows,
-            patterns,
-            _dayOffPattern,
-            minutesBefore,
-            now,
-            CalendarRange.lastDate,
-          );
-        }
-      } catch (e) {
-        debugPrint('❌ [Settings] アラームON：設定・シフト・パターンを読めませんでした: $e');
-        readFailed = true;
-      }
-
-      final codes = <String?>[];
-      if (!readFailed) {
-        for (final target in targets) {
-          try {
-            codes.add(await AlarmService.scheduleAlarmForShift(
-              shiftDate: target.date,
-              alarmTime: target.startTime,
-              mainAlarmEnabled: false,  // 出勤時刻ちょうどのアラームは登録しない（確定と同じ）
-              preAlarmEnabled: true,
-              preAlarmMinutes: minutesBefore,
-              selectedAlarmSound: selectedAlarmSound,
-            ));
-          } catch (e) {
-            debugPrint('❌ [Settings] アラームON：pre を登録できませんでした (${target.date}): $e');
-            codes.add('SCHEDULE_FAILED');
-          }
-        }
-      }
-      final result = summarizeRescheduleResults(codes);
-      debugPrint('🔔 [Settings] アラームON: pre を ${result.count}/${targets.length}件 登録し直しました（エラー: ${result.errorCode}）');
+      final result = await _reschedulePreAlarms();
 
       final message = rescheduleMessage(
         count: result.count,
         errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
-        readFailed: readFailed,
-        alarmDisabled: minutesBefore <= 0,
+        readFailed: result.readFailed,
+        alarmDisabled: result.alarmDisabled,
       );
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
@@ -273,6 +229,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
           );
         }
       }
+    }
+
+    // N124：DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直し、結果を返す（知らせるのは呼び出し元）
+    //    ON（N123）とアラーム音の保存で使う。分数・音は DB から読み直す（行がなければ 30 分・'default'）
+    //    同じ ID で登録するので、登録済みの pre は上書きされる
+    Future<({int count, String? errorCode, bool readFailed, bool alarmDisabled})> _reschedulePreAlarms() async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      var minutesBefore = 30;
+      var selectedAlarmSound = 'default';
+      var targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
+      var readFailed = false;
+      try {
+        final settings = await _shiftRepository.getAppSettings('test_user');
+        minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
+        selectedAlarmSound = settings?.selectedAlarmSound ?? 'default';
+        if (minutesBefore > 0) {
+          final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
+          final patterns = await _shiftRepository.getAllPatterns();
+          targets = preAlarmRescheduleTargets(
+            rows,
+            patterns,
+            _dayOffPattern,
+            minutesBefore,
+            now,
+            CalendarRange.lastDate,
+          );
+        }
+      } catch (e) {
+        debugPrint('❌ [Settings] pre の登録し直し：設定・シフト・パターンを読めませんでした: $e');
+        readFailed = true;
+      }
+
+      final codes = <String?>[];
+      if (!readFailed) {
+        for (final target in targets) {
+          try {
+            codes.add(await AlarmService.scheduleAlarmForShift(
+              shiftDate: target.date,
+              alarmTime: target.startTime,
+              mainAlarmEnabled: false,  // 出勤時刻ちょうどのアラームは登録しない（確定と同じ）
+              preAlarmEnabled: true,
+              preAlarmMinutes: minutesBefore,
+              selectedAlarmSound: selectedAlarmSound,
+            ));
+          } catch (e) {
+            debugPrint('❌ [Settings] pre の登録し直し：pre を登録できませんでした (${target.date}): $e');
+            codes.add('SCHEDULE_FAILED');
+          }
+        }
+      }
+      final result = summarizeRescheduleResults(codes);
+      debugPrint('🔔 [Settings] pre を ${result.count}/${targets.length}件 登録し直しました（音: $selectedAlarmSound、エラー: ${result.errorCode}）');
+      return (
+        count: result.count,
+        errorCode: result.errorCode,
+        readFailed: readFailed,
+        alarmDisabled: minutesBefore <= 0,
+      );
     }
 
     // ✅ H4: アラームOFF時に、登録済みの main / pre をすべてキャンセル
@@ -321,6 +336,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       } catch (e) {
         print('❌ [Settings] アラームOFF時のキャンセルエラー: $e');
+      }
+    }
+
+    // N124：アラーム音を保存し、アラームが ON なら登録済みの pre を新しい音で登録し直す
+    //    保存の直前に DB を読み直し、音だけを変える（画面を開いたときの分数・起床時刻などで上書きしない）
+    //    処理中はスイッチと保存ボタンを押せない（_isAlarmBusy）
+    Future<void> _saveAlarmSound() async {
+      if (_isAlarmBusy) return;
+      final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+      setState(() => _isAlarmBusy = true);
+      try {
+        final AppSettings updatedSettings;
+        try {
+          // 行がなければ今の _currentSettings を元にする（今と同じ）。読めなければ保存しない
+          final base = await _shiftRepository.getAppSettings('test_user') ?? _currentSettings;
+          if (base == null) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('❌ 設定が読み込まれていません')),
+            );
+            return;
+          }
+
+          // selectedAlarmSound のみ更新
+          updatedSettings = base.copyWith(selectedAlarmSound: _selectedAlarmSound);
+
+          await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
+          // ✅ N49: 音量も一緒に保存する（0〜100。アラームが鳴るときにネイティブ側が読む）
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('alarm_volume_percent', (_soundVolume * 100).round());
+        } catch (e) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('❌ 保存に失敗しました: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          print('❌ [Error] 保存エラー: $e');
+          return;
+        }
+
+        // ✅ N12: 画面が閉じられていたら setState しない（登録し直しは続ける）
+        if (mounted) setState(() => _currentSettings = updatedSettings);
+
+        // OFF なら登録し直さない（scheduleAlarmForShift は OFF だと成功扱いの null を返し、件数を誤って数えるため先に分ける）
+        final List<({String text, Color? color})> messages;
+        if (await AlarmService.isAlarmEnabled()) {
+          final result = await _reschedulePreAlarms();
+          messages = soundSaveMessages(
+            count: result.count,
+            errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
+            readFailed: result.readFailed,
+            alarmDisabled: result.alarmDisabled,
+          );
+        } else {
+          debugPrint('🔕 [Settings] アラームOFFのため、音の保存で pre は登録し直しません');
+          messages = [(text: soundSavedText, color: null)];
+        }
+
+        // ✅ と ⚠️ は前を消さずに続けて出す（両方読めるように）
+        messenger.hideCurrentSnackBar();
+        for (final message in messages) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(message.text),
+              backgroundColor: message.color,
+              duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isAlarmBusy = false);
       }
     }
     // ===========================================================================================================================================
@@ -593,7 +680,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               CupertinoSwitch(
                                 value: _isAlarmEnabled,
                                 // N123：処理中は押せない（null で無効表示）
-                                onChanged: _isAlarmToggleBusy ? null : _onAlarmEnabledChanged,
+                                onChanged: _isAlarmBusy ? null : _onAlarmEnabledChanged,
                               ),
                               const SizedBox(width: 12),
                               
@@ -803,54 +890,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 16),
 
                       // ✅ アラーム音保存ボタン（単独）
+                      // N124：アラームの処理中（ON/OFF・音の保存）は押せない
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              if (_currentSettings == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('❌ 設定が読み込まれていません')),
-                                );
-                                return;
-                              }
-
-                              // selectedAlarmSound のみ更新
-                              final updatedSettings = _currentSettings!.copyWith(
-                                selectedAlarmSound: _selectedAlarmSound,
-                              );
-                              
-                              await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
-                              // ✅ N49: 音量も一緒に保存する（0〜100。アラームが鳴るときにネイティブ側が読む）
-                              final prefs = await SharedPreferences.getInstance();
-                              await prefs.setInt('alarm_volume_percent', (_soundVolume * 100).round());
-                              
-                              if (!mounted) return;  // ✅ N12: 画面が閉じられていたら setState しない
-                              setState(() {
-                                _currentSettings = updatedSettings;
-                              });
-                              
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('✅ アラーム音と音量を保存しました'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('❌ 保存に失敗しました: $e'),
-                                    backgroundColor: Colors.red,
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              }
-                              print('❌ [Error] 保存エラー: $e');
-                            }
-                          },
+                          onPressed: _isAlarmBusy ? null : _saveAlarmSound,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primaryGradientStart,
                             padding: const EdgeInsets.symmetric(vertical: 12),
