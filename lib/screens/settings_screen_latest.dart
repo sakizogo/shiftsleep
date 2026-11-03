@@ -694,8 +694,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               const Spacer(),
                               
                               // 変更ボタン
+                              // N125：アラームの処理中は押せない
                               ElevatedButton(
-                                onPressed: () => _selectWakeUpTime(context),
+                                onPressed: _isAlarmBusy ? null : () => _selectWakeUpTime(context),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primaryGradientStart,
                                   shape: RoundedRectangleBorder(
@@ -1123,10 +1124,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // ========================
                 // 保存ボタン
                 // ========================
+                // N125：アラームの処理中は押せない
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _saveSettings,
+                    onPressed: _isAlarmBusy ? null : _saveSettings,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryGradientStart,
                       padding: EdgeInsets.symmetric(
@@ -1276,6 +1278,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _selectWakeUpTime(BuildContext context) async {
+    // N125：処理中は何もしない（ManualWakeService.save だけ先に動かないように）
+    if (_isAlarmBusy) return;
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _wakeUpTime,
@@ -1331,45 +1335,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ========== 🆕 Week 26+ Step 6：完全な _saveSettings() 実装 ==========
+  // N125：処理中はスイッチ・音の保存・設定の保存・起床時刻の変更を押せない（_isAlarmBusy）
   Future<void> _saveSettings() async {
+    if (_isAlarmBusy) return;
+    if (mounted) setState(() => _isAlarmBusy = true);
     try {
-      // ========== Step 1️⃣：既存の設定を取得（id と createdAt を保持するため） ==========
+      await _saveSettingsSteps();
+    } finally {
+      if (mounted) setState(() => _isAlarmBusy = false);
+    }
+  }
+
+  // N125：保存の直前に DB を読み直し、分数・起床時刻・案内表示だけを変える（音は「アラーム音の保存」ボタンだけで保存する）
+  //    分数が変わっていてアラームが ON なら、pre を取り消して新しい分数で登録し直す（0 なら取り消すだけ）
+  Future<void> _saveSettingsSteps() async {
+    final AppSettings savedSettings;
+    final int oldMinutes;
+    try {
+      // ========== Step 1️⃣：既存の設定を読み直す（行がなければ _currentSettings を元にする） ==========
       print('[Settings] 💾 Step 1️⃣ 既存設定を読み込み中...');
-      
+
       final currentSettings = await _shiftRepository.getAppSettings('test_user');
-      
+
       if (currentSettings == null) {
-        print('[Settings] ⚠️ 既存設定が見つかりません。デフォルト値を使用します。');
+        print('[Settings] ⚠️ 既存設定が見つかりません。画面の設定を元にします。');
       }
-      
-      // ========== Step 2️⃣：新しい AppSettings オブジェクトを作成（起床時刻を更新） ==========
+      final base = currentSettings ?? _currentSettings;
+      if (base == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('❌ 設定が読み込まれていません')),
+          );
+        }
+        return;
+      }
+      oldMinutes = currentSettings?.alarmTimeBeforeShift ?? 30;
+
+      // ========== Step 2️⃣：分数・起床時刻・案内表示だけを変える ==========
       print('[Settings] 🔄 Step 2️⃣ 新しい AppSettings を構築中...');
       print('[Settings] 📌 起床時刻=${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')}');
-      
-      final now = DateTime.now();
+
       final wakeUpTimeStr = '${_wakeUpTime.hour.toString().padLeft(2, '0')}:${_wakeUpTime.minute.toString().padLeft(2, '0')}';
-      
-      final updatedSettings = AppSettings(
-        id: currentSettings?.id ?? 1,                              // ← 既存の id を保持（ない場合は 1）
-        userId: 'test_user',
+
+      savedSettings = settingsToSave(
+        base,
         alarmTimeBeforeShift: _alarmTimeBeforeShift,
-        wakeUpTime: wakeUpTimeStr,                                 // ← 新しい起床時刻
-        selectedAlarmSound: _selectedAlarmSound,
+        wakeUpTime: wakeUpTimeStr,
         advicePromoVisible: _advicePromoVisible,
-        isPremiumUser: currentSettings?.isPremiumUser ?? false,
-        createdAt: currentSettings?.createdAt ?? now,              // ← 既存の createdAt を保持
-        updatedAt: now,                                             // ← 新しい updatedAt
       );
-      
-      print('[Settings] 📤 新しい AppSettings: $updatedSettings');
-      
+
+      print('[Settings] 📤 新しい AppSettings: $savedSettings');
+
       // ========== Step 3️⃣：DB に保存 ==========
       print('[Settings] 💾 Step 3️⃣ DB に保存中...');
-      
-      await _shiftRepository.createOrUpdateAppSettings(updatedSettings);
-      
+
+      await _shiftRepository.createOrUpdateAppSettings(savedSettings);
+
       print('✅ Step 3️⃣ DB 保存完了！');
-      
+
     } catch (e) {
       print('❌ Step 1-3 実行エラー: $e');
       if (mounted) {
@@ -1382,7 +1405,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    
+
+    // N125：保存できたら _currentSettings を保存した値にする（N124 にそろえる）
+    if (mounted) setState(() => _currentSettings = savedSettings);
+
+    // ========== Step 3.5：分数が変わったら pre を合わせる（画面が閉じられていても続ける） ==========
+    final preResult = await _applyPreMinutesChange(oldMinutes, savedSettings.alarmTimeBeforeShift);
+
     if (!mounted) return;  // ✅ N12: await 後に画面が閉じられていたら Provider に触らない
     try {
       // ========== Step 4️⃣：SleepProvider に起床時刻を更新 ==========
@@ -1429,7 +1458,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       if (sleepProvider.isSleepingNow) {
         print('[Settings] 🔗 就寝中です。アラーム再登録を開始...');
-        alarmError = await _rescheduleAlarmDuringSleep(sleepProvider);
+        alarmError = await _rescheduleAlarmDuringSleep(sleepProvider, savedSettings);
       } else {
         print('[Settings] 🛑 起床中のため、アラーム登録をスキップします');
         
@@ -1452,25 +1481,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
     
     // ========== Step 6️⃣：ユーザーに成功を通知 ==========
     // ✅ N22: アラーム登録に失敗したときはオレンジだけを出す（緑の「更新されました」は出さない）
-    if (alarmError != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(alarmError),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 6),
-        ),
+    // N125：pre の結果を成功の文言の括弧、または続けて出すオレンジで知らせる（前を消さない）
+    if (mounted) {
+      final messages = settingsSaveMessages(
+        savedText: '✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました',
+        mainAlarmError: alarmError,
+        preAction: preResult.action,
+        preCount: preResult.count,
+        preErrorMessage: AlarmService.alarmErrorMessage(preResult.errorCode),
+        preReadFailed: preResult.readFailed,
       );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      final messenger = ScaffoldMessenger.of(context);
+      for (final message in messages) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(message.text),
+            backgroundColor: message.color,
+            duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+          ),
+        );
+      }
     }
-    
+
     print('✅ Step 6️⃣ すべて完了！');
+  }
+
+  // N125：分数が変わっていてアラームが ON なら、DB の今日〜CalendarRange の終わりの pre を取り消し、
+  //    新しい分数が 1 以上なら登録し直す。main には触らない。分数が同じ・OFF なら none
+  //    先にシフトの行を読み、読めなければ何も取り消さない（取り消したのに登録できなかった、を防ぐ）
+  Future<({PreMinutesAction action, int count, String? errorCode, bool readFailed})> _applyPreMinutesChange(
+    int oldMinutes,
+    int newMinutes,
+  ) async {
+    const none = (action: PreMinutesAction.none, count: 0, errorCode: null, readFailed: false);
+    final action = preMinutesAction(oldMinutes, newMinutes);
+    if (action == PreMinutesAction.none) return none;
+    if (!await AlarmService.isAlarmEnabled()) {
+      debugPrint('🔕 [Settings] アラームOFFのため、分数の変更（$oldMinutes→$newMinutes分）で pre は合わせません');
+      return none;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final List<DateTime> cancelDates;
+    try {
+      final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
+      cancelDates = preAlarmCancelDates(rows, today, CalendarRange.lastDate);
+    } catch (e) {
+      debugPrint('❌ [Settings] 分数の変更：シフトを読めなかったため、pre は取り消しません: $e');
+      return (action: action, count: 0, errorCode: null, readFailed: true);
+    }
+
+    var cancelFailed = false;
+    for (final date in cancelDates) {
+      try {
+        await AlarmService.cancelPreAlarm(date);
+      } catch (e) {
+        debugPrint('❌ [Settings] 分数の変更：pre を取り消せませんでした ($date): $e');
+        cancelFailed = true;
+      }
+    }
+    debugPrint('🔕 [Settings] 分数の変更（$oldMinutes→$newMinutes分）：pre を ${cancelDates.length}日分 取り消しました（失敗あり: $cancelFailed）');
+
+    if (action == PreMinutesAction.cancelOnly) {
+      return (action: action, count: 0, errorCode: null, readFailed: cancelFailed);
+    }
+    final result = await _reschedulePreAlarms();
+    return (
+      action: action,
+      count: result.count,
+      errorCode: result.errorCode,
+      readFailed: result.readFailed || cancelFailed,
+    );
   }
   // ============================================================================
   
@@ -1566,14 +1648,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
     /// 就寝中のアラーム再登録（古いアラーム削除→新規登録）
   // ✅ N22: 戻り値 null=成功 / 文字列=オレンジで表示する文言（表示は _saveSettings で行う）
-  Future<String?> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider) async {
+  // N125：音は画面の _selectedAlarmSound ではなく、保存した設定（DB）の音を使う
+  Future<String?> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider, AppSettings savedSettings) async {
     try {
       print('[Settings] 🔄 アラーム再登録処理を開始...');
 
       final now = DateTime.now();
       final alarmTime = _wakeUpTime;
       final alarmTimeBeforeShift = _currentSettings?.alarmTimeBeforeShift ?? 30;
-      final selectedAlarmSound = _selectedAlarmSound;
+      final selectedAlarmSound = savedSettings.selectedAlarmSound;
 
       final hour = alarmTime.hour;
       final minute = alarmTime.minute;

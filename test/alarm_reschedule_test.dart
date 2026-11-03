@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 
 // N123：preAlarmRescheduleTargets・summarizeRescheduleResults・rescheduleMessage のテスト
 // N124：soundSaveMessages のテスト
+// N125：settingsToSave・preMinutesAction・preAlarmCancelDates・settingsSaveMessages のテスト
 
 void main() {
   group('preAlarmRescheduleTargets', () {
@@ -223,6 +225,194 @@ void main() {
         AlarmService.alarmErrorMessage('EXACT_ALARM_DENIED'),
       ]);
       expect(messages[1].color, Colors.orange);
+    });
+  });
+
+  // N125：設定の保存で DB に書く設定
+  group('settingsToSave', () {
+    final createdAt = DateTime(2026, 1, 1);
+    final base = AppSettings(
+      id: 7,
+      userId: 'test_user',
+      alarmTimeBeforeShift: 30,
+      wakeUpTime: '07:00',
+      selectedAlarmSound: 'gentle',
+      advicePromoVisible: true,
+      isPremiumUser: true,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+    );
+
+    test('1. 分数・起床時刻・案内表示だけが変わる', () {
+      final saved = settingsToSave(base, alarmTimeBeforeShift: 60, wakeUpTime: '05:30', advicePromoVisible: false);
+      expect(saved.alarmTimeBeforeShift, 60);
+      expect(saved.wakeUpTime, '05:30');
+      expect(saved.advicePromoVisible, false);
+    });
+
+    test('2. 音・premium・id・userId・createdAt は元のまま', () {
+      final saved = settingsToSave(base, alarmTimeBeforeShift: 0, wakeUpTime: '05:30', advicePromoVisible: false);
+      expect(saved.selectedAlarmSound, 'gentle');
+      expect(saved.isPremiumUser, true);
+      expect(saved.id, 7);
+      expect(saved.userId, 'test_user');
+      expect(saved.createdAt, createdAt);
+    });
+  });
+
+  // N125：分数の変化 → pre に行うこと
+  group('preMinutesAction', () {
+    test('1. 分数が同じ → 何もしない', () {
+      expect(preMinutesAction(30, 30), PreMinutesAction.none);
+      expect(preMinutesAction(0, 0), PreMinutesAction.none);
+    });
+
+    test('2. 30→60 → 取り消して登録し直す', () {
+      expect(preMinutesAction(30, 60), PreMinutesAction.cancelAndReschedule);
+    });
+
+    test('3. 30→0 → 取り消すだけ', () {
+      expect(preMinutesAction(30, 0), PreMinutesAction.cancelOnly);
+    });
+
+    test('4. 0→30 → 取り消して登録し直す', () {
+      expect(preMinutesAction(0, 30), PreMinutesAction.cancelAndReschedule);
+    });
+
+    test('5. 行がない（呼び出し元が 30 と比べる）→ 30 なら何もしない・40 なら登録し直す', () {
+      const AppSettings? noRow = null;
+      final oldMinutes = noRow?.alarmTimeBeforeShift ?? 30;
+      expect(preMinutesAction(oldMinutes, 30), PreMinutesAction.none);
+      expect(preMinutesAction(oldMinutes, 40), PreMinutesAction.cancelAndReschedule);
+    });
+  });
+
+  // N125：分数が変わったときに pre を取り消す日
+  group('preAlarmCancelDates', () {
+    final today = DateTime(2026, 11, 3, 10, 0);
+    final rangeEnd = DateTime(2028, 12, 31);
+
+    Map<String, dynamic> row(String date) => {'shift_date': date, 'pattern_id': 'p_early'};
+
+    test('1. 行がなければ空', () {
+      expect(preAlarmCancelDates([], today, rangeEnd), isEmpty);
+    });
+
+    test('2. 今日と範囲の終わりの日は入り、前日・翌日は入らない（日付順・日付だけ）', () {
+      final dates = preAlarmCancelDates([
+        row('2029-01-01'),
+        row('2028-12-31'),
+        row('2026-11-02'),
+        row('2026-11-03'),
+      ], today, rangeEnd);
+      expect(dates, [DateTime(2026, 11, 3), DateTime(2028, 12, 31)]);
+    });
+
+    test('3. 同じ日が 2 行あっても 1 回（時刻つきでも日付だけで比べる）', () {
+      final dates = preAlarmCancelDates([
+        row('2026-11-05'),
+        row('2026-11-05T12:00:00'),
+      ], today, rangeEnd);
+      expect(dates, [DateTime(2026, 11, 5)]);
+    });
+
+    test('4. shift_date が読めない行があれば例外（読み込みの失敗として扱い、何も取り消さない）', () {
+      expect(
+        () => preAlarmCancelDates([row('2026-11-05'), row('broken')], today, rangeEnd),
+        throwsFormatException,
+      );
+    });
+  });
+
+  // N125：設定を保存したあとの文言
+  group('settingsSaveMessages', () {
+    const saved = '✅ 起床時刻 7:00 に更新されました';
+    const mainError = 'main error';
+
+    test('1. 分数が変わっていない・OFF → 今の成功の文言だけ（緑）', () {
+      final messages = settingsSaveMessages(savedText: saved, mainAlarmError: null, preAction: PreMinutesAction.none);
+      expect(messages.map((m) => m.text), [saved]);
+      expect(messages[0].color, Colors.green);
+    });
+
+    test('2. 分数が変わっていない・main の失敗 → 今のオレンジだけ', () {
+      final messages = settingsSaveMessages(savedText: saved, mainAlarmError: mainError, preAction: PreMinutesAction.none);
+      expect(messages.map((m) => m.text), [mainError]);
+      expect(messages[0].color, Colors.orange);
+    });
+
+    test('3. 登録し直し n 件 → 成功の文言の後ろに件数', () {
+      final messages = settingsSaveMessages(
+        savedText: saved,
+        mainAlarmError: null,
+        preAction: PreMinutesAction.cancelAndReschedule,
+        preCount: 3,
+      );
+      expect(messages.map((m) => m.text), ['$saved（出勤前アラーム 3件を登録し直しました）']);
+      expect(messages[0].color, Colors.green);
+    });
+
+    test('4. 登録し直しが 0 件 → 括弧なし', () {
+      final messages = settingsSaveMessages(
+        savedText: saved,
+        mainAlarmError: null,
+        preAction: PreMinutesAction.cancelAndReschedule,
+      );
+      expect(messages.map((m) => m.text), [saved]);
+    });
+
+    test('5. 0 にして取り消した → 成功の文言の後ろに取り消し', () {
+      final messages = settingsSaveMessages(savedText: saved, mainAlarmError: null, preAction: PreMinutesAction.cancelOnly);
+      expect(messages.map((m) => m.text), ['$saved（出勤前アラームを取り消しました）']);
+    });
+
+    test('6. 読めなかった → 括弧なしの成功の文言のあとにオレンジ（エラーより優先）', () {
+      for (final action in [PreMinutesAction.cancelAndReschedule, PreMinutesAction.cancelOnly]) {
+        final messages = settingsSaveMessages(
+          savedText: saved,
+          mainAlarmError: null,
+          preAction: action,
+          preCount: 2,
+          preErrorMessage: 'error',
+          preReadFailed: true,
+        );
+        expect(messages.map((m) => m.text), [saved, preMinutesFailedText]);
+        expect(messages[0].color, Colors.green);
+        expect(messages[1].color, Colors.orange);
+      }
+    });
+
+    test('7. 権限エラー → 括弧なしの成功の文言のあとに権限エラーの文言（EXACT_ALARM_DENIED を優先）', () {
+      final result = summarizeRescheduleResults([null, 'EXACT_ALARM_DENIED', 'SCHEDULE_FAILED']);
+      final messages = settingsSaveMessages(
+        savedText: saved,
+        mainAlarmError: null,
+        preAction: PreMinutesAction.cancelAndReschedule,
+        preCount: result.count,
+        preErrorMessage: AlarmService.alarmErrorMessage(result.errorCode),
+      );
+      expect(messages.map((m) => m.text), [saved, AlarmService.alarmErrorMessage('EXACT_ALARM_DENIED')]);
+      expect(messages[1].color, Colors.orange);
+    });
+
+    test('8. main の失敗と pre の失敗が両方 → main のオレンジのあとに pre のオレンジ（成功の文言は出さない）', () {
+      final messages = settingsSaveMessages(
+        savedText: saved,
+        mainAlarmError: mainError,
+        preAction: PreMinutesAction.cancelAndReschedule,
+        preReadFailed: true,
+      );
+      expect(messages.map((m) => m.text), [mainError, preMinutesFailedText]);
+    });
+
+    test('9. main の失敗で pre は登録し直せた → main のオレンジだけ（括弧はつけない）', () {
+      final messages = settingsSaveMessages(
+        savedText: saved,
+        mainAlarmError: mainError,
+        preAction: PreMinutesAction.cancelAndReschedule,
+        preCount: 3,
+      );
+      expect(messages.map((m) => m.text), [mainError]);
     });
   });
 }

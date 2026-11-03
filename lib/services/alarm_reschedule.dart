@@ -3,8 +3,10 @@
 // H4 の OFF は登録済みの main / pre をすべて取り消すため、ON に戻したら DB のシフトから pre を登録し直す
 // 登録する日は確定（N117）と同じ confirmAlarmPlan で決め、すでに過ぎた pre は除く（件数に入れないため）
 // N124：アラーム音を保存したときも、同じ処理で pre を新しい音で登録し直す（文言は soundSaveMessages）
+// N125：設定の保存で分数が変わったら、pre を取り消して新しい分数で登録し直す（文言は settingsSaveMessages）
 // DB・アラームには依存しない
 import 'package:flutter/material.dart';
+import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/services/confirm_alarm_plan.dart';
 import 'package:shiftsleep/services/shift_load.dart';
@@ -114,4 +116,93 @@ List<({String text, Color? color})> soundSaveMessages({
     return [soundSaved];
   }
   return [(text: '$soundSavedText（出勤前アラーム $count件に反映）', color: null)];
+}
+
+/// 設定の保存で DB に書く設定（N125）
+/// 元（読み直した設定）に、画面の分数・起床時刻・案内表示だけを入れる
+/// 音・premium・id・createdAt は元のまま（音は「アラーム音の保存」ボタンだけで保存する）
+AppSettings settingsToSave(
+  AppSettings base, {
+  required int alarmTimeBeforeShift,
+  required String wakeUpTime,
+  required bool advicePromoVisible,
+}) {
+  return base.copyWith(
+    alarmTimeBeforeShift: alarmTimeBeforeShift,
+    wakeUpTime: wakeUpTime,
+    advicePromoVisible: advicePromoVisible,
+  );
+}
+
+/// 設定の保存で分数が変わったときに pre に行うこと（N125）
+enum PreMinutesAction {
+  none,  // 分数が同じ（pre には何もしない）
+  cancelAndReschedule,  // 取り消して新しい分数で登録し直す
+  cancelOnly,  // 0（無効）にしたので取り消すだけ
+}
+
+/// 前の分数（DB。行がなければ 30）と新しい分数から、pre に行うことを決める（N125）
+PreMinutesAction preMinutesAction(int oldMinutes, int newMinutes) {
+  if (oldMinutes == newMinutes) return PreMinutesAction.none;
+  return newMinutes > 0 ? PreMinutesAction.cancelAndReschedule : PreMinutesAction.cancelOnly;
+}
+
+/// 分数が変わったときに pre を取り消す日（N125）
+/// - rows は shifts の行（shift_date）。今日〜rangeEnd（両方含む）の日だけ、日付だけ・重複なし・日付順
+/// - shift_date が読めない行があれば例外（読み込みの失敗として扱い、何も取り消さない。
+///   飛ばすと、取り消したあとの登録し直しが同じ行で失敗し「取り消したのに登録できなかった」になるため）
+List<DateTime> preAlarmCancelDates(
+  List<Map<String, dynamic>> rows,
+  DateTime today,
+  DateTime rangeEnd,
+) {
+  final first = DateTime(today.year, today.month, today.day);
+  final last = DateTime(rangeEnd.year, rangeEnd.month, rangeEnd.day);
+  final dates = <DateTime>{};
+  for (final row in rows) {
+    final parsed = DateTime.parse(row['shift_date'] as String);
+    final date = DateTime(parsed.year, parsed.month, parsed.day);
+    if (!date.isBefore(first) && !date.isAfter(last)) dates.add(date);
+  }
+  return dates.toList()..sort();
+}
+
+/// 分数を新しい分数に合わせられなかったときの文言（N125）
+const preMinutesFailedText = '⚠️ 出勤前アラームを新しい分数に合わせられませんでした。もう一度保存するか、シフトを確定し直してください';
+
+/// 設定を保存したあとの SnackBar（N125）。順に出す（前を消さない）
+/// - savedText：今の成功の文言（緑）。mainAlarmError（睡眠中の main の登録に失敗）があれば、成功の文言の代わりにそれ（オレンジ）
+/// - pre：none（分数が同じ・OFF）なら今の文言のまま
+///   読めなかった → 括弧なしのあとに preMinutesFailedText（オレンジ）
+///   エラー（AlarmService.alarmErrorMessage の文言）→ 括弧なしのあとにその文言（オレンジ）
+///   取り消しのみ → 「（出勤前アラームを取り消しました）」／登録し直し n 件 → 「（出勤前アラーム n件を登録し直しました）」／0 件 → 括弧なし
+/// - main の失敗のときは成功の文言を出さないので、括弧もつけない（pre の ⚠️ は続けて出す）
+List<({String text, Color? color})> settingsSaveMessages({
+  required String savedText,
+  required String? mainAlarmError,
+  required PreMinutesAction preAction,
+  int preCount = 0,
+  String? preErrorMessage,
+  bool preReadFailed = false,
+}) {
+  var suffix = '';
+  ({String text, Color? color})? preWarning;
+  if (preAction != PreMinutesAction.none) {
+    if (preReadFailed) {
+      preWarning = (text: preMinutesFailedText, color: Colors.orange);
+    } else if (preErrorMessage != null) {
+      preWarning = (text: preErrorMessage, color: Colors.orange);
+    } else if (preAction == PreMinutesAction.cancelOnly) {
+      suffix = '（出勤前アラームを取り消しました）';
+    } else if (preCount > 0) {
+      suffix = '（出勤前アラーム $preCount件を登録し直しました）';
+    }
+  }
+  return [
+    if (mainAlarmError != null)
+      (text: mainAlarmError, color: Colors.orange)
+    else
+      (text: '$savedText$suffix', color: Colors.green),
+    if (preWarning != null) preWarning,
+  ];
 }
