@@ -358,6 +358,18 @@ class AlarmService {
     }
   }
 
+  /// N126: 控え（shiftsleep_native_alarms）から未来の予約を登録し直す（起動時に main.dart から呼ぶ）
+  ///    Android のときだけ。件数はログだけ（ユーザーには出さない）。例外は外に出さない
+  static Future<void> restoreSavedAlarms() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final counts = await _methodChannel.invokeMapMethod<String, int>('restoreAlarms');
+      debugPrint('🔄 [AlarmService] 控えから登録し直し：$counts');
+    } catch (e) {
+      debugPrint('❌ [AlarmService] 控えからの登録し直しエラー: $e');
+    }
+  }
+
   static int _generateNotificationId(DateTime date, String type) {
     final dateStr =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';

@@ -52,6 +52,15 @@ class MainActivity: FlutterActivity() {
                         null -> result.error("CANCEL_FAILED", "AlarmManager キャンセル失敗", alarmId)
                     }
                 }
+                "restoreAlarms" -> {
+                    // N126: アプリを開いたときに控えから登録し直す（件数の Map を返す）
+                    try {
+                        result.success(AlarmScheduler.restoreAll(this))
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "❌ 控えからの登録し直しエラー: ${e.message}")
+                        result.error("RESTORE_FAILED", "控えからの登録し直しに失敗", e.message)
+                    }
+                }
                 "stopAlarm" -> {
                     stopAlarm()
                     result.success("アラーム停止")

@@ -110,6 +110,61 @@ object AlarmScheduler {
         }
     }
 
+    // N126: 控えから登録し直す（BootReceiver と、アプリを開いたときの MethodChannel から呼ぶ）
+    // 未来の予約は登録し直し、過去の予約は控えから消す。アラームが OFF なら何もしない（控えにも触らない）
+    // 戻り値：restored（復元）・removed（過去なので削除）・denied（権限なし）・failed（その他の失敗）・off（OFF なら 1）
+    fun restoreAll(context: Context): Map<String, Int> {
+        // shared_preferences の従来型 API の保存形式に依存（AlarmReceiver の flutter.alarm_stopped_at_ms と同じ）
+        val alarmEnabled = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            .getBoolean("flutter.is_alarm_enabled", true)
+        if (!alarmEnabled) {
+            Log.d("AlarmScheduler", "🔕 アラームOFFのため控えから登録し直しません")
+            return mapOf("restored" to 0, "removed" to 0, "denied" to 0, "failed" to 0, "off" to 1)
+        }
+
+        var restored = 0
+        var removed = 0
+        var denied = 0
+        var failed = 0
+        val now = System.currentTimeMillis()
+
+        for (alarm in loadAll(context)) {
+            if (alarm.timestampMs > now) {
+                // 未来の予約：登録し直す（同じ alarmId は上書きになる）
+                val errorCode = schedule(
+                    context,
+                    alarm.timestampMs,
+                    alarm.alarmId,
+                    alarm.title,
+                    alarm.body,
+                    alarm.selectedAlarmSound
+                )
+                when (errorCode) {
+                    null -> {
+                        restored++
+                        Log.d("AlarmScheduler", "✅ 復元成功（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}）")
+                    }
+                    "EXACT_ALARM_DENIED" -> {
+                        denied++
+                        Log.w("AlarmScheduler", "⛔ 権限がないため復元できません（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}）")
+                    }
+                    else -> {
+                        failed++
+                        Log.w("AlarmScheduler", "❌ 復元失敗（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}, エラー: $errorCode）")
+                    }
+                }
+            } else {
+                // 過去の予約：登録せずに削除
+                remove(context, alarm.alarmId)
+                removed++
+                Log.d("AlarmScheduler", "🗑️ 過去時刻のため削除（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}, now=$now）")
+            }
+        }
+
+        Log.d("AlarmScheduler", "🔄 控えから登録し直し：復元 $restored 件 / 削除 $removed 件 / 権限なし $denied 件 / 失敗 $failed 件")
+        return mapOf("restored" to restored, "removed" to removed, "denied" to denied, "failed" to failed, "off" to 0)
+    }
+
     // ✅ H2 Step 3: 予約の保存（保存済みの予約をすべて読み出す。Step 4 で使用）
     fun loadAll(context: Context): List<SavedAlarm> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

@@ -33,6 +33,9 @@ void main() async {
     print('[main] ❌ AlarmService initialization failed: $e');
   }
 
+  // N126：force-stop などで消えたアラームを控えから登録し直す（失敗しても起動は止めない）
+  await AlarmService.restoreSavedAlarms();
+
   // ========== Week 14 追加：日本語ロケール初期化 ==========
   try {
     await initializeDateFormatting('ja_JP');

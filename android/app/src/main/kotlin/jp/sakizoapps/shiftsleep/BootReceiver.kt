@@ -16,7 +16,9 @@ class BootReceiver : BroadcastReceiver() {
             "android.intent.action.BOOT_COMPLETED",
             "android.intent.action.MY_PACKAGE_REPLACED",
             "android.intent.action.QUICKBOOT_POWERON",
-            "com.htc.intent.action.QUICKBOOT_POWERON"
+            "com.htc.intent.action.QUICKBOOT_POWERON",
+            // N126: 「アラームとリマインダー」の許可を外して戻したときにも復元する
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"
         )
     }
 
@@ -26,39 +28,9 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             Log.d(TAG, "🔄 アラーム復元開始（action: $action）")
-
-            var restored = 0
-            var removed = 0
-            var failed = 0
-            val now = System.currentTimeMillis()
-
-            for (alarm in AlarmScheduler.loadAll(context)) {
-                if (alarm.timestampMs > now) {
-                    // 未来の予約：登録し直す
-                    val errorCode = AlarmScheduler.schedule(
-                        context,
-                        alarm.timestampMs,
-                        alarm.alarmId,
-                        alarm.title,
-                        alarm.body,
-                        alarm.selectedAlarmSound
-                    )
-                    if (errorCode == null) {
-                        restored++
-                        Log.d(TAG, "✅ 復元成功（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}）")
-                    } else {
-                        failed++
-                        Log.w(TAG, "❌ 復元失敗（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}, エラー: $errorCode）")
-                    }
-                } else {
-                    // 過去の予約：登録せずに削除
-                    AlarmScheduler.remove(context, alarm.alarmId)
-                    removed++
-                    Log.d(TAG, "🗑️ 過去時刻のため削除（ID: ${alarm.alarmId}, 時刻: ${alarm.timestampMs}, now=$now）")
-                }
-            }
-
-            Log.d(TAG, "🔄 アラーム復元完了：復元 $restored 件 / 削除 $removed 件 / 失敗 $failed 件")
+            // N126: 控えから登録し直す処理は AlarmScheduler.restoreAll にまとめた
+            val counts = AlarmScheduler.restoreAll(context)
+            Log.d(TAG, "🔄 アラーム復元完了：$counts")
         } catch (e: Exception) {
             Log.e(TAG, "❌ アラーム復元エラー: ${e.message}")
         }
