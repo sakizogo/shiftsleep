@@ -6,6 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/services/alarm_permission.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/manual_wake_service.dart';
+import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -145,8 +147,63 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted && show != _showAlarmPermissionBanner) {
         setState(() => _showAlarmPermissionBanner = show);
       }
+      // N128 2/2：「許可なし → 許可あり」に変わっていたら出勤前アラームを登録し直す
+      await _reschedulePreAlarmsIfGranted(exactAlarmGranted: exactAlarmGranted, alarmEnabled: alarmEnabled);
     } catch (e) {
       debugPrint('❌ [HomeScreen] N128：許可の確認に失敗: $e');
+    }
+  }
+
+  /// N128 2/2：前回の記録が「許可なし」で今回が「許可あり」、かつアラームが ON なら、DB から pre を登録し直して知らせる
+  /// 記録がまだないとき・OFF のときは、今の状態を記録するだけ。二重に走らないよう、登録し直す前に記録する
+  /// 手動起床（main）は登録し直さない（睡眠中で手動起床が有効なら、戻らないことを知らせる）
+  Future<void> _reschedulePreAlarmsIfGranted({required bool exactAlarmGranted, required bool alarmEnabled}) async {
+    final prefs = await SharedPreferences.getInstance();
+    // 読んでから記録するまでの間に await を挟まない（同時に呼ばれても、登録し直すのは 1 回だけ）
+    final previousGranted = prefs.getBool(exactAlarmGrantedLastKey);
+    final reschedule = shouldReschedulePreAlarmsOnGrant(
+      previousGranted: previousGranted,
+      exactAlarmGranted: exactAlarmGranted,
+      alarmEnabled: alarmEnabled,
+    );
+    if (previousGranted != exactAlarmGranted) {
+      final saved = prefs.setBool(exactAlarmGrantedLastKey, exactAlarmGranted);
+      debugPrint('📝 [HomeScreen] N128：アラームとリマインダーの許可を記録 $previousGranted → $exactAlarmGranted');
+      await saved;
+    }
+    if (!reschedule) return;
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    final sleepProvider = context.read<SleepProvider>();
+    debugPrint('🔔 [HomeScreen] N128：許可されたため出勤前アラームを登録し直します');
+    final result = await PreAlarmRescheduleService.reschedule();
+
+    var manualWakeNotRestored = false;
+    if (sleepProvider.isSleepingNow) {
+      try {
+        manualWakeNotRestored = await ManualWakeService.getActive() != null;
+      } catch (e) {
+        debugPrint('❌ [HomeScreen] N128：手動起床を読めませんでした: $e');
+      }
+    }
+
+    final messages = alarmPermissionGrantedMessages(
+      count: result.count,
+      errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
+      readFailed: result.readFailed,
+      alarmDisabled: result.alarmDisabled,
+      manualWakeNotRestored: manualWakeNotRestored,
+    );
+    // 前を消さずに続けて出す
+    for (final message in messages) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message.text),
+          backgroundColor: message.color,
+          duration: Duration(seconds: message.color == Colors.orange ? 6 : 3),
+        ),
+      );
     }
   }
 

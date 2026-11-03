@@ -87,6 +87,10 @@ List<({DateTime date, TimeOfDay startTime, DateTime preAt})> preAlarmRescheduleT
   return (text: '✅ 出勤前アラームを $count件 登録し直しました', color: Colors.green);
 }
 
+/// 睡眠中で手動起床が有効なときに、起床アラーム（main）は戻らないことを知らせる文言
+/// N123（ON に戻したとき）と N128（「アラームとリマインダー」が許可されたとき）で使う
+const manualWakeNotRestoredText = '⚠️ 起床アラームは戻りません。『起きる』→『今から寝る』をやり直してください';
+
 /// アラーム音を保存できたときの文言（N124。アラームが OFF のときもこれだけを出す）
 const soundSavedText = '✅ アラーム音と音量を保存しました';
 

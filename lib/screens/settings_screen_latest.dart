@@ -8,12 +8,12 @@ import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
-import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/vacation_settings_screen.dart';
 import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import '../services/manual_wake_service.dart';
@@ -51,13 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   final PremiumService _premiumService = PremiumService();
-  // N123：shiftMapFromRows に渡す休日パターン（シフト管理画面の _defaultDayOffPattern と同じ中身）
-  final ShiftPatternModel _dayOffPattern = ShiftPatternModel(
-    id: 'default_dayoff',
-    patternName: '休日',
-    patternType: ShiftType.dayOff,
-    colorIndex: 0,
-  );
+  // N128：休日パターン（_dayOffPattern）は PreAlarmRescheduleService.dayOffPattern に移した
   AppSettings? _currentSettings;  // ← 追加：現在の設定を保持
 
   /// _currentSettings を デフォルト値で初期化
@@ -194,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // N123：アラーム ON 時に、DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直す
     //    分数・音は DB の設定（行がなければ確定と同じく 30 分・'default'）。手動起床（main）は戻さない
     Future<void> _rescheduleAlarmsForOn(ScaffoldMessengerState messenger, bool isSleepingNow) async {
-      final result = await _reschedulePreAlarms();
+      final result = await PreAlarmRescheduleService.reschedule();
 
       final message = rescheduleMessage(
         count: result.count,
@@ -222,7 +216,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (manualWakeAt != null) {
           messenger.showSnackBar(
             const SnackBar(
-              content: Text('⚠️ 起床アラームは戻りません。『起きる』→『今から寝る』をやり直してください'),
+              content: Text(manualWakeNotRestoredText),
               backgroundColor: Colors.orange,
               duration: Duration(seconds: 6),
             ),
@@ -231,64 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
-    // N124：DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直し、結果を返す（知らせるのは呼び出し元）
-    //    ON（N123）とアラーム音の保存で使う。分数・音は DB から読み直す（行がなければ 30 分・'default'）
-    //    同じ ID で登録するので、登録済みの pre は上書きされる
-    Future<({int count, String? errorCode, bool readFailed, bool alarmDisabled})> _reschedulePreAlarms() async {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      var minutesBefore = 30;
-      var selectedAlarmSound = 'default';
-      var targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
-      var readFailed = false;
-      try {
-        final settings = await _shiftRepository.getAppSettings('test_user');
-        minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
-        selectedAlarmSound = settings?.selectedAlarmSound ?? 'default';
-        if (minutesBefore > 0) {
-          final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
-          final patterns = await _shiftRepository.getAllPatterns();
-          targets = preAlarmRescheduleTargets(
-            rows,
-            patterns,
-            _dayOffPattern,
-            minutesBefore,
-            now,
-            CalendarRange.lastDate,
-          );
-        }
-      } catch (e) {
-        debugPrint('❌ [Settings] pre の登録し直し：設定・シフト・パターンを読めませんでした: $e');
-        readFailed = true;
-      }
-
-      final codes = <String?>[];
-      if (!readFailed) {
-        for (final target in targets) {
-          try {
-            codes.add(await AlarmService.scheduleAlarmForShift(
-              shiftDate: target.date,
-              alarmTime: target.startTime,
-              mainAlarmEnabled: false,  // 出勤時刻ちょうどのアラームは登録しない（確定と同じ）
-              preAlarmEnabled: true,
-              preAlarmMinutes: minutesBefore,
-              selectedAlarmSound: selectedAlarmSound,
-            ));
-          } catch (e) {
-            debugPrint('❌ [Settings] pre の登録し直し：pre を登録できませんでした (${target.date}): $e');
-            codes.add('SCHEDULE_FAILED');
-          }
-        }
-      }
-      final result = summarizeRescheduleResults(codes);
-      debugPrint('🔔 [Settings] pre を ${result.count}/${targets.length}件 登録し直しました（音: $selectedAlarmSound、エラー: ${result.errorCode}）');
-      return (
-        count: result.count,
-        errorCode: result.errorCode,
-        readFailed: readFailed,
-        alarmDisabled: minutesBefore <= 0,
-      );
-    }
+    // N128：pre の登録し直し（N124 の _reschedulePreAlarms）は PreAlarmRescheduleService.reschedule に移した
 
     // ✅ H4: アラームOFF時に、登録済みの main / pre をすべてキャンセル
     //    対象：今日・明日 ＋ DB に存在する今日〜CalendarRange の終わりのシフト日（Set で重複排除）
@@ -383,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // OFF なら登録し直さない（scheduleAlarmForShift は OFF だと成功扱いの null を返し、件数を誤って数えるため先に分ける）
         final List<({String text, Color? color})> messages;
         if (await AlarmService.isAlarmEnabled()) {
-          final result = await _reschedulePreAlarms();
+          final result = await PreAlarmRescheduleService.reschedule();
           messages = soundSaveMessages(
             count: result.count,
             errorMessage: AlarmService.alarmErrorMessage(result.errorCode),
@@ -1546,7 +1483,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (action == PreMinutesAction.cancelOnly) {
       return (action: action, count: 0, errorCode: null, readFailed: cancelFailed);
     }
-    final result = await _reschedulePreAlarms();
+    final result = await PreAlarmRescheduleService.reschedule();
     return (
       action: action,
       count: result.count,
