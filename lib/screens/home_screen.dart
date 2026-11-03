@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shiftsleep/services/alarm_permission.dart';
+import 'package:shiftsleep/services/alarm_service.dart';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -50,6 +55,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 通知停止の停止時刻を確認するまでの秒数カウンター（5秒ごとに確認）
   int _pendingStopCheckSeconds = 0;
 
+  // N128：「アラームとリマインダー」が許可されていないことを知らせるバナー
+  bool _showAlarmPermissionBanner = false;
+  // N128：request() の処理中（ダイアログとバナーから二重に呼ばない）
+  bool _isRequestingPermission = false;
+
   @override
   void initState() {
     super.initState();
@@ -63,7 +73,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
     // ====================================================
-    
+
+    // N128：バナーを確かめ、初めてなら説明のダイアログを出す（await しない。ほかの初期化は待たせない）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshAlarmPermissionBanner();
+      _showAlarmPermissionIntroIfNeeded();
+    });
+
     _timeUpdateTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) {
@@ -110,7 +126,147 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         debugPrint('❌ N91: 再開時の付与の自動生成に失敗: $e');
         return 0;
       });
+
+      // N128：端末の設定で許可を変えて戻ってきたときにバナーを確かめ直す（await しない）
+      _refreshAlarmPermissionBanner();
     }
+  }
+
+  /// N128：バナーを出すか確かめ直す（Android・アラーム ON・アラームとリマインダーが許可なし のときだけ出す）
+  Future<void> _refreshAlarmPermissionBanner() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final alarmEnabled = await AlarmService.isAlarmEnabled();
+      final exactAlarmGranted = await Permission.scheduleExactAlarm.isGranted;
+      final show = shouldShowAlarmPermissionBanner(
+        alarmEnabled: alarmEnabled,
+        exactAlarmGranted: exactAlarmGranted,
+      );
+      if (mounted && show != _showAlarmPermissionBanner) {
+        setState(() => _showAlarmPermissionBanner = show);
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeScreen] N128：許可の確認に失敗: $e');
+    }
+  }
+
+  /// N128：初めて開いたときに 1 回だけ、許可の説明のダイアログを出す
+  /// どちらも許可済みなら出さずに「出した」にする。出したら、どのボタンでも「出した」にする
+  Future<void> _showAlarmPermissionIntroIfNeeded() async {
+    if (!Platform.isAndroid) return;
+    final bool exactAlarmGranted;
+    final bool notificationGranted;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final alreadyShown = prefs.getBool(alarmPermissionIntroShownKey) ?? false;
+      if (alreadyShown) return;
+      exactAlarmGranted = await Permission.scheduleExactAlarm.isGranted;
+      notificationGranted = await Permission.notification.isGranted;
+      final show = shouldShowAlarmPermissionIntro(
+        alreadyShown: alreadyShown,
+        exactAlarmGranted: exactAlarmGranted,
+        notificationGranted: notificationGranted,
+      );
+      // 先に「出した」にする（ダイアログの途中でアプリを閉じても、次からは出さない）
+      await prefs.setBool(alarmPermissionIntroShownKey, true);
+      if (!show) {
+        debugPrint('ℹ️ [HomeScreen] N128：どちらも許可済みのため説明のダイアログは出しません');
+        return;
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeScreen] N128：説明のダイアログの確認に失敗: $e');
+      return;
+    }
+    if (!mounted) return;
+
+    final goSettings = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(alarmPermissionIntroTitle),
+        content: const Text(alarmPermissionIntroBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text(alarmPermissionIntroLaterLabel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(alarmPermissionIntroSettingsLabel),
+          ),
+        ],
+      ),
+    );
+    debugPrint('🔔 [HomeScreen] N128：説明のダイアログ → ${goSettings == true ? '設定する' : 'あとで'}');
+    if (goSettings == true) {
+      await _requestAlarmPermissions(
+        exactAlarm: !exactAlarmGranted,
+        notification: !notificationGranted,
+      );
+    }
+  }
+
+  /// N128：許可されていないものだけ、順番に request() する（アラームとリマインダー → 通知）
+  /// 2 つを同時に呼ぶと「A request for permissions is already running」になるため、1 つずつ await する
+  /// 処理中はもう一度呼ばない。終わったらバナーを確かめ直す
+  Future<void> _requestAlarmPermissions({required bool exactAlarm, required bool notification}) async {
+    if (_isRequestingPermission) return;
+    setState(() => _isRequestingPermission = true);
+    try {
+      if (exactAlarm) {
+        final status = await Permission.scheduleExactAlarm.request();
+        debugPrint('📋 [HomeScreen] N128：アラームとリマインダー → $status');
+      }
+      if (notification) {
+        final status = await Permission.notification.request();
+        debugPrint('📋 [HomeScreen] N128：通知 → $status');
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeScreen] N128：許可の request() に失敗: $e');
+    } finally {
+      if (mounted) setState(() => _isRequestingPermission = false);
+    }
+    await _refreshAlarmPermissionBanner();
+  }
+
+  /// N128：バナーの［設定を開く］。ダイアログの［設定する］と同じく、許可されていないものだけを順に求める
+  /// （ダイアログで［あとで］を選んだ人にも、通知の許可を求められるようにする）
+  Future<void> _onAlarmPermissionBannerPressed() async {
+    if (_isRequestingPermission) return;
+    var notificationGranted = true;
+    try {
+      notificationGranted = await Permission.notification.isGranted;
+    } catch (e) {
+      debugPrint('❌ [HomeScreen] N128：通知の許可の確認に失敗（通知は求めない）: $e');
+    }
+    await _requestAlarmPermissions(exactAlarm: true, notification: !notificationGranted);
+  }
+
+  /// N128：許可がないことを知らせるバナー（オレンジ系。⚠️ と文字で意味が分かるようにする）
+  Widget _buildAlarmPermissionBanner() {
+    return Material(
+      color: Colors.orange.shade100,
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: Colors.orange, width: 4)),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                alarmPermissionBannerText,
+                style: TextStyle(color: Colors.black87, fontSize: 13),
+              ),
+            ),
+            TextButton(
+              onPressed: _isRequestingPermission ? null : _onAlarmPermissionBannerPressed,
+              child: const Text(alarmPermissionBannerButtonLabel),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 通知の「停止」ボタンで保存された停止時刻があれば起床処理を行う
@@ -173,7 +329,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       ),
-      body: _buildPage(_selectedIndex),
+      // N128：許可がない間は、どのタブでも上にバナーを出す
+      body: Column(
+        children: [
+          if (_showAlarmPermissionBanner) _buildAlarmPermissionBanner(),
+          Expanded(child: _buildPage(_selectedIndex)),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
@@ -184,7 +346,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _shiftManagementView = ShiftManagementView.calendar;
             // ========================================================================
           });
-  
+
+          // N128：設定タブでアラームを ON/OFF したあと、タブを切り替えたときにバナーを確かめ直す
+          _refreshAlarmPermissionBanner();
+
           // ========== Week 3 Day 6-2 修正: タブ切り替え時に loadShifts() を呼び出し ==========
           if (index == 1) {
             // パターンをリロード

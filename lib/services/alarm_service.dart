@@ -6,7 +6,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // ✅ H4
 
 class AlarmService {
@@ -32,16 +31,8 @@ class AlarmService {
       print('✅ 古い Notification Channel を削除');
     }
     // ==================================================
-    // 実行時権限をリクエスト（Android 12+）
-    if (Platform.isAndroid) {
-      final statusExactAlarm = await Permission.scheduleExactAlarm.request();
-      print('📋 scheduleExactAlarm permission: $statusExactAlarm');
-
-      final statusNotification = await Permission.notification.request();
-      print('📋 notification permission: $statusNotification');
-
-      // ※ WAKE_LOCK は AndroidManifest.xml に宣言済みなので、リクエスト不要
-    }
+    // N128：起動時の許可の request() はやめた（説明のダイアログ・バナーはホーム画面。alarm_permission.dart）
+    // ※ WAKE_LOCK は AndroidManifest.xml に宣言済みなので、リクエスト不要
 
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
