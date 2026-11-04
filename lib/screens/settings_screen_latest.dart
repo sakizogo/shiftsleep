@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';  // ← CupertinoSwitch 用
+import 'package:flutter/foundation.dart' show kDebugMode;  // N129 2/2 D2
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';  // ========== Week 25+ 追加 ==========
@@ -904,6 +905,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
+                      // N129 2/2 D2：シフトを使わずに本番の経路で鳴らす（デバッグのときだけ）
+                      if (kDebugMode) ...[
+                        const SizedBox(height: AppDimensions.paddingSmall),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: _scheduleDebugAlarm,
+                            child: const Text('🧪 10 秒後に鳴らす（デバッグ）'),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1269,6 +1281,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }
+  }
+
+  /// N129 2/2 D2：10 秒後に鳴らす（デバッグ）。音は DB の設定（行がない・読めないときは 'default'）
+  Future<void> _scheduleDebugAlarm() async {
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    var sound = 'default';
+    try {
+      final settings = await _shiftRepository.getAppSettings('test_user');
+      sound = settings?.selectedAlarmSound ?? 'default';
+    } catch (e) {
+      debugPrint('❌ [Settings] デバッグ用アラームの設定を読めませんでした（default で鳴らします）: $e');
+    }
+
+    final errorCode = await AlarmService.scheduleDebugAlarm(selectedAlarmSound: sound);
+    final error = AlarmService.alarmErrorMessage(errorCode);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(error ?? '🧪 10 秒後に鳴らします（音: $sound）'),
+        backgroundColor: error == null ? null : Colors.orange,
+        duration: Duration(seconds: error == null ? 3 : 6),
+      ),
+    );
   }
 
   // ========== 🆕 Week 26+ Step 6：完全な _saveSettings() 実装 ==========

@@ -58,6 +58,7 @@ class AppColors {
   static const Color vacationRemainingText = Color(0xFF01579B);   // テキスト
 
   static const Color calendarSelectedBorder = Color(0xFF0072B2); // カレンダーで選んだ日の枠線（Wong 2011: Blue）
+  static const Color alarmRingingBanner = Color(0xFF0072B2); // N129 2/2：鳴っているアラームのバナーの背景（Wong 2011: Blue）
   
   /// 有給消滝予定：黄色警告系（赤を避ける）
   static const Color expiryWarningBg = Color(0xFFFFF9E6);      // 薄い黄色（背景）

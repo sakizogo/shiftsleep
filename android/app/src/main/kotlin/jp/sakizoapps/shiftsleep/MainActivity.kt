@@ -62,8 +62,16 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 "stopAlarm" -> {
-                    stopAlarm()
-                    result.success("アラーム停止")
+                    // N129 2/2: 止められなかったら Dart に伝える（ホームの［止める］で ⚠️ を出すため）
+                    if (stopAlarm()) {
+                        result.success("アラーム停止")
+                    } else {
+                        result.error("STOP_FAILED", "アラームを止められませんでした", null)
+                    }
+                }
+                "isAlarmSoundPlaying" -> {
+                    // N129 2/2: サービスと予備の経路（AlarmReceiver の MediaPlayer）のどちらかで鳴っていれば true
+                    result.success(AlarmSoundService.isSoundPlaying || AlarmReceiver.isAlarmPlaying)
                 }
                 else -> result.notImplemented()
             }
@@ -105,32 +113,52 @@ class MainActivity: FlutterActivity() {
         return AlarmScheduler.cancel(this, alarmId)
     }
 
-    private fun stopAlarm() {
-        try {
+    // N129 2/2: 戻り値 true=止めた / false=鳴っている音を止められなかったかもしれない
+    private fun stopAlarm(): Boolean {
         Log.d("MainActivity", "🔴 stopAlarm 呼び出し")
+        var stopped = true
+
+        // N29: フォアグラウンドサービスで鳴っている音を止める
+        // N129 2/2 D1: 予備の MediaPlayer の例外で届かなくならないよう、先に行う
+        try {
+            stopService(Intent(this, AlarmSoundService::class.java))
+        } catch (e: Exception) {
+            stopped = false
+            Log.e("MainActivity", "❌ サービスの停止エラー: ${e.message}")
+        }
 
         // 🆕 companion object の変数に直接アクセス
-        AlarmReceiver.isAlarmPlaying = false
-        AlarmReceiver.mediaPlayer?.stop()
-        AlarmReceiver.mediaPlayer?.release()
-        AlarmReceiver.mediaPlayer = null
-        AlarmReceiver.alarmHandler?.removeCallbacksAndMessages(null)
-        AlarmReceiver.alarmHandler = null
-
-        // N29: フォアグラウンドサービスで鳴っている音も止める
-        stopService(Intent(this, AlarmSoundService::class.java))
-
-        // N6: 「起きる」で音を止めたら、残っているアラーム通知（alarm_channel）もすべて消す
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm?.activeNotifications
-                ?.filter { it.notification.channelId == "alarm_channel" }
-                ?.forEach { nm?.cancel(it.tag, it.id) }
-        }
-
-        Log.d("MainActivity", "✅ アラーム停止完了")
+        // N129 2/2 D1: prepare() に失敗した MediaPlayer が残っていると stop() は例外になる。
+        // 鳴っていなければ失敗にせず、次に止めるときに同じ例外が出ないよう必ず片付ける
+        val wasPlaying = AlarmReceiver.isAlarmPlaying
+        try {
+            AlarmReceiver.isAlarmPlaying = false
+            AlarmReceiver.alarmHandler?.removeCallbacksAndMessages(null)
+            AlarmReceiver.alarmHandler = null
+            try {
+                AlarmReceiver.mediaPlayer?.stop()
+            } finally {
+                AlarmReceiver.mediaPlayer?.release()
+                AlarmReceiver.mediaPlayer = null
+            }
         } catch (e: Exception) {
-        Log.e("MainActivity", "❌ アラーム停止エラー: ${e.message}")
+            if (wasPlaying) stopped = false
+            Log.e("MainActivity", "❌ 予備の MediaPlayer の停止エラー: ${e.message}")
         }
+
+        // N6: 音を止めたら、残っているアラーム通知（alarm_channel）もすべて消す
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val nm = getSystemService(NotificationManager::class.java)
+                nm?.activeNotifications
+                    ?.filter { it.notification.channelId == "alarm_channel" }
+                    ?.forEach { nm?.cancel(it.tag, it.id) }
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "❌ 通知の削除エラー: ${e.message}")
+        }
+
+        Log.d("MainActivity", if (stopped) "✅ アラーム停止完了" else "⚠️ アラームを止められませんでした")
+        return stopped
     }
 }

@@ -38,6 +38,11 @@ class AlarmSoundService : Service() {
     const val SILENCE_DURATION_MS = 200L
     private const val WAKE_LOCK_TIMEOUT_MS = 70000L
 
+    // N129 2/2: 音が鳴っているか（MainActivity の isAlarmSoundPlaying から読む）
+    // プロセスが消えると音も止まるので、SharedPreferences ではなく static で持つ
+    var isSoundPlaying = false
+      private set
+
     // N27: 自動停止のお知らせ通知（前面通知とは別の ID。音・バイブなし。「起きる」で消える）
     fun showAutoStoppedNotification(context: Context, alarmId: String) {
       try {
@@ -232,6 +237,7 @@ class AlarmSoundService : Service() {
       }
 
       isPlaying = true
+      isSoundPlaying = true
       startTimeMs = System.currentTimeMillis()
       handler = Handler(Looper.getMainLooper())
 
@@ -282,6 +288,7 @@ class AlarmSoundService : Service() {
 
   private fun releasePlayback() {
     isPlaying = false
+    isSoundPlaying = false
     handler?.removeCallbacksAndMessages(null)
     handler = null
     try {

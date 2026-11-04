@@ -13,6 +13,9 @@ class AlarmService {
   static const String _methodChannelName = 'com.sakizoapps.shiftsleep/alarm';
   static final MethodChannel _methodChannel = MethodChannel(_methodChannelName);
 
+  // N129 2/2 D2: デバッグ用アラームの ID（日付から作る ID は yyyymmdd＋1 桁なので重ならない）
+  static const int _debugAlarmId = 999999990;
+
   // ===== Notification Plugin =====
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -361,6 +364,30 @@ class AlarmService {
     }
   }
 
+  /// N129 2/2: 今アラームの音が鳴っているか（サービス・予備の経路のどちらでも true）
+  ///    Android のときだけ。例外は外に出さず false を返す
+  static Future<bool> isAlarmSoundPlaying() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _methodChannel.invokeMethod<bool>('isAlarmSoundPlaying') ?? false;
+    } catch (e) {
+      debugPrint('❌ [AlarmService] 鳴っているかの確認エラー: $e');
+      return false;
+    }
+  }
+
+  /// N129 2/2 D2: デバッグ用に、シフトを使わず 10 秒後に本番と同じ経路で鳴らす（設定画面の kDebugMode のボタンから呼ぶ）
+  ///    戻り値 null=成功 / 'EXACT_ALARM_DENIED' / 'SCHEDULE_FAILED'
+  static Future<String?> scheduleDebugAlarm({required String selectedAlarmSound}) {
+    return _scheduleWithAlarmManager(
+      alarmId: _debugAlarmId,
+      scheduledDate: DateTime.now().add(const Duration(seconds: 10)),
+      title: 'デバッグ用アラーム',
+      body: '10 秒後に鳴らすボタンから登録しました',
+      selectedAlarmSound: selectedAlarmSound,
+    );
+  }
+
   static int _generateNotificationId(DateTime date, String type) {
     final dateStr =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
@@ -488,12 +515,15 @@ class AlarmService {
   }
   
   /// 🆕 追加：既に鳴っている AlarmReceiver の音声を停止
-  static Future<void> stopAlarmSound() async {
+  /// N129 2/2: 戻り値 true=止めた / false=止められなかった（例外は今までどおり外に出さない）
+  static Future<bool> stopAlarmSound() async {
     try {
       final result = await _methodChannel.invokeMethod('stopAlarm');
       print('✅ stopAlarmSound 呼び出し成功: $result');
+      return true;
     } catch (e) {
       print('❌ stopAlarmSound エラー: $e');
+      return false;
     }
   }
 }

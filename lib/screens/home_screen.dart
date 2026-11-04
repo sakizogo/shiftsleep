@@ -5,9 +5,11 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/services/alarm_permission.dart';
+import 'package:shiftsleep/services/alarm_ringing.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
+import 'package:shiftsleep/services/sleep_preference_service.dart';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -62,6 +64,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // N128：request() の処理中（ダイアログとバナーから二重に呼ばない）
   bool _isRequestingPermission = false;
 
+  // N129 2/2：鳴っているアラームの［止める］を出すか
+  bool _showStopAlarmButton = false;
+  // N129 2/2：鳴っているかの確認中（1 秒ごとの確認を重ねない）
+  bool _isCheckingAlarmRinging = false;
+  // N129 2/2：［止める］の処理中（二度押しを防ぎ、確認でボタンが戻らないようにする）
+  bool _isStoppingAlarm = false;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshAlarmPermissionBanner();
       _showAlarmPermissionIntroIfNeeded();
+      _refreshStopAlarmButton();  // N129 2/2：開いたときにもう鳴っている場合
     });
 
     _timeUpdateTimer = Timer.periodic(
@@ -88,6 +98,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         setState(() {
           // 時刻更新のみ
         });
+
+        // N129 2/2：鳴りはじめ・自動停止・通知からの停止を 1 秒以内に反映する（裏にいる間は呼ばない）
+        _refreshStopAlarmButton();
 
         // 前面表示中の通知停止にも数秒以内で対応する
         _pendingStopCheckSeconds++;
@@ -131,7 +144,89 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // N128：端末の設定で許可を変えて戻ってきたときにバナーを確かめ直す（await しない）
       _refreshAlarmPermissionBanner();
+
+      // N129 2/2：裏にいる間に鳴りはじめた・止まった場合（await しない）
+      _refreshStopAlarmButton();
     }
+  }
+
+  /// N129 2/2：［止める］を出すか確かめ直す。前面にいる間だけ確認する
+  /// 起動直後の約 500ms は isSleepingNow がまだ復元されていないので、保存値（getSleepStartTime）でも判定する
+  /// （wake_up_service.dart の processPendingAlarmStop と同じ考え方）
+  Future<void> _refreshStopAlarmButton() async {
+    if (_isCheckingAlarmRinging || _isStoppingAlarm) return;
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+    _isCheckingAlarmRinging = true;
+    try {
+      final isRinging = await AlarmService.isAlarmSoundPlaying();
+      if (!mounted) return;
+      var isSleeping = context.read<SleepProvider>().isSleepingNow;
+      if (isRinging && !isSleeping) {
+        isSleeping = await SleepPreferenceService.getSleepStartTime() != null;
+      }
+      // 確認の途中で［止める］が押されたら、この結果は使わない
+      if (!mounted || _isStoppingAlarm) return;
+      final show = shouldShowStopAlarmButton(isRinging: isRinging, isSleeping: isSleeping);
+      if (show != _showStopAlarmButton) {
+        setState(() => _showStopAlarmButton = show);
+      }
+    } finally {
+      _isCheckingAlarmRinging = false;
+    }
+  }
+
+  /// N129 2/2：［止める］。押したらすぐ隠し、失敗したらオレンジの ⚠️ で知らせる
+  /// 音を止めるだけで、起床の記録と AlarmManager の予約には触らない
+  Future<void> _onStopAlarmPressed() async {
+    if (_isStoppingAlarm) return;
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    setState(() {
+      _isStoppingAlarm = true;
+      _showStopAlarmButton = false;
+    });
+    final stopped = await AlarmService.stopAlarmSound();
+    if (stopped) {
+      // サービスの onDestroy は少しあとで動く。その前の確認でボタンが一瞬戻らないように待つ
+      await Future.delayed(const Duration(milliseconds: 300));
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(stopAlarmFailedText),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 6),
+        ),
+      );
+    }
+    _isStoppingAlarm = false;
+    if (mounted) await _refreshStopAlarmButton();  // まだ鳴っていれば、もう一度押せるように戻す
+  }
+
+  /// N129 2/2：鳴っていることを知らせるバナー（青系。🔔 と文字で意味が分かるようにする）
+  Widget _buildStopAlarmBanner() {
+    return Material(
+      color: AppColors.alarmRingingBanner,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                stopAlarmBannerText,
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+            FilledButton(
+              onPressed: _isStoppingAlarm ? null : _onStopAlarmPressed,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppColors.alarmRingingBanner,
+              ),
+              child: const Text(stopAlarmButtonLabel),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// N128：バナーを出すか確かめ直す（Android・アラーム ON・許可なし のときだけ出す。どれを出すかは alarmPermissionBannerKind）
@@ -420,6 +515,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // N128：許可がない間は、どのタブでも上にバナーを出す
       body: Column(
         children: [
+          // N129 2/2：鳴っている間は、許可のバナーより上に出す
+          if (_showStopAlarmButton) _buildStopAlarmBanner(),
           if (_alarmPermissionBanner != AlarmPermissionBannerKind.none) _buildAlarmPermissionBanner(),
           Expanded(child: _buildPage(_selectedIndex)),
         ],
