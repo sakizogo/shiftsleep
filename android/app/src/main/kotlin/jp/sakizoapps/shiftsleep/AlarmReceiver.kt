@@ -22,6 +22,8 @@ class AlarmReceiver : BroadcastReceiver() {
     var mediaPlayer: MediaPlayer? = null
     var alarmHandler: Handler? = null
     var isAlarmPlaying = false
+    // N135: 予備の経路で今鳴らしているアラームの id（次のアラームが来たら前の通知を消すために持つ）
+    var currentAlarmId: String? = null
     var alarmStartTime: Long = 0
     const val AUTO_STOP_DURATION_MS = 60000L
     const val PLAY_DURATION_MS = 500L
@@ -158,6 +160,18 @@ class AlarmReceiver : BroadcastReceiver() {
         player.release()
         throw e
       }
+      // N135: 新しい音の準備ができてから前の音を止める（準備に失敗したら上の throw で抜けるので、前の音は鳴り続ける）
+      // stopAlarm で前のループとタイマーも消えるので、Handler とタイマーは常に 1 本になる
+      val previousAlarmId = if (isAlarmPlaying) currentAlarmId else null
+      stopAlarm()
+      if (previousAlarmId != null) {
+        Log.d("AlarmReceiver", "🔁 前のアラームを止めて次を鳴らします（前: $previousAlarmId → 次: $alarmId）")
+        // 新しい通知はすでに出ているので、同じ id なら消さない
+        if (previousAlarmId != alarmId) {
+          NotificationManagerCompat.from(context).cancel(previousAlarmId.hashCode())
+        }
+      }
+      currentAlarmId = alarmId
       mediaPlayer = player
 
 
@@ -226,13 +240,17 @@ class AlarmReceiver : BroadcastReceiver() {
 
   private fun stopAlarm() {
     try {
+      // N135: stop() が例外を出しても必ず片付ける（MainActivity の stopAlarm と同じ考え方）
       isAlarmPlaying = false
-      mediaPlayer?.stop()
-      mediaPlayer?.release()
-      mediaPlayer = null
       alarmHandler?.removeCallbacksAndMessages(null)
       alarmHandler = null
-      
+      try {
+        mediaPlayer?.stop()
+      } finally {
+        mediaPlayer?.release()
+        mediaPlayer = null
+      }
+
       Log.d("AlarmReceiver", "🛑 アラーム停止完了")
     } catch (e: Exception) {
       Log.e("AlarmReceiver", "❌ アラーム停止エラー: ${e.message}")
