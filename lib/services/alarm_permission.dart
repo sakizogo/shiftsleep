@@ -4,6 +4,7 @@
 // 起動時にいきなり設定画面を開くのをやめ、説明のダイアログ（初回だけ）とバナーで案内する
 // DB・アラーム・権限の呼び出しには依存しない（Android かどうかの判定も呼び出し元。alarm_reschedule.dart も純粋な関数だけ）
 // N128 2/2：「許可なし → 許可あり」に変わったら出勤前アラームを登録し直す（判定と文言）
+// N129 1/2：通知の許可がないと、鳴ったアラームを通知の「停止」から止められないため、バナーで案内する
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
 
@@ -19,6 +20,7 @@ const alarmPermissionIntroLaterLabel = 'あとで';
 
 /// バナーの文言
 const alarmPermissionBannerText = '⚠️ 「アラームとリマインダー」が許可されていないため、アラームが鳴りません';
+const notificationPermissionBannerText = '⚠️ 通知が許可されていないため、鳴ったアラームを通知から止められません';
 const alarmPermissionBannerButtonLabel = '設定を開く';
 
 /// 説明のダイアログを出すか
@@ -39,6 +41,22 @@ bool shouldShowAlarmPermissionBanner({
   required bool exactAlarmGranted,
 }) {
   return alarmEnabled && !exactAlarmGranted;
+}
+
+/// どのバナーを出すか（N129 1/2）
+enum AlarmPermissionBannerKind { none, exactAlarm, notification }
+
+/// アラームが OFF なら出さない。どちらも許可されていないときは、アラームとリマインダーのバナーを優先する
+AlarmPermissionBannerKind alarmPermissionBannerKind({
+  required bool alarmEnabled,
+  required bool exactAlarmGranted,
+  required bool notificationGranted,
+}) {
+  if (shouldShowAlarmPermissionBanner(alarmEnabled: alarmEnabled, exactAlarmGranted: exactAlarmGranted)) {
+    return AlarmPermissionBannerKind.exactAlarm;
+  }
+  if (alarmEnabled && !notificationGranted) return AlarmPermissionBannerKind.notification;
+  return AlarmPermissionBannerKind.none;
 }
 
 /// 前回確かめた「アラームとリマインダー」の許可の状態の SharedPreferences のキー（N128 2/2）

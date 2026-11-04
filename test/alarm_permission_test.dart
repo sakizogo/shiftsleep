@@ -6,6 +6,7 @@ import 'package:shiftsleep/services/alarm_service.dart';
 
 // N128：shouldShowAlarmPermissionIntro・shouldShowAlarmPermissionBanner・文言のテスト
 // N128 2/2：shouldReschedulePreAlarmsOnGrant・alarmPermissionGrantedMessages のテスト
+// N129 1/2：alarmPermissionBannerKind・通知のバナーの文言のテスト
 
 void main() {
   group('shouldShowAlarmPermissionIntro', () {
@@ -70,6 +71,39 @@ void main() {
     });
   });
 
+  group('alarmPermissionBannerKind', () {
+    AlarmPermissionBannerKind kind(bool alarmEnabled, bool exactAlarmGranted, bool notificationGranted) {
+      return alarmPermissionBannerKind(
+        alarmEnabled: alarmEnabled,
+        exactAlarmGranted: exactAlarmGranted,
+        notificationGranted: notificationGranted,
+      );
+    }
+
+    test('1. ON＋両方なし → アラーム（通知より優先）', () {
+      expect(kind(true, false, false), AlarmPermissionBannerKind.exactAlarm);
+    });
+
+    test('2. ON＋アラームのみなし → アラーム', () {
+      expect(kind(true, false, true), AlarmPermissionBannerKind.exactAlarm);
+    });
+
+    test('3. ON＋通知のみなし → 通知', () {
+      expect(kind(true, true, false), AlarmPermissionBannerKind.notification);
+    });
+
+    test('4. ON＋両方あり → なし', () {
+      expect(kind(true, true, true), AlarmPermissionBannerKind.none);
+    });
+
+    test('5. OFF → 許可がどうでも なし', () {
+      expect(kind(false, false, false), AlarmPermissionBannerKind.none);
+      expect(kind(false, false, true), AlarmPermissionBannerKind.none);
+      expect(kind(false, true, false), AlarmPermissionBannerKind.none);
+      expect(kind(false, true, true), AlarmPermissionBannerKind.none);
+    });
+  });
+
   group('文言', () {
     test('1. ダイアログのタイトル・本文・ボタン', () {
       expect(alarmPermissionIntroTitle, '⏰ アラームを使うための許可');
@@ -85,6 +119,11 @@ void main() {
       expect(alarmPermissionBannerText, '⚠️ 「アラームとリマインダー」が許可されていないため、アラームが鳴りません');
       expect(alarmPermissionBannerText.startsWith('⚠️'), isTrue);
       expect(alarmPermissionBannerButtonLabel, '設定を開く');
+    });
+
+    test('3. 通知のバナーも ⚠️ で始まり、文字だけで意味が分かる', () {
+      expect(notificationPermissionBannerText, '⚠️ 通知が許可されていないため、鳴ったアラームを通知から止められません');
+      expect(notificationPermissionBannerText.startsWith('⚠️'), isTrue);
     });
   });
 

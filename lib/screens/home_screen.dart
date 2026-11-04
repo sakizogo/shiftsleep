@@ -57,8 +57,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 通知停止の停止時刻を確認するまでの秒数カウンター（5秒ごとに確認）
   int _pendingStopCheckSeconds = 0;
 
-  // N128：「アラームとリマインダー」が許可されていないことを知らせるバナー
-  bool _showAlarmPermissionBanner = false;
+  // N128：「アラームとリマインダー」が許可されていないことを知らせるバナー（N129 1/2：通知の許可がないときも）
+  AlarmPermissionBannerKind _alarmPermissionBanner = AlarmPermissionBannerKind.none;
   // N128：request() の処理中（ダイアログとバナーから二重に呼ばない）
   bool _isRequestingPermission = false;
 
@@ -134,18 +134,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// N128：バナーを出すか確かめ直す（Android・アラーム ON・アラームとリマインダーが許可なし のときだけ出す）
+  /// N128：バナーを出すか確かめ直す（Android・アラーム ON・許可なし のときだけ出す。どれを出すかは alarmPermissionBannerKind）
   Future<void> _refreshAlarmPermissionBanner() async {
     if (!Platform.isAndroid) return;
     try {
       final alarmEnabled = await AlarmService.isAlarmEnabled();
       final exactAlarmGranted = await Permission.scheduleExactAlarm.isGranted;
-      final show = shouldShowAlarmPermissionBanner(
+      // N129 1/2：通知の確認に失敗しても、下の登録し直しは止めない
+      var notificationGranted = true;
+      try {
+        notificationGranted = await Permission.notification.isGranted;
+      } catch (e) {
+        debugPrint('❌ [HomeScreen] N129：通知の許可の確認に失敗（通知のバナーは出さない）: $e');
+      }
+      final banner = alarmPermissionBannerKind(
         alarmEnabled: alarmEnabled,
         exactAlarmGranted: exactAlarmGranted,
+        notificationGranted: notificationGranted,
       );
-      if (mounted && show != _showAlarmPermissionBanner) {
-        setState(() => _showAlarmPermissionBanner = show);
+      if (mounted && banner != _alarmPermissionBanner) {
+        setState(() => _alarmPermissionBanner = banner);
       }
       // N128 2/2：「許可なし → 許可あり」に変わっていたら出勤前アラームを登録し直す
       await _reschedulePreAlarmsIfGranted(exactAlarmGranted: exactAlarmGranted, alarmEnabled: alarmEnabled);
@@ -299,8 +307,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _requestAlarmPermissions(exactAlarm: true, notification: !notificationGranted);
   }
 
+  /// N129 1/2：通知のバナーの［設定を開く］。request() で許可されなければアプリの設定画面を開く
+  /// 設定画面から戻ったときは didChangeAppLifecycleState の resumed でバナーを確かめ直す
+  Future<void> _onNotificationPermissionBannerPressed() async {
+    if (_isRequestingPermission) return;
+    setState(() => _isRequestingPermission = true);
+    try {
+      final status = await Permission.notification.request();
+      debugPrint('📋 [HomeScreen] N129：通知 → $status');
+      if (!status.isGranted) {
+        final opened = await openAppSettings();
+        debugPrint('📋 [HomeScreen] N129：アプリの設定画面を開く → $opened');
+      }
+    } catch (e) {
+      debugPrint('❌ [HomeScreen] N129：通知の許可の処理に失敗: $e');
+    } finally {
+      if (mounted) setState(() => _isRequestingPermission = false);
+    }
+    await _refreshAlarmPermissionBanner();
+  }
+
   /// N128：許可がないことを知らせるバナー（オレンジ系。⚠️ と文字で意味が分かるようにする）
   Widget _buildAlarmPermissionBanner() {
+    final isNotification = _alarmPermissionBanner == AlarmPermissionBannerKind.notification;
     return Material(
       color: Colors.orange.shade100,
       child: Container(
@@ -310,14 +339,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
         child: Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Text(
-                alarmPermissionBannerText,
-                style: TextStyle(color: Colors.black87, fontSize: 13),
+                isNotification ? notificationPermissionBannerText : alarmPermissionBannerText,
+                style: const TextStyle(color: Colors.black87, fontSize: 13),
               ),
             ),
             TextButton(
-              onPressed: _isRequestingPermission ? null : _onAlarmPermissionBannerPressed,
+              onPressed: _isRequestingPermission
+                  ? null
+                  : (isNotification ? _onNotificationPermissionBannerPressed : _onAlarmPermissionBannerPressed),
               child: const Text(alarmPermissionBannerButtonLabel),
             ),
           ],
@@ -389,7 +420,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // N128：許可がない間は、どのタブでも上にバナーを出す
       body: Column(
         children: [
-          if (_showAlarmPermissionBanner) _buildAlarmPermissionBanner(),
+          if (_alarmPermissionBanner != AlarmPermissionBannerKind.none) _buildAlarmPermissionBanner(),
           Expanded(child: _buildPage(_selectedIndex)),
         ],
       ),
