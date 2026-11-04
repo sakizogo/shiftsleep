@@ -3,6 +3,7 @@ package jp.sakizoapps.shiftsleep
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -138,13 +139,28 @@ class AlarmReceiver : BroadcastReceiver() {
       
       // N49: アプリで設定した音量で鳴らす
       val volume = AlarmSoundService.readAlarmVolume(context)
-      mediaPlayer = MediaPlayer().apply {
-        setDataSource(context, Uri.parse("android.resource://${context.packageName}/$resourceId"))
-        setVolume(volume, volume)
+      val player = MediaPlayer()
+      try {
+        player.apply {
+          // N130: メインの経路と同じくアラーム音量で鳴らす（setDataSource・prepare より前に指定する）
+          setAudioAttributes(
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_ALARM)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build()
+          )
+          setDataSource(context, Uri.parse("android.resource://${context.packageName}/$resourceId"))
+          setVolume(volume, volume)
+          prepare()
+        }
+      } catch (e: Exception) {
+        // N130: 作りかけの MediaPlayer は片付ける（mediaPlayer には入れない。ログは外側の catch で出す）
+        player.release()
+        throw e
       }
-      
-      mediaPlayer?.prepare()
-      
+      mediaPlayer = player
+
+
       isAlarmPlaying = true
       alarmStartTime = System.currentTimeMillis()
       alarmHandler = Handler(Looper.getMainLooper())
