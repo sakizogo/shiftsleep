@@ -458,12 +458,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<SleepProvider>();
 
-    final woke = await WakeUpService.processPendingAlarmStop(provider);
-    if (woke) {
+    final result = await WakeUpService.processPendingAlarmStop(provider);
+    if (result != PendingAlarmStopResult.notProcessed) {
       messenger.showSnackBar(
         const SnackBar(
           content: Text('⏰ アラーム停止時刻で起床を記録しました'),
           duration: Duration(seconds: 3),
+        ),
+      );
+    }
+    // N19：起床は記録できているので、続けて知らせる
+    if (result == PendingAlarmStopResult.wokeButAlarmCancelFailed) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(alarmCancelFailedText),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 6),
         ),
       );
     }

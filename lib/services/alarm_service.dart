@@ -339,7 +339,8 @@ class AlarmService {
   }
 
   /// AlarmManager のアラームをキャンセル
-  static Future<void> _cancelWithAlarmManager(int alarmId) async {
+  /// N19：戻り値 true=取り消せた（対象なしを含む）／ false=失敗（例外は外に出さない）
+  static Future<bool> _cancelWithAlarmManager(int alarmId) async {
     try {
       final result = await _methodChannel.invokeMethod<String>(
         'cancelAlarmWithAlarmManager',
@@ -347,8 +348,10 @@ class AlarmService {
       );
       // ✅ Step1-A: 成功／対象なしは Kotlin の戻り値で区別する
       print('✅ AlarmManager キャンセル処理完了: $result');
+      return true;
     } catch (e) {
       print('❌ AlarmManager キャンセル エラー: $e');
+      return false;
     }
   }
 
@@ -395,7 +398,8 @@ class AlarmService {
     return int.parse('$dateStr$typeNum');
   }
 
-  static Future<void> cancelAlarm(DateTime date) async {
+  /// N19：戻り値 true=main・pre とも AlarmManager から取り消せた
+  static Future<bool> cancelAlarm(DateTime date) async {
     final mainAlarmId = _generateNotificationId(date, 'main');
     final preAlarmId = _generateNotificationId(date, 'pre');
 
@@ -404,23 +408,26 @@ class AlarmService {
     await _notificationsPlugin.cancel(preAlarmId);
 
     // ✅ AlarmManager もキャンセル
-    await _cancelWithAlarmManager(mainAlarmId);
-    await _cancelWithAlarmManager(preAlarmId);
+    final mainCancelled = await _cancelWithAlarmManager(mainAlarmId);
+    final preCancelled = await _cancelWithAlarmManager(preAlarmId);
 
     print('✓ アラームをキャンセルしました: $date');
+    return mainCancelled && preCancelled;
   }
 
   /// ✅ H1: 起床時刻アラーム（main）だけをキャンセルする（出勤前アラーム pre には触れない）
-  static Future<void> cancelMainAlarm(DateTime date) async {
+  /// N19：戻り値 true=AlarmManager から取り消せた
+  static Future<bool> cancelMainAlarm(DateTime date) async {
     final mainAlarmId = _generateNotificationId(date, 'main');
 
     // flutter_local_notifications の main のみキャンセル
     await _notificationsPlugin.cancel(mainAlarmId);
 
     // AlarmManager の main のみキャンセル
-    await _cancelWithAlarmManager(mainAlarmId);
+    final cancelled = await _cancelWithAlarmManager(mainAlarmId);
 
     print('✓ 起床アラーム（main）をキャンセルしました: $date');
+    return cancelled;
   }
 
   /// ✅ H3: 出勤前アラーム（pre）だけをキャンセルする（起床時刻アラーム main には触れない）

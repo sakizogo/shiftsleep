@@ -1,10 +1,20 @@
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
+
+/// N19：起床はできたがアラームを取り消せなかったときの文言
+const alarmCancelFailedText = '⚠️ 起床は記録しましたが、アラームを取り消せませんでした。鳴ったら止めてください';
+
+/// N19：通知の「停止」で保存された停止時刻を処理した結果
+enum PendingAlarmStopResult {
+  notProcessed,  // 起床処理をしなかった
+  woke,  // 起床処理をした
+  wokeButAlarmCancelFailed,  // 起床処理をしたが、アラームを取り消せなかった
+}
 
 /// 起床処理（UI を含まない部分）
 /// 「起きる」ボタンと、通知の停止ボタン経由の起床で共通して使う
@@ -19,13 +29,13 @@ class WakeUpService {
   static const String _alarmStoppedAtKey = 'alarm_stopped_at_ms';
   static bool _isProcessingPendingStop = false;
 
-  /// wakeUpTime: 起床時刻（「起きる」ボタンなら DateTime.now()）
-  /// cancelAlarms: true なら wakeUpTime の日付の main・pre アラームをキャンセル
-  static Future<void> wakeUp(
+  /// wakeUpTime: 起床時刻（「起きる」ボタンなら DateTime.now()、通知の「停止」なら押した時刻）
+  /// N19：どちらの起床でも、wakeUpTime の日付の main・pre と、今日・明日の main を取り消す
+  /// 戻り値: アラームを取り消せたら true（取り消せなくても起床は最後まで進める。知らせるのは呼び出し元）
+  static Future<bool> wakeUp(
     SleepProvider provider,
-    DateTime wakeUpTime, {
-    bool cancelAlarms = true,
-  }) async {
+    DateTime wakeUpTime,
+  ) async {
     // N33: 睡眠記録がない・id がない・途中で例外が出ても、音は必ず止める（stopAlarmSound は例外を外に出さない）
     await AlarmService.stopAlarmSound();
     print('[SleepButton] 🔊 アラーム音を停止しました');
@@ -58,19 +68,12 @@ class WakeUpService {
       print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
 
       // ========== Step 7：今日のシフト始業30分前アラームをキャンセル ==========
-      if (cancelAlarms) {
-        print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
-        final today = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
-        await AlarmService.cancelAlarm(today);
-        // ✅ N17: 明日の日付で登録された手動起床アラームも残さない
-        await ManualWakeService.cancelTodayAndTomorrow();
-      }
+      print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
+      final alarmsCancelled = await _cancelAlarmsForWakeUp(wakeUpTime);
 
       // ✅ N4: 手動起床時刻は「今夜だけ有効」なので起床したら消す
       await ManualWakeService.clear();
-      if (cancelAlarms) {
-        print('[SleepButton] ✅ アラームをキャンセルしました');
-      }
+      print('[SleepButton] ✅ アラームをキャンセルしました');
       // =====================================================================
 
       // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
@@ -79,17 +82,39 @@ class WakeUpService {
       // ========================================================================
 
       await provider.loadAllSleepData();
+      return alarmsCancelled;
     } else {
       print('[SleepButton] ⚠️ 睡眠レコードが見つかりません');
+      return true;
     }
   }
 
+  /// N19：起床で main・pre を取り消す。失敗しても例外を外に出さず、false を返す
+  /// 片方が失敗しても、もう片方は取り消す
+  static Future<bool> _cancelAlarmsForWakeUp(DateTime wakeUpTime) async {
+    var cancelled = true;
+    try {
+      final wakeUpDate = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
+      cancelled = await AlarmService.cancelAlarm(wakeUpDate);
+    } catch (e) {
+      debugPrint('[WakeUpService] ❌ 起床の日の main・pre を取り消せませんでした: $e');
+      cancelled = false;
+    }
+    try {
+      // ✅ N17: 明日の日付で登録された手動起床アラームも残さない
+      if (!await ManualWakeService.cancelTodayAndTomorrow()) cancelled = false;
+    } catch (e) {
+      debugPrint('[WakeUpService] ❌ 今日・明日の main を取り消せませんでした: $e');
+      cancelled = false;
+    }
+    return cancelled;
+  }
+
   /// 通知の「停止」ボタン（AlarmReceiver.kt）が保存した停止時刻で起床処理を行う
-  /// 戻り値: 起床処理を行ったら true、それ以外は false
-  static Future<bool> processPendingAlarmStop(SleepProvider provider) async {
+  static Future<PendingAlarmStopResult> processPendingAlarmStop(SleepProvider provider) async {
     if (_isProcessingPendingStop) {
       print('[WakeUpService] ⏭️ 停止時刻の処理中のためスキップ');
-      return false;
+      return PendingAlarmStopResult.notProcessed;
     }
     _isProcessingPendingStop = true;
 
@@ -100,7 +125,7 @@ class WakeUpService {
 
       final stoppedAtMs = prefs.getInt(_alarmStoppedAtKey);
       if (stoppedAtMs == null) {
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
       final stoppedAt = DateTime.fromMillisecondsSinceEpoch(stoppedAtMs);
       print('[WakeUpService] 🔔 保存された停止時刻: $stoppedAt');
@@ -109,7 +134,7 @@ class WakeUpService {
       if (!provider.isSleepingNow &&
           await SleepPreferenceService.getSleepStartTime() != null) {
         print('[WakeUpService] ⏳ SleepProvider が初期化中のため後で処理します');
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
 
       // 二重実行を防ぐため、起床処理より先に消す
@@ -118,28 +143,30 @@ class WakeUpService {
       final sleepStartTime = provider.sleepStartTime;
       if (!provider.isSleepingNow) {
         print('[WakeUpService] ℹ️ 睡眠中ではないため起床処理をしません');
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
       if (sleepStartTime == null) {
         print('[WakeUpService] ⚠️ 睡眠開始時刻がないため起床処理をしません');
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
       if (!stoppedAt.isAfter(sleepStartTime)) {
         print('[WakeUpService] ℹ️ 停止時刻が睡眠開始（$sleepStartTime）以前のため起床処理をしません');
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
       if (stoppedAt.isAfter(DateTime.now())) {
         print('[WakeUpService] ⚠️ 停止時刻が未来のため起床処理をしません');
-        return false;
+        return PendingAlarmStopResult.notProcessed;
       }
 
       print('[WakeUpService] 🌅 停止時刻で起床処理を実行します');
-      await wakeUp(provider, stoppedAt, cancelAlarms: false);
+      final alarmsCancelled = await wakeUp(provider, stoppedAt);
       print('[WakeUpService] ✅ 停止時刻での起床処理が完了しました');
-      return true;
+      return alarmsCancelled
+          ? PendingAlarmStopResult.woke
+          : PendingAlarmStopResult.wokeButAlarmCancelFailed;
     } catch (e) {
       print('[WakeUpService] ❌ 停止時刻の処理エラー: $e');
-      return false;
+      return PendingAlarmStopResult.notProcessed;
     } finally {
       _isProcessingPendingStop = false;
     }

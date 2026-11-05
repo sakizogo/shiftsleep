@@ -64,13 +64,15 @@ class ManualWakeService {
 
   /// ✅ N17: 今日と明日の手動起床アラーム（main）をキャンセルする
   /// 手動起床は最大24時間先なので、登録日付は今日か明日のどちらか
-  static Future<void> cancelTodayAndTomorrow() async {
+  /// N19：戻り値 true=両方とも取り消せた
+  static Future<bool> cancelTodayAndTomorrow() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final tomorrow = today.add(const Duration(days: 1));
-    await AlarmService.cancelMainAlarm(today);
-    await AlarmService.cancelMainAlarm(tomorrow);
+    final todayCancelled = await AlarmService.cancelMainAlarm(today);
+    final tomorrowCancelled = await AlarmService.cancelMainAlarm(tomorrow);
     print('[ManualWake] 🧹 今日と明日の手動起床アラームをキャンセル: ${_formatDate(today)} / ${_formatDate(tomorrow)}');
+    return todayCancelled && tomorrowCancelled;
   }
 
   /// 有効な手動起床時刻を返す

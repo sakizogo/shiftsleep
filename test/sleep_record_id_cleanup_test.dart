@@ -153,7 +153,7 @@ void main() {
         'alarm_stopped_at_ms': now.subtract(const Duration(minutes: 1)).millisecondsSinceEpoch,
       });
 
-      expect(await WakeUpService.processPendingAlarmStop(provider), isTrue);
+      expect(await WakeUpService.processPendingAlarmStop(provider), PendingAlarmStopResult.woke);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString(_idKey), isNull);
