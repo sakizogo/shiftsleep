@@ -1387,6 +1387,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final preResult = await _applyPreMinutesChange(oldMinutes, savedSettings.alarmTimeBeforeShift);
 
     if (!mounted) return;  // ✅ N12: await 後に画面が閉じられていたら Provider に触らない
+    // N133：再登録の途中でタブを切り替えても結果を知らせるよう、await の前に取得
+    final messenger = ScaffoldMessenger.of(context);
     try {
       // ========== Step 4️⃣：SleepProvider に起床時刻を更新 ==========
       print('[Settings] 🔄 Step 4️⃣ プロバイダーを更新...');
@@ -1456,25 +1458,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // ========== Step 6️⃣：ユーザーに成功を通知 ==========
     // ✅ N22: アラーム登録に失敗したときはオレンジだけを出す（緑の「更新されました」は出さない）
     // N125：pre の結果を成功の文言の括弧、または続けて出すオレンジで知らせる（前を消さない）
-    if (mounted) {
-      final messages = settingsSaveMessages(
-        savedText: '✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました',
-        mainAlarmError: alarmError,
-        preAction: preResult.action,
-        preCount: preResult.count,
-        preErrorMessage: AlarmService.alarmErrorMessage(preResult.errorCode),
-        preReadFailed: preResult.readFailed,
+    final messages = settingsSaveMessages(
+      savedText: '✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました',
+      mainAlarmError: alarmError,
+      preAction: preResult.action,
+      preCount: preResult.count,
+      preErrorMessage: AlarmService.alarmErrorMessage(preResult.errorCode),
+      preReadFailed: preResult.readFailed,
+    );
+    for (final message in messages) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message.text),
+          backgroundColor: message.color,
+          duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+        ),
       );
-      final messenger = ScaffoldMessenger.of(context);
-      for (final message in messages) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(message.text),
-            backgroundColor: message.color,
-            duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
-          ),
-        );
-      }
     }
 
     print('✅ Step 6️⃣ すべて完了！');

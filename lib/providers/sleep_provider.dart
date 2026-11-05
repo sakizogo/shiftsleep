@@ -496,6 +496,9 @@ class SleepProvider extends ChangeNotifier {
 
   /// 新規睡眠記録を挿入
   /// shiftId: 関連するシフトID（オプション）
+  ///
+  /// N121：失敗したら睡眠中にせず（メモリ・SharedPreferences とも残さない）、例外を投げ直す（呼んだ側で知らせる）。
+  /// _isLoading は必ず戻す（ホームのスピナーが消えなくならないように）
   Future<void> insertSleepRecord(SleepRecord record, {int? shiftId}) async {
     try {
       _isLoading = true;
@@ -528,6 +531,16 @@ class SleepProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Failed to insert sleep record: $e';
       print('[SleepProvider] Error: $_errorMessage');
+      // N121：睡眠中の状態を残さない（どちらの clear も例外を外に出さない）
+      _isSleepingNow = false;
+      _currentSleepRecordIdNow = null;
+      _sleepStartTime = null;
+      _currentShiftId = null;
+      await SleepPreferenceService.clearSleepState();
+      await SleepPreferenceService.clearCurrentSleepRecordId();
+      rethrow;
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }

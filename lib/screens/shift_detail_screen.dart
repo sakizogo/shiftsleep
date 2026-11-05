@@ -518,6 +518,8 @@ const SizedBox(height: AppDimensions.paddingLarge),
   }
 
   Future<void> _saveShiftsAndScheduleAlarms() async {
+    // N133：登録の途中でタブを切り替えても結果を知らせるよう、最初の await より前に取得
+    final messenger = ScaffoldMessenger.of(context);
     // ========== デバッグログ追加 ==========
     print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
     print('💾 保存データ:');
@@ -544,7 +546,6 @@ const SizedBox(height: AppDimensions.paddingLarge),
     } catch (e) {
       debugPrint('Error loading settings before saving shifts: $e');
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(
@@ -564,8 +565,6 @@ const SizedBox(height: AppDimensions.paddingLarge),
     } catch (e) {
       // 詳細確認画面に残り（編集した内容はそのまま）、アラームには進まない
       debugPrint('Error saving shifts: $e');
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         SnackBar(
@@ -628,8 +627,6 @@ const SizedBox(height: AppDimensions.paddingLarge),
     // ==============================================================
 
     // 成功メッセージ
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
@@ -650,7 +647,8 @@ const SizedBox(height: AppDimensions.paddingLarge),
       );
     }
 
-    // onBack コールバック実行で戻る
+    // onBack コールバック実行で戻る（タブを切り替えたあとは、別の画面の入力を消さないよう呼ばない）
+    if (!mounted) return;
     if (widget.onBack != null) {
       widget.onBack!();
     }

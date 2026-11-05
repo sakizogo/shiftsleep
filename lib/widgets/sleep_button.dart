@@ -119,29 +119,46 @@ class _SleepButtonState extends State<SleepButton>
         updatedAt: now,
       );
 
-      await sleepProvider.insertSleepRecord(sleepRecord);
-      await sleepProvider.setCurrentSleepRecordIdNow(sleepRecord.id);
-      
+      // N121：記録を保存できなかったら睡眠中にせず、アラームも登録しない
+      try {
+        await sleepProvider.insertSleepRecord(sleepRecord);
+      } catch (e) {
+        debugPrint('[SleepButton] ❌ 睡眠の記録を保存できませんでした: $e');
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('❌ 睡眠の記録を保存できませんでした: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       // ✨ Step 7：isAlarmEnabled が true の場合のみアラームをセット
       // ✅ N4: 手動起床時刻とシフト基準を比べ、早い方だけを登録
       String? alarmWarning;  // N118：設定・シフトを読めなかったときの ⚠️（「💤 睡眠中」のあとに出す）
-      if (isAlarmEnabled) {
-        print('[SleepButton] ✅ アラーム有効：起床アラームをセット');
-        alarmWarning = await _scheduleWakeAlarm(now, messenger);
-      } else {
-        print('[SleepButton] ⚠️ アラーム無効：アラームをセットしません');
+      // N121：記録は保存できているので、ここで失敗しても睡眠中のままにして ⚠️ で知らせる
+      try {
+        await sleepProvider.setCurrentSleepRecordIdNow(sleepRecord.id);
+        if (isAlarmEnabled) {
+          print('[SleepButton] ✅ アラーム有効：起床アラームをセット');
+          alarmWarning = await _scheduleWakeAlarm(now, messenger);
+        } else {
+          print('[SleepButton] ⚠️ アラーム無効：アラームをセットしません');
+        }
+      } catch (e) {
+        debugPrint('[SleepButton] ❌ 記録の保存後の処理に失敗: $e');
+        alarmWarning = '⚠️ 睡眠は記録しましたが、アラームを登録できませんでした。『起きる』→『今から寝る』をやり直してください';
       }
-      
+
       print('[SleepButton] ✅ Sleep record saved');
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('💤 睡眠中...「起きる」ボタンで終了します'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      // N133：ホームがスピナーに置き換わるとこの Widget は破棄されるので、mounted で飛ばさず messenger で出す
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('💤 睡眠中...「起きる」ボタンで終了します'),
+          duration: Duration(seconds: 3),
+        ),
+      );
 
       widget.onPressed?.call();
 
@@ -157,46 +174,42 @@ class _SleepButtonState extends State<SleepButton>
 
     } catch (e) {
       print('[SleepButton] ❌ Error starting sleep: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ エラー: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ エラー: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
   // ==================================================
 
   // ========== Week 26+ Step 7：「起きる」ボタン処理 ==========
   Future<void> _handleWakeUp(SleepProvider sleepProvider) async {
+    // N133：処理中にこの Widget が破棄されても知らせを出せるよう、最初の await より前に取得
+    final messenger = ScaffoldMessenger.of(context);
     try {
       print('[SleepButton] 🛏️ _handleWakeUp メソッドが呼ばれました');
 
       // 起床処理本体は WakeUpService に集約（当日の main・pre アラームもキャンセル）
       await WakeUpService.wakeUp(sleepProvider, DateTime.now());
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ 起床しました。睡眠が記録されました。'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('✅ 起床しました。睡眠が記録されました。'),
+          duration: Duration(seconds: 3),
+        ),
+      );
 
       widget.onPressed?.call();
     } catch (e) {
       print('[SleepButton] ❌ Error waking up: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ エラー: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ エラー: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
   // ==================================================
@@ -245,7 +258,9 @@ class _SleepButtonState extends State<SleepButton>
     final choice = chooseWakeAlarm(manualWakeAt: manualWakeAt, shiftPreAlarmAt: shiftPre?.alarmAt);
     if (choice == WakeAlarmChoice.shiftPre && shiftPre != null) {
       print('[SleepButton] 🏢 シフト基準の方が早い：${hm(shiftPre.alarmAt)}（手動 ${hm(manualWakeAt)} は登録しない）');
-      await _scheduleAlarmForTodayShift(now, messenger, settings);
+      final registered = await _scheduleAlarmForTodayShift(now, messenger, settings);
+      // N133：登録できなかったら「○時に鳴ります」は出さず、⚠️ も消さない
+      if (!registered) return settingsWarning;
 
       final text = manualWakeAt.isBefore(shiftPre.startAt)
           ? '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出勤前アラーム（${shiftPre.minutesBefore}分前）より遅いため、${hm(shiftPre.alarmAt)} に鳴ります'
@@ -363,7 +378,8 @@ class _SleepButtonState extends State<SleepButton>
   /// 3. 出勤時刻 - alarmTimeBeforeShift = アラーム時刻
   /// 4. AlarmService.scheduleAlarmForShift() でアラーム登録
   /// N118：settings は _scheduleWakeAlarm で 1 回だけ読んだもの（読めなければ既定値）
-  Future<void> _scheduleAlarmForTodayShift(
+  /// N133：戻り値は出勤前アラームを登録できたら true（登録しなかった・失敗したら false）
+  Future<bool> _scheduleAlarmForTodayShift(
       DateTime wakeUpTime, ScaffoldMessengerState messenger, AppSettings settings) async {
     try {
       print('[SleepButton] 🔔 今日のシフト始業30分前アラームをセット中...');
@@ -376,7 +392,7 @@ class _SleepButtonState extends State<SleepButton>
       // ✅ ShiftPre: 出勤前アラームが「無効（0）」ならシフト勤務アラームを登録しない
       if (alarmTimeBeforeShift <= 0) {
         print('[SleepButton] ℹ️ 出勤前アラームが無効（0）のため登録しません');
-        return;
+        return false;
       }
       // ========================================
 
@@ -394,13 +410,13 @@ class _SleepButtonState extends State<SleepButton>
             duration: Duration(seconds: 6),
           ),
         );
-        return;
+        return false;
       }
       print('[SleepButton] 📊 getShiftsForDateRange の結果: ${shiftsMapList.length}件');
       
       if (shiftsMapList.isEmpty) {
         print('[SleepButton] ⚠️ 今日のシフトが見つかりません');
-        return;
+        return false;
       }
 
       print('[SleepButton] 📅 今日のシフトが見つかりました');
@@ -415,20 +431,20 @@ class _SleepButtonState extends State<SleepButton>
       // デフォルト休日はスキップ
       if (patternId == 'default_dayoff') {
         print('[SleepButton] ℹ️ 今日は休日です（スキップ）');
-        return;
+        return false;
       }
 
       // pattern_id から ShiftPatternModel を取得
       final pattern = await _shiftRepository.getPatternById(patternId);
       if (pattern == null || pattern.startTime == null) {
         print('[SleepButton] ⚠️ 出勤時刻が設定されていません');
-        return;
+        return false;
       }
 
       // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
       if (pattern.patternType != ShiftType.work) {
         print('[SleepButton] ℹ️ 今日は出勤ではありません（種類: ${pattern.patternType}）（スキップ）');
-        return;
+        return false;
       }
 
       final startTime = pattern.startTime!;
@@ -475,12 +491,21 @@ class _SleepButtonState extends State<SleepButton>
         );
       }
       // ===================================================================
+      return alarmError == null;
 
     } catch (e) {
       print('[SleepButton] ❌ アラームスケジュールエラー: $e');
       print('[SleepButton] 📍 スタックトレース: ${e.toString()}');
-      // エラーが発生してもユーザーに通知しない（睡眠記録は成功している）
+      // N133：この経路では main も入らずアラームが 0 本になるので知らせる（睡眠の記録はそのまま残す）
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('⚠️ 起床アラームを登録できませんでした: $e『起きる』→『今から寝る』をやり直してください'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
+    return false;
   }
   // =====================================================================================
 
