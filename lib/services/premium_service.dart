@@ -9,6 +9,7 @@
 ///
 /// Week 7 Phase 3: 新規作成
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
@@ -45,8 +46,29 @@ class PremiumService {
   // メイン機能
   // ========================
 
+  /// N26：RevenueCat が configure 済みか
+  ///
+  /// キーが空で configure していないとき、configure に失敗したとき、確認自体に失敗したときは false。
+  Future<bool> isRevenueCatConfigured() async {
+    try {
+      return await Purchases.isConfigured;
+    } catch (e) {
+      debugPrint('[PremiumService] ⚠️ RevenueCat の configure 状態を確認できません: $e');
+      return false;
+    }
+  }
+
+  /// N26：configure していないときは無料版として扱う（DB の値は書き換えない）
+  bool _treatAsFreeUser() {
+    _isPremiumUser = false;
+    _lastCheckTime = DateTime.now();
+    return false;
+  }
+
   /// 【重要】RevenueCat からユーザーの有料版ステータスを確認して DB に保存
-  /// 
+  ///
+  /// RevenueCat が configure されていないときは、呼ばずに false を返す（N26）
+  ///
   /// 処理フロー:
   /// 1. RevenueCat の CustomerInfo を取得
   /// 2. entitlements から 'ShiftSleep Pro' が有効かチェック
@@ -55,6 +77,8 @@ class PremiumService {
   /// 
   /// 返り値: 有料版フラグ（true = 有料ユーザー）
   Future<bool> checkPremiumStatus({String userId = 'test_user'}) async {
+    if (!await isRevenueCatConfigured()) return _treatAsFreeUser();
+
     try {
       print('[PremiumService] 🔍 有料版ステータスをチェック中...');
 
@@ -128,7 +152,11 @@ class PremiumService {
   }
 
   /// 有料版ステータスを DB から読み込む（アプリ起動時に実行）
+  ///
+  /// RevenueCat が configure されていないときは、DB の値によらず false を返す（N26）
   Future<bool> loadPremiumStatusFromDatabase(String userId) async {
+    if (!await isRevenueCatConfigured()) return _treatAsFreeUser();
+
     try {
       print('[PremiumService] 📖 DB から有料版ステータスを読み込み中...');
 

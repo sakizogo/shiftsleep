@@ -86,6 +86,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadSettings() async {
     try {
       final settings = await _shiftRepository.getAppSettings('test_user');
+      // N26：RevenueCat が configure されていないときは、DB の値によらず無料版として表示する
+      final isPremium = (settings?.isPremiumUser ?? false) &&
+          await _premiumService.isRevenueCatConfigured();
 
       if (settings != null && mounted) {
         print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
@@ -101,7 +104,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
-          _isPremiumUser = settings.isPremiumUser;
+          _isPremiumUser = isPremium;
           // isAlarmEnabled は削除
         });
       }

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
@@ -10,22 +13,48 @@ import 'package:shiftsleep/services/wake_up_service.dart';
 import 'screens/home_screen.dart';
 
 
-const String REVENUECAT_API_KEY = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
+// N26：Test Store のキーは release で使うと SDK がアプリを閉じるので、デバッグ版だけで使う
+const String _revenueCatTestApiKey = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
+// N26：Google Play 用のキー（goog_）。発行するまでは空のままで、その間はプレミアムなしで動く
+const String _revenueCatProductionApiKey = '';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-    try {
-    await Purchases.configure(
-      PurchasesConfiguration(
-        REVENUECAT_API_KEY,
-      ),
-    );
-    print('[main] ✅ RevenueCat initialized successfully with API Key: $REVENUECAT_API_KEY');
-  } catch (e) {
-    print('[main] ❌ RevenueCat initialization failed: $e');
+void main() {
+  // N26：ensureInitialized と runApp が同じ Zone に入るよう、起動処理を丸ごと包む
+  runZoned<Future<void>>(
+    _startApp,
+    zoneSpecification: kDebugMode
+        ? null
+        : ZoneSpecification(print: (self, parent, zone, line) {}),
+  );
+}
+
+Future<void> _startApp() async {
+  // N26：デバッグ版以外（release・profile）では print と debugPrint を止める（print は main の Zone で止める）
+  if (!kDebugMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
   }
-  
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  const revenueCatApiKey =
+      kDebugMode ? _revenueCatTestApiKey : _revenueCatProductionApiKey;
+  // N26：キーが空なら configure しない（PremiumService が Purchases.isConfigured を見て無料版として扱う）
+  if (revenueCatApiKey.isEmpty) {
+    debugPrint('[main] ℹ️ RevenueCat のキーが空のため configure しません');
+  } else {
+    try {
+      await Purchases.configure(
+        PurchasesConfiguration(
+          revenueCatApiKey,
+        ),
+      );
+      debugPrint('[main] ✅ RevenueCat initialized');
+    } catch (e) {
+      print('[main] ❌ RevenueCat initialization failed: $e');
+    }
+  }
+
+
   try {
     await AlarmService.initialize();
     print('[main] ✅ AlarmService initialized successfully');
