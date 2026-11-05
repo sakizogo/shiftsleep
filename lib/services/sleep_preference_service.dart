@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 睡眠状態をSharedPreferencesで永続化するサービス
@@ -98,6 +99,27 @@ class SleepPreferenceService {
       return id;
     } catch (e) {
       print('[SleepPrefs] ❌ 睡眠記録ID 取得エラー: $e');
+      return null;
+    }
+  }
+
+  /// N143：起動時の復元用。睡眠中（開始時刻が保存されている）なら ID を返す
+  /// 睡眠中でなければ、残っている ID を消して null を返す
+  /// 開始時刻の確認と削除の間に await を挟まない（同時に「今から寝る」が走っても新しい ID を消さないように）
+  /// 読めないときは何も消さない
+  static Future<String?> restoreCurrentSleepRecordId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getInt(_sleepStartTimeKey) != null) {
+        return prefs.getString(_currentSleepRecordIdKey);
+      }
+      if (prefs.containsKey(_currentSleepRecordIdKey)) {
+        await prefs.remove(_currentSleepRecordIdKey);
+        debugPrint('[SleepPrefs] 🗑️ 睡眠中ではないため、残っていた睡眠記録ID をクリア');
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[SleepPrefs] ❌ 睡眠記録ID 復元エラー: $e');
       return null;
     }
   }

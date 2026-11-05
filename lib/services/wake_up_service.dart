@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
@@ -8,7 +9,11 @@ import 'package:shiftsleep/services/sleep_preference_service.dart';
 /// 起床処理（UI を含まない部分）
 /// 「起きる」ボタンと、通知の停止ボタン経由の起床で共通して使う
 class WakeUpService {
-  static final SleepRepository _sleepRepository = SleepRepository();
+  static SleepRepository _sleepRepository = SleepRepository();
+
+  /// N143：テストで偽物の DB に差し替える
+  @visibleForTesting
+  static set sleepRepositoryForTest(SleepRepository repository) => _sleepRepository = repository;
 
   // AlarmReceiver.kt が "flutter.alarm_stopped_at_ms" として保存する停止時刻（ミリ秒）
   static const String _alarmStoppedAtKey = 'alarm_stopped_at_ms';

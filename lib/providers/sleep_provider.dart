@@ -516,7 +516,9 @@ class SleepProvider extends ChangeNotifier {
       // ========== Week 8 Phase 4 追加: 睡眠開始時刻を SharedPreferences に保存 ==========
       _sleepStartTime = record.sleepStartTime;  // ✅ record.sleepStartTime を使用
       _currentShiftId = shiftId;  // ✅ 呼び出し元から受け取ったシフトIDを使用
-      
+
+      // N143：開始時刻より先に ID を保存する（途中でプロセスが終わっても「睡眠中なのに ID がない」にしない）
+      await SleepPreferenceService.setCurrentSleepRecordId(record.id);
       await SleepPreferenceService.saveSleepStartTime(
         _sleepStartTime!,
         shiftId: _currentShiftId,
@@ -628,13 +630,14 @@ class SleepProvider extends ChangeNotifier {
 
       // ✅ SharedPreferences をクリア
       await SleepPreferenceService.clearSleepState();
+      await SleepPreferenceService.clearCurrentSleepRecordId();  // N143：メモリの ID と一緒に消す
       print('[SleepProvider] 💾 SharedPreferences をクリアしました');
 
       _sleepStartTime = null;
       _currentShiftId = null;
       _isSleepingNow = false;
       _currentSleepRecordIdNow = null;
-      
+
       notifyListeners();
       return;
     }
@@ -645,6 +648,7 @@ class SleepProvider extends ChangeNotifier {
 
     // ✅ SharedPreferences をクリア
     await SleepPreferenceService.clearSleepState();
+    await SleepPreferenceService.clearCurrentSleepRecordId();  // N143：メモリの ID と一緒に消す
     print('[SleepProvider] 💾 SharedPreferences をクリアしました');
 
     _sleepStartTime = null;
@@ -922,7 +926,8 @@ class SleepProvider extends ChangeNotifier {
   /// SharedPreferences から睡眠記録IDを復元
   Future<void> _loadCurrentSleepRecordIdFromPreferences() async {
     try {
-      final savedId = await SleepPreferenceService.getCurrentSleepRecordId();
+      // N143：_isSleepingNow が決まるのは約 500ms 後（initializeSleepState）なので、保存された開始時刻で判断する
+      final savedId = await SleepPreferenceService.restoreCurrentSleepRecordId();
       if (savedId != null) {
         _currentSleepRecordIdNow = savedId;
         notifyListeners();
