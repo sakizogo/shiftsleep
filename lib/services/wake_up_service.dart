@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
@@ -9,11 +10,53 @@ import 'package:shiftsleep/services/sleep_preference_service.dart';
 /// N19：起床はできたがアラームを取り消せなかったときの文言
 const alarmCancelFailedText = '⚠️ 起床は記録しましたが、アラームを取り消せませんでした。鳴ったら止めてください';
 
+/// N142：起こす記録が見つからず、起床時刻を記録できなかったときの文言
+const noRecordWakeText = '⚠️ 記録中の睡眠が見つからなかったため、起床時刻は記録できませんでした。あとから睡眠記録の「追加」で入れられます';
+
+/// N142：記録なしの起床でアラームも取り消せなかったときの文言（「起床は記録しました」とは言えない）
+const noRecordAlarmCancelFailedText = '⚠️ アラームを取り消せませんでした。鳴ったら止めてください';
+
+/// N142：起床処理の結果
+/// recorded：起床時刻を記録できた（false は記録なしの起床）
+/// alarmsCancelled：アラームを取り消せた
+typedef WakeUpResult = ({bool recorded, bool alarmsCancelled});
+
+/// N142：起床処理のあとに出す ⚠️ の文言（出す順）
+List<String> wakeUpWarningTexts(WakeUpResult result) => [
+      if (!result.recorded) noRecordWakeText,
+      if (!result.alarmsCancelled)
+        result.recorded ? alarmCancelFailedText : noRecordAlarmCancelFailedText,
+    ];
+
 /// N19：通知の「停止」で保存された停止時刻を処理した結果
 enum PendingAlarmStopResult {
   notProcessed,  // 起床処理をしなかった
   woke,  // 起床処理をした
   wokeButAlarmCancelFailed,  // 起床処理をしたが、アラームを取り消せなかった
+  wokeWithoutRecord,  // N142：記録なしの起床をした
+  wokeWithoutRecordButAlarmCancelFailed,  // N142：記録なしの起床をしたが、アラームを取り消せなかった
+}
+
+/// N142：知らせの判定。⏰「起床を記録しました」は recordedWake のときだけ出す
+extension PendingAlarmStopResultMessages on PendingAlarmStopResult {
+  bool get recordedWake =>
+      this == PendingAlarmStopResult.woke ||
+      this == PendingAlarmStopResult.wokeButAlarmCancelFailed;
+
+  List<String> get warningTexts {
+    switch (this) {
+      case PendingAlarmStopResult.notProcessed:
+        return const [];
+      case PendingAlarmStopResult.woke:
+        return wakeUpWarningTexts((recorded: true, alarmsCancelled: true));
+      case PendingAlarmStopResult.wokeButAlarmCancelFailed:
+        return wakeUpWarningTexts((recorded: true, alarmsCancelled: false));
+      case PendingAlarmStopResult.wokeWithoutRecord:
+        return wakeUpWarningTexts((recorded: false, alarmsCancelled: true));
+      case PendingAlarmStopResult.wokeWithoutRecordButAlarmCancelFailed:
+        return wakeUpWarningTexts((recorded: false, alarmsCancelled: false));
+    }
+  }
 }
 
 /// 起床処理（UI を含まない部分）
@@ -31,8 +74,10 @@ class WakeUpService {
 
   /// wakeUpTime: 起床時刻（「起きる」ボタンなら DateTime.now()、通知の「停止」なら押した時刻）
   /// N19：どちらの起床でも、wakeUpTime の日付の main・pre と、今日・明日の main を取り消す
-  /// 戻り値: アラームを取り消せたら true（取り消せなくても起床は最後まで進める。知らせるのは呼び出し元）
-  static Future<bool> wakeUp(
+  /// N142：記録が見つからなくても、記録なしの起床として最後まで進める（睡眠中から必ず抜けられる）
+  /// DB を読めない・更新できないときは例外を投げ、睡眠中のままにする（もう一度「起きる」を押せる）
+  /// 戻り値の知らせは呼び出し元が出す（wakeUpWarningTexts）
+  static Future<WakeUpResult> wakeUp(
     SleepProvider provider,
     DateTime wakeUpTime,
   ) async {
@@ -40,18 +85,7 @@ class WakeUpService {
     await AlarmService.stopAlarmSound();
     print('[SleepButton] 🔊 アラーム音を停止しました');
 
-    // ========== Week 7 Phase 3 修正: SleepProvider から現在の睡眠レコード ID を取得 ==========
-    // Provider に未復元なら SharedPreferences の保存値で補う
-    var currentSleepRecordId = provider.currentSleepRecordIdNow;
-    currentSleepRecordId ??= await SleepPreferenceService.getCurrentSleepRecordId();
-    print('[SleepButton] 🔍 currentSleepRecordId: $currentSleepRecordId');
-    if (currentSleepRecordId == null) {
-      throw Exception('Sleep record ID not found in SleepProvider');
-    }
-    // ========================================================================
-
-    final sleepRecord =
-        await _sleepRepository.getSleepRecordById(currentSleepRecordId);
+    final sleepRecord = await _findSleepingRecord(provider);
 
     if (sleepRecord != null) {
       print('[SleepButton] 💾 睡眠レコードを更新中...');
@@ -66,27 +100,63 @@ class WakeUpService {
 
       await _sleepRepository.updateSleepRecord(updatedRecord);
       print('[SleepButton] ✅ Sleep record updated: ${updatedRecord.id}');
-
-      // ========== Step 7：今日のシフト始業30分前アラームをキャンセル ==========
-      print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
-      final alarmsCancelled = await _cancelAlarmsForWakeUp(wakeUpTime);
-
-      // ✅ N4: 手動起床時刻は「今夜だけ有効」なので起床したら消す
-      await ManualWakeService.clear();
-      print('[SleepButton] ✅ アラームをキャンセルしました');
-      // =====================================================================
-
-      // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
-      await provider.endSleepingNow();
-      print('[SleepButton] ✅ 睡眠中フラグをクリア');
-      // ========================================================================
-
-      await provider.loadAllSleepData();
-      return alarmsCancelled;
     } else {
-      print('[SleepButton] ⚠️ 睡眠レコードが見つかりません');
-      return true;
+      debugPrint('[WakeUpService] ⚠️ 起こす記録が見つからないため、記録なしの起床にします');
     }
+
+    // ========== Step 7：今日のシフト始業30分前アラームをキャンセル ==========
+    print('[SleepButton] 🔔 今日のシフト始業30分前アラームをキャンセル中...');
+    final alarmsCancelled = await _cancelAlarmsForWakeUp(wakeUpTime);
+
+    // ✅ N4: 手動起床時刻は「今夜だけ有効」なので起床したら消す
+    await ManualWakeService.clear();
+    print('[SleepButton] ✅ アラームをキャンセルしました');
+    // =====================================================================
+
+    // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
+    await provider.endSleepingNow();
+    print('[SleepButton] ✅ 睡眠中フラグをクリア');
+    // ========================================================================
+
+    await provider.loadAllSleepData();
+    return (recorded: sleepRecord != null, alarmsCancelled: alarmsCancelled);
+  }
+
+  /// N142：起こす記録を探す。① 保存された ID → ② 保存された開始時刻 の順。なければ null
+  /// どちらも「開始時刻がミリ秒まで一致し、進行中（durationMinutes == 0）」の記録だけを採用する
+  /// （ID が古くても別の記録を、再起動で睡眠中に戻っても完了済みの記録を上書きしない）
+  /// DB を読めないときの例外はそのまま外に出す
+  static Future<SleepRecord?> _findSleepingRecord(SleepProvider provider) async {
+    final startTime =
+        provider.sleepStartTime ?? await SleepPreferenceService.getSleepStartTime();
+    if (startTime == null) {
+      debugPrint('[WakeUpService] ⚠️ 睡眠の開始時刻がありません');
+      return null;
+    }
+    bool isSleepingRecord(SleepRecord record) =>
+        record.durationMinutes == 0 &&
+        record.sleepStartTime.millisecondsSinceEpoch == startTime.millisecondsSinceEpoch;
+
+    // Provider に未復元なら SharedPreferences の保存値で補う
+    final id = provider.currentSleepRecordIdNow ??
+        await SleepPreferenceService.getCurrentSleepRecordId();
+    debugPrint('[WakeUpService] 🔍 保存された記録 ID: $id');
+    if (id != null) {
+      final record = await _sleepRepository.getSleepRecordById(id);
+      if (record != null && isSleepingRecord(record)) return record;
+      debugPrint('[WakeUpService] ℹ️ ID の記録は採用できないため、開始時刻で探します');
+    }
+
+    // SQL の文字列比較にせず、入眠日で絞ってからミリ秒で比べる
+    final records = await _sleepRepository.getSleepRecordsByDateRange(
+      'test_user',
+      DateTime(startTime.year, startTime.month, startTime.day),
+      DateTime(startTime.year, startTime.month, startTime.day, 23, 59, 59),
+    );
+    for (final record in records) {
+      if (isSleepingRecord(record)) return record;
+    }
+    return null;
   }
 
   /// N19：起床で main・pre を取り消す。失敗しても例外を外に出さず、false を返す
@@ -159,11 +229,16 @@ class WakeUpService {
       }
 
       print('[WakeUpService] 🌅 停止時刻で起床処理を実行します');
-      final alarmsCancelled = await wakeUp(provider, stoppedAt);
+      final result = await wakeUp(provider, stoppedAt);
       print('[WakeUpService] ✅ 停止時刻での起床処理が完了しました');
-      return alarmsCancelled
-          ? PendingAlarmStopResult.woke
-          : PendingAlarmStopResult.wokeButAlarmCancelFailed;
+      if (result.recorded) {
+        return result.alarmsCancelled
+            ? PendingAlarmStopResult.woke
+            : PendingAlarmStopResult.wokeButAlarmCancelFailed;
+      }
+      return result.alarmsCancelled
+          ? PendingAlarmStopResult.wokeWithoutRecord
+          : PendingAlarmStopResult.wokeWithoutRecordButAlarmCancelFailed;
     } catch (e) {
       print('[WakeUpService] ❌ 停止時刻の処理エラー: $e');
       return PendingAlarmStopResult.notProcessed;

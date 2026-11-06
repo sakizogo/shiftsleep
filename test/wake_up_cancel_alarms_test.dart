@@ -121,7 +121,7 @@ void main() {
       final tomorrow = today.add(const Duration(days: 1));
       final provider = await sleepingProvider(now.subtract(const Duration(hours: 8)));
 
-      expect(await WakeUpService.wakeUp(provider, now), isTrue);
+      expect((await WakeUpService.wakeUp(provider, now)).alarmsCancelled, isTrue);
 
       expect(cancelledIds, containsAll([_mainId(today), _preId(today), _mainId(tomorrow)]));
       expect(cancelledIds, isNot(contains(_preId(tomorrow))));
@@ -202,7 +202,7 @@ void main() {
       final now = DateTime.now();
       final provider = await sleepingProvider(now.subtract(const Duration(hours: 8)));
 
-      expect(await WakeUpService.wakeUp(provider, now), isFalse);
+      expect((await WakeUpService.wakeUp(provider, now)).alarmsCancelled, isFalse);
 
       await expectWokeUp(provider);
     });
@@ -212,7 +212,7 @@ void main() {
       final now = DateTime.now();
       final provider = await sleepingProvider(now.subtract(const Duration(hours: 8)));
 
-      expect(await WakeUpService.wakeUp(provider, now), isFalse);
+      expect((await WakeUpService.wakeUp(provider, now)).alarmsCancelled, isFalse);
 
       await expectWokeUp(provider);
     });

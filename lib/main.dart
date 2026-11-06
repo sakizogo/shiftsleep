@@ -145,7 +145,8 @@ class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
 
         // ========== 通知の「停止」ボタンで保存された停止時刻で起床処理 ==========
         final result = await WakeUpService.processPendingAlarmStop(sleepProvider);
-        if (result != PendingAlarmStopResult.notProcessed) {
+        // N142：記録なしの起床では「記録しました」を出さない
+        if (result.recordedWake) {
           messenger.showSnackBar(
             const SnackBar(
               content: Text('⏰ アラーム停止時刻で起床を記録しました'),
@@ -153,13 +154,13 @@ class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
             ),
           );
         }
-        // N19：起床は記録できているので、続けて知らせる
-        if (result == PendingAlarmStopResult.wokeButAlarmCancelFailed) {
+        // N19：⏰ のあとに続けて知らせる
+        for (final text in result.warningTexts) {
           messenger.showSnackBar(
-            const SnackBar(
-              content: Text(alarmCancelFailedText),
+            SnackBar(
+              content: Text(text),
               backgroundColor: Colors.orange,
-              duration: Duration(seconds: 6),
+              duration: const Duration(seconds: 6),
             ),
           );
         }

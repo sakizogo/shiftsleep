@@ -191,21 +191,24 @@ class _SleepButtonState extends State<SleepButton>
       print('[SleepButton] 🛏️ _handleWakeUp メソッドが呼ばれました');
 
       // 起床処理本体は WakeUpService に集約（当日の main・pre アラームもキャンセル）
-      final alarmsCancelled = await WakeUpService.wakeUp(sleepProvider, DateTime.now());
+      final result = await WakeUpService.wakeUp(sleepProvider, DateTime.now());
 
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('✅ 起床しました。睡眠が記録されました。'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-      // N19：起床は記録できているので、✅ のあとに続けて知らせる
-      if (!alarmsCancelled) {
+      // N142：記録なしの起床では ✅ を出さない
+      if (result.recorded) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text(alarmCancelFailedText),
+            content: Text('✅ 起床しました。睡眠が記録されました。'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      // N19：✅ のあとに続けて知らせる
+      for (final text in wakeUpWarningTexts(result)) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(text),
             backgroundColor: Colors.orange,
-            duration: Duration(seconds: 6),
+            duration: const Duration(seconds: 6),
           ),
         );
       }
