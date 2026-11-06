@@ -137,7 +137,6 @@ class _SleepButtonState extends State<SleepButton>
       String? alarmWarning;  // N118：設定・シフトを読めなかったときの ⚠️（「💤 睡眠中」のあとに出す）
       // N121：記録は保存できているので、ここで失敗しても睡眠中のままにして ⚠️ で知らせる
       try {
-        await sleepProvider.setCurrentSleepRecordIdNow(sleepRecord.id);
         if (isAlarmEnabled) {
           print('[SleepButton] ✅ アラーム有効：起床アラームをセット');
           alarmWarning = await _scheduleWakeAlarm(now, messenger);

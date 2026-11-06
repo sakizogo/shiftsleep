@@ -96,31 +96,6 @@ class SleepProvider extends ChangeNotifier {
   // ========== Week 26+ 追加: アラーム設定中フラグの Getter ==========
   bool get isAlarmSet => _isAlarmSet;
   // ==================================================================
-  // ✅ 【新規追加】
-  Future<void> setCurrentSleepRecordIdNow(String? id) async {
-    _currentSleepRecordIdNow = id;
-    notifyListeners();
-    
-    if (id != null) {
-      await _saveCurrentSleepRecordIdToPreferences(id);  // ← await 追加！
-    } else {
-      await _clearCurrentSleepRecordIdFromPreferences();  // ← await 追加！
-    }
-    
-    print('[SleepProvider] ✅ currentSleepRecordIdNow を設定しました: $id');
-  }
-
-  // ✅ 【新規追加】SharedPreferences に保存するメソッド
-  Future<void> _saveCurrentSleepRecordIdToPreferences(String id) async {
-    await SleepPreferenceService.setCurrentSleepRecordId(id);
-    print('[SleepProvider] 💾 SharedPreferences に ID を保存: $id');
-  }
-
-  // ✅ 【新規追加】SharedPreferences から削除するメソッド
-  Future<void> _clearCurrentSleepRecordIdFromPreferences() async {
-    await SleepPreferenceService.clearCurrentSleepRecordId();
-    print('[SleepProvider] 🗑️ SharedPreferences から ID をクリア');
-  }
 
   // ========== Week 26+ 追加: アラーム設定中フラグを制御 ==========
   /// アラーム設定状態を設定（SleepButton が寝る時に true、起きる時に false）
@@ -498,14 +473,17 @@ class SleepProvider extends ChangeNotifier {
   /// shiftId: 関連するシフトID（オプション）
   ///
   /// N121：失敗したら睡眠中にせず（メモリ・SharedPreferences とも残さない）、例外を投げ直す（呼んだ側で知らせる）。
+  /// N142：DB に入れたあとで失敗したら、DB の行も消す（記録だけ残さない）
   /// _isLoading は必ず戻す（ホームのスピナーが消えなくならないように）
   Future<void> insertSleepRecord(SleepRecord record, {int? shiftId}) async {
+    var inserted = false;
     try {
       _isLoading = true;
       _errorMessage = null;
       notifyListeners();
 
       await _repository.insertSleepRecord(record);
+      inserted = true;
 
       // ========== Week 7 Phase 3 修正: 睡眠中フラグをセット ==========
       _isSleepingNow = true;
@@ -533,13 +511,23 @@ class SleepProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Failed to insert sleep record: $e';
       print('[SleepProvider] Error: $_errorMessage');
+      // N142：行を消せなくても元の失敗を知らせる（残った行は記録だけ残った状態になる）
+      if (inserted) {
+        try {
+          await _repository.deleteSleepRecord(record.id);
+        } catch (deleteError) {
+          debugPrint('[SleepProvider] ❌ N142：保存に失敗した記録を DB から消せませんでした: ${record.id}: $deleteError');
+        }
+      }
       // N121：睡眠中の状態を残さない（どちらの clear も例外を外に出さない）
       _isSleepingNow = false;
       _currentSleepRecordIdNow = null;
       _sleepStartTime = null;
       _currentShiftId = null;
-      await SleepPreferenceService.clearSleepState();
-      await SleepPreferenceService.clearCurrentSleepRecordId();
+      if (!await _clearSavedSleepState()) {
+        // 開始時刻は保存できていないので睡眠中には戻らない。ID だけ残っても起動時に消える（N143）
+        debugPrint('[SleepProvider] ⚠️ N142：保存した睡眠状態を消せませんでした');
+      }
       rethrow;
     } finally {
       _isLoading = false;
@@ -612,10 +600,12 @@ class SleepProvider extends ChangeNotifier {
   /// 1. 睡眠時間が1分未満なら記録をスキップ
   /// 2. SharedPreferences をクリア
   /// 3. 睡眠中フラグをクリア
-  Future<void> endSleepingNow() async {
+  ///
+  /// N142：戻り値 true=SharedPreferences からも消せた（false でもメモリの睡眠中は終わる。知らせるのは呼び出し元）
+  Future<bool> endSleepingNow() async {
     if (_sleepStartTime == null) {
       print('[SleepProvider] ⚠️  睡眠開始時刻がありません');
-      return;
+      return true;
     }
 
     final duration = DateTime.now().difference(_sleepStartTime!);
@@ -629,8 +619,7 @@ class SleepProvider extends ChangeNotifier {
       print('  - 経過時間: ${duration.inSeconds}秒');
 
       // ✅ SharedPreferences をクリア
-      await SleepPreferenceService.clearSleepState();
-      await SleepPreferenceService.clearCurrentSleepRecordId();  // N143：メモリの ID と一緒に消す
+      final cleared = await _clearSavedSleepState();  // N143：メモリの ID と一緒に消す
       print('[SleepProvider] 💾 SharedPreferences をクリアしました');
 
       _sleepStartTime = null;
@@ -639,7 +628,7 @@ class SleepProvider extends ChangeNotifier {
       _currentSleepRecordIdNow = null;
 
       notifyListeners();
-      return;
+      return cleared;
     }
 
     // ✅ 通常の睡眠終了処理
@@ -647,16 +636,23 @@ class SleepProvider extends ChangeNotifier {
     print('  - 睡眠時間: ${durationInMinutes}分');
 
     // ✅ SharedPreferences をクリア
-    await SleepPreferenceService.clearSleepState();
-    await SleepPreferenceService.clearCurrentSleepRecordId();  // N143：メモリの ID と一緒に消す
+    final cleared = await _clearSavedSleepState();  // N143：メモリの ID と一緒に消す
     print('[SleepProvider] 💾 SharedPreferences をクリアしました');
 
     _sleepStartTime = null;
     _currentShiftId = null;
     _isSleepingNow = false;
     _currentSleepRecordIdNow = null;
-    
+
     notifyListeners();
+    return cleared;
+  }
+
+  /// N142：開始時刻・シフト ID・記録 ID を消す。片方が失敗してももう片方も消す（例外は外に出さない）
+  Future<bool> _clearSavedSleepState() async {
+    final stateCleared = await SleepPreferenceService.clearSleepState();
+    final idCleared = await SleepPreferenceService.clearCurrentSleepRecordId();
+    return stateCleared && idCleared;
   }
   // ===================================================================
 

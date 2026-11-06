@@ -20,10 +20,9 @@ class _FailingRepository extends SleepRepository {
 
 /// ホームと同じく、読み込み中は SleepButton がスピナーに置き換わる
 class _FakeProvider extends SleepProvider {
-  _FakeProvider({this.insertError, this.afterInsertError}) : super(SleepRepository());
+  _FakeProvider({this.insertError}) : super(SleepRepository());
 
   final Object? insertError;
-  final Object? afterInsertError;
   bool loading = false;
 
   @override
@@ -37,11 +36,6 @@ class _FakeProvider extends SleepProvider {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     loading = false;
     notifyListeners();
-  }
-
-  @override
-  Future<void> setCurrentSleepRecordIdNow(String? id) async {
-    if (afterInsertError != null) throw afterInsertError!;
   }
 }
 
@@ -156,7 +150,9 @@ void main() {
     });
 
     testWidgets('保存のあとで失敗したら 💤 のあとにオレンジの ⚠️ を出す', (tester) async {
-      await tester.pumpWidget(_app(_FakeProvider(afterInsertError: Exception('boom'))));
+      // 手動起床の値が読めないと、アラームの登録が例外になる
+      SharedPreferences.setMockInitialValues({'shiftsleep_manual_wake_at': 1});
+      await tester.pumpWidget(_app(_FakeProvider()));
 
       await tester.tap(find.byType(SleepButton));
       await tester.pump();

@@ -16,47 +16,58 @@ const noRecordWakeText = '⚠️ 記録中の睡眠が見つからなかった�
 /// N142：記録なしの起床でアラームも取り消せなかったときの文言（「起床は記録しました」とは言えない）
 const noRecordAlarmCancelFailedText = '⚠️ アラームを取り消せませんでした。鳴ったら止めてください';
 
+/// N142：SharedPreferences の睡眠状態を消せなかったときの文言
+/// 再起動で睡眠中に戻っても、完了済みの記録は上書きしない（_findSleepingRecord）
+const stateClearFailedText = '⚠️ 睡眠中の状態を消せませんでした。端末の空き容量が少ないかもしれません。次に開いたときに「睡眠中」に戻っていたら「起きる」を押してください（記録済みの起床時刻は変わりません）';
+
 /// N142：起床処理の結果
 /// recorded：起床時刻を記録できた（false は記録なしの起床）
 /// alarmsCancelled：アラームを取り消せた
-typedef WakeUpResult = ({bool recorded, bool alarmsCancelled});
+/// stateCleared：SharedPreferences の睡眠状態を消せた
+typedef WakeUpResult = ({bool recorded, bool alarmsCancelled, bool stateCleared});
 
 /// N142：起床処理のあとに出す ⚠️ の文言（出す順）
 List<String> wakeUpWarningTexts(WakeUpResult result) => [
       if (!result.recorded) noRecordWakeText,
       if (!result.alarmsCancelled)
         result.recorded ? alarmCancelFailedText : noRecordAlarmCancelFailedText,
+      if (!result.stateCleared) stateClearFailedText,
     ];
 
 /// N19：通知の「停止」で保存された停止時刻を処理した結果
-enum PendingAlarmStopResult {
-  notProcessed,  // 起床処理をしなかった
-  woke,  // 起床処理をした
-  wokeButAlarmCancelFailed,  // 起床処理をしたが、アラームを取り消せなかった
-  wokeWithoutRecord,  // N142：記録なしの起床をした
-  wokeWithoutRecordButAlarmCancelFailed,  // N142：記録なしの起床をしたが、アラームを取り消せなかった
-}
+class PendingAlarmStopResult {
+  const PendingAlarmStopResult._(this.wakeUpResult);
 
-/// N142：知らせの判定。⏰「起床を記録しました」は recordedWake のときだけ出す
-extension PendingAlarmStopResultMessages on PendingAlarmStopResult {
-  bool get recordedWake =>
-      this == PendingAlarmStopResult.woke ||
-      this == PendingAlarmStopResult.wokeButAlarmCancelFailed;
+  /// N142：起床処理の結果から作る
+  factory PendingAlarmStopResult.fromWakeUp(WakeUpResult result) => PendingAlarmStopResult._(result);
 
+  /// 起床処理の結果（null は起床処理をしなかった）
+  final WakeUpResult? wakeUpResult;
+
+  static const notProcessed = PendingAlarmStopResult._(null);  // 起床処理をしなかった
+  static const woke = PendingAlarmStopResult._((recorded: true, alarmsCancelled: true, stateCleared: true));  // 起床処理をした
+  static const wokeButAlarmCancelFailed = PendingAlarmStopResult._((recorded: true, alarmsCancelled: false, stateCleared: true));  // 起床処理をしたが、アラームを取り消せなかった
+  static const wokeWithoutRecord = PendingAlarmStopResult._((recorded: false, alarmsCancelled: true, stateCleared: true));  // 記録なしの起床をした
+  static const wokeWithoutRecordButAlarmCancelFailed = PendingAlarmStopResult._((recorded: false, alarmsCancelled: false, stateCleared: true));  // 記録なしの起床をしたが、アラームを取り消せなかった
+
+  /// N142：⏰「起床を記録しました」は記録できたときだけ出す
+  bool get recordedWake => wakeUpResult?.recorded ?? false;
+
+  /// N142：⏰ のあとに出す ⚠️ の文言（出す順）
   List<String> get warningTexts {
-    switch (this) {
-      case PendingAlarmStopResult.notProcessed:
-        return const [];
-      case PendingAlarmStopResult.woke:
-        return wakeUpWarningTexts((recorded: true, alarmsCancelled: true));
-      case PendingAlarmStopResult.wokeButAlarmCancelFailed:
-        return wakeUpWarningTexts((recorded: true, alarmsCancelled: false));
-      case PendingAlarmStopResult.wokeWithoutRecord:
-        return wakeUpWarningTexts((recorded: false, alarmsCancelled: true));
-      case PendingAlarmStopResult.wokeWithoutRecordButAlarmCancelFailed:
-        return wakeUpWarningTexts((recorded: false, alarmsCancelled: false));
-    }
+    final result = wakeUpResult;
+    return result == null ? const [] : wakeUpWarningTexts(result);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PendingAlarmStopResult && other.wakeUpResult == wakeUpResult;
+
+  @override
+  int get hashCode => wakeUpResult.hashCode;
+
+  @override
+  String toString() => 'PendingAlarmStopResult($wakeUpResult)';
 }
 
 /// 起床処理（UI を含まない部分）
@@ -114,12 +125,17 @@ class WakeUpService {
     // =====================================================================
 
     // ========== Week 7 Phase 3 修正: SleepProvider の睡眠中フラグをクリア ==========
-    await provider.endSleepingNow();
+    // N142：消せなくても起床は止めない（知らせるのは呼び出し元）
+    final stateCleared = await provider.endSleepingNow();
     print('[SleepButton] ✅ 睡眠中フラグをクリア');
     // ========================================================================
 
     await provider.loadAllSleepData();
-    return (recorded: sleepRecord != null, alarmsCancelled: alarmsCancelled);
+    return (
+      recorded: sleepRecord != null,
+      alarmsCancelled: alarmsCancelled,
+      stateCleared: stateCleared,
+    );
   }
 
   /// N142：起こす記録を探す。① 保存された ID → ② 保存された開始時刻 の順。なければ null
@@ -231,14 +247,7 @@ class WakeUpService {
       print('[WakeUpService] 🌅 停止時刻で起床処理を実行します');
       final result = await wakeUp(provider, stoppedAt);
       print('[WakeUpService] ✅ 停止時刻での起床処理が完了しました');
-      if (result.recorded) {
-        return result.alarmsCancelled
-            ? PendingAlarmStopResult.woke
-            : PendingAlarmStopResult.wokeButAlarmCancelFailed;
-      }
-      return result.alarmsCancelled
-          ? PendingAlarmStopResult.wokeWithoutRecord
-          : PendingAlarmStopResult.wokeWithoutRecordButAlarmCancelFailed;
+      return PendingAlarmStopResult.fromWakeUp(result);
     } catch (e) {
       print('[WakeUpService] ❌ 停止時刻の処理エラー: $e');
       return PendingAlarmStopResult.notProcessed;

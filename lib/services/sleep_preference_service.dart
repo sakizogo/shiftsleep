@@ -10,25 +10,27 @@ class SleepPreferenceService {
   /// 睡眠開始時刻をミリ秒で保存
   /// sleepStartTime: 睡眠開始時刻 (DateTime)
   /// shiftId: 関連するシフトID（オプション）
+  /// N142：保存できなければ例外を投げる（呼び出し元が元に戻して知らせる）
   static Future<void> saveSleepStartTime(
     DateTime sleepStartTime, {
     int? shiftId,
   }) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final milliseconds = sleepStartTime.millisecondsSinceEpoch;
-      
-      await prefs.setInt(_sleepStartTimeKey, milliseconds);
-      if (shiftId != null) {
-        await prefs.setInt(_shiftIdKey, shiftId);
-      }
-      
-      print('[SleepPrefs] 睡眠開始時刻を保存: $_sleepStartTimeKey = $milliseconds');
-    } catch (e) {
-      print('[SleepPrefs] エラー (保存): $e');
+    final prefs = await SharedPreferences.getInstance();
+    final milliseconds = sleepStartTime.millisecondsSinceEpoch;
+
+    _ensureSaved(await prefs.setInt(_sleepStartTimeKey, milliseconds), _sleepStartTimeKey);
+    if (shiftId != null) {
+      _ensureSaved(await prefs.setInt(_shiftIdKey, shiftId), _shiftIdKey);
     }
+
+    debugPrint('[SleepPrefs] 睡眠開始時刻を保存: $_sleepStartTimeKey = $milliseconds');
   }
-  
+
+  /// N142：書き込みの失敗は例外ではなく false で返るので、ここで例外にする
+  static void _ensureSaved(bool saved, String key) {
+    if (!saved) throw Exception('SharedPreferences に保存できませんでした: $key');
+  }
+
 
   /// 保存された睡眠開始時刻を取得
   /// 戻り値: DateTime? (保存されていなければ null)
@@ -63,28 +65,28 @@ class SleepPreferenceService {
   }
 
   /// 睡眠状態をクリア（睡眠終了時に呼び出す）
-  static Future<void> clearSleepState() async {
+  /// N142：戻り値 true=消せた。例外は外に出さない（失敗しても起床や「元に戻す」処理は止めない）
+  static Future<bool> clearSleepState() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_sleepStartTimeKey);
-      await prefs.remove(_shiftIdKey);
-      print('[SleepPrefs] 睡眠状態をクリア');
+      final startRemoved = await prefs.remove(_sleepStartTimeKey);
+      final shiftRemoved = await prefs.remove(_shiftIdKey);
+      debugPrint('[SleepPrefs] 睡眠状態をクリア: 開始時刻 $startRemoved、シフトID $shiftRemoved');
+      return startRemoved && shiftRemoved;
     } catch (e) {
-      print('[SleepPrefs] エラー (クリア): $e');
+      debugPrint('[SleepPrefs] ❌ 睡眠状態のクリアエラー: $e');
+      return false;
     }
   }
 
   // ========== Week 8 追加: 睡眠記録ID の永続化 ==========
   /// 睡眠記録IDを保存
   /// 睡眠開始時に SleepProvider から呼び出される
+  /// N142：保存できなければ例外を投げる（呼び出し元が元に戻して知らせる）
   static Future<void> setCurrentSleepRecordId(String id) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_currentSleepRecordIdKey, id);
-      print('[SleepPrefs] 💾 睡眠記録ID を保存: $_currentSleepRecordIdKey = $id');
-    } catch (e) {
-      print('[SleepPrefs] ❌ 睡眠記録ID 保存エラー: $e');
-    }
+    final prefs = await SharedPreferences.getInstance();
+    _ensureSaved(await prefs.setString(_currentSleepRecordIdKey, id), _currentSleepRecordIdKey);
+    debugPrint('[SleepPrefs] 💾 睡眠記録ID を保存: $_currentSleepRecordIdKey = $id');
   }
 
   /// 睡眠記録IDを取得
@@ -126,13 +128,16 @@ class SleepPreferenceService {
 
   /// 睡眠記録IDをクリア
   /// 睡眠終了時に SleepProvider から呼び出される
-  static Future<void> clearCurrentSleepRecordId() async {
+  /// N142：戻り値 true=消せた。例外は外に出さない（失敗しても起床や「元に戻す」処理は止めない）
+  static Future<bool> clearCurrentSleepRecordId() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_currentSleepRecordIdKey);
-      print('[SleepPrefs] 🗑️ 睡眠記録ID をクリア');
+      final removed = await prefs.remove(_currentSleepRecordIdKey);
+      debugPrint('[SleepPrefs] 🗑️ 睡眠記録ID をクリア: $removed');
+      return removed;
     } catch (e) {
-      print('[SleepPrefs] ❌ 睡眠記録ID クリアエラー: $e');
+      debugPrint('[SleepPrefs] ❌ 睡眠記録ID クリアエラー: $e');
+      return false;
     }
   }
   // ======================================================
