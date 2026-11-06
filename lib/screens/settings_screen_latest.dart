@@ -17,6 +17,8 @@ import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/services/wake_alarm_choice.dart';  // N19
+import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N19
 import '../services/manual_wake_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -1246,11 +1248,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
-    if (picked != null) {
+    if (picked != null && context.mounted) {
+      // N19：保存の途中でタブを切り替えても再登録と知らせを続けられるよう、最初の await より前に取得
+      final messenger = ScaffoldMessenger.of(context);
+      final sleepProvider = context.read<SleepProvider>();
       setState(() {
         _wakeUpTime = picked;
       });
-      
+
       // ✅ N4: 手動起床時刻を「今夜だけ有効」として保存（「今から寝る」で使う）
       await ManualWakeService.save(picked);
       // ✅ N11: 毎日 ON なら毎日使う時刻も更新
@@ -1264,7 +1269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
 
       // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
-      await _saveSettings();
+      await _saveSettings(messenger: messenger, sleepProvider: sleepProvider);
     }
   }
 
@@ -1310,11 +1315,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ========== 🆕 Week 26+ Step 6：完全な _saveSettings() 実装 ==========
   // N125：処理中はスイッチ・音の保存・設定の保存・起床時刻の変更を押せない（_isAlarmBusy）
-  Future<void> _saveSettings() async {
+  // N19：messenger・sleepProvider は await の前に取ったもの（ボタンから呼ぶときは省略でき、ここで取る）
+  Future<void> _saveSettings({ScaffoldMessengerState? messenger, SleepProvider? sleepProvider}) async {
     if (_isAlarmBusy) return;
+    final resolvedMessenger = messenger ?? ScaffoldMessenger.of(context);
+    final resolvedProvider = sleepProvider ?? context.read<SleepProvider>();
     if (mounted) setState(() => _isAlarmBusy = true);
     try {
-      await _saveSettingsSteps();
+      await _saveSettingsSteps(resolvedMessenger, resolvedProvider);
     } finally {
       if (mounted) setState(() => _isAlarmBusy = false);
     }
@@ -1322,7 +1330,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // N125：保存の直前に DB を読み直し、分数・起床時刻・案内表示だけを変える（音は「アラーム音の保存」ボタンだけで保存する）
   //    分数が変わっていてアラームが ON なら、pre を取り消して新しい分数で登録し直す（0 なら取り消すだけ）
-  Future<void> _saveSettingsSteps() async {
+  // N19：画面が閉じられていても最後まで進める（知らせは先に取った messenger で出す）
+  Future<void> _saveSettingsSteps(ScaffoldMessengerState messenger, SleepProvider sleepProvider) async {
     final AppSettings savedSettings;
     final int oldMinutes;
     try {
@@ -1336,11 +1345,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       final base = currentSettings ?? _currentSettings;
       if (base == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('❌ 設定が読み込まれていません')),
-          );
-        }
+        messenger.showSnackBar(
+          const SnackBar(content: Text('❌ 設定が読み込まれていません')),
+        );
         return;
       }
       oldMinutes = currentSettings?.alarmTimeBeforeShift ?? 30;
@@ -1369,14 +1376,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     } catch (e) {
       print('❌ Step 1-3 実行エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ エラー: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ エラー: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -1386,15 +1391,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // ========== Step 3.5：分数が変わったら pre を合わせる（画面が閉じられていても続ける） ==========
     final preResult = await _applyPreMinutesChange(oldMinutes, savedSettings.alarmTimeBeforeShift);
 
-    if (!mounted) return;  // ✅ N12: await 後に画面が閉じられていたら Provider に触らない
-    // N133：再登録の途中でタブを切り替えても結果を知らせるよう、await の前に取得
-    final messenger = ScaffoldMessenger.of(context);
     try {
       // ========== Step 4️⃣：SleepProvider に起床時刻を更新 ==========
       print('[Settings] 🔄 Step 4️⃣ プロバイダーを更新...');
-      
-      final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
-      
+
       // 新しい起床時刻の DateTime を作成
       final now = DateTime.now();
       final wakeUpDateTime = DateTime(
@@ -1413,65 +1413,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
     } catch (e) {
       print('❌ Step 4 実行エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ プロバイダー更新エラー: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('❌ プロバイダー更新エラー: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
-    
+
+    WakeAlarmRegistrationResult? alarmResult;  // N19：睡眠中に登録した結果（起床中は null）
     String? alarmError;  // ✅ N22: アラーム再登録の失敗文言（null=成功／起床中）
     try {
       // ========== Step 5️⃣：就寝中の場合、アラーム再登録 ==========
       print('[Settings] 🔍 Step 5️⃣ 就寝状態を確認...');
-      
-      final sleepProvider = Provider.of<SleepProvider>(context, listen: false);
+
             print('[Settings] 🔍 isSleepingNow = ${sleepProvider.isSleepingNow}');
-      
+
       if (sleepProvider.isSleepingNow) {
         print('[Settings] 🔗 就寝中です。アラーム再登録を開始...');
-        alarmError = await _rescheduleAlarmDuringSleep(sleepProvider, savedSettings);
+        // N19：「今から寝る」と同じ判定で登録する。手動起床がなければ main は登録しない
+        alarmResult = await WakeAlarmRegistrationService.register(
+          now: DateTime.now(),
+          settings: savedSettings,
+          vibrateOnMain: false,
+        );
       } else {
         print('[Settings] 🛑 起床中のため、アラーム登録をスキップします');
-        
+
         // 🟠 起床中の警告メッセージを表示
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ 起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ 起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
       }
-      
+
     } catch (e) {
       print('❌ Step 5 実行エラー: $e');
-      // ここではユーザーに通知しない（アラーム再登録は非同期タスク）
+      // N19：登録できていないかもしれないので知らせる
+      alarmError = '⚠️ 起床時刻は保存しましたが、アラームを設定できませんでした';
     }
-    
+
     // ========== Step 6️⃣：ユーザーに成功を通知 ==========
     // ✅ N22: アラーム登録に失敗したときはオレンジだけを出す（緑の「更新されました」は出さない）
     // N125：pre の結果を成功の文言の括弧、または続けて出すオレンジで知らせる（前を消さない）
-    final messages = settingsSaveMessages(
-      savedText: '✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました',
-      mainAlarmError: alarmError,
-      preAction: preResult.action,
-      preCount: preResult.count,
-      preErrorMessage: AlarmService.alarmErrorMessage(preResult.errorCode),
-      preReadFailed: preResult.readFailed,
-    );
+    // N19：登録の結果の ⚠️ は N22 と同じ扱い、⏰ の案内は最後に出す
+    final alarmMessages = alarmResult == null ? const <({String text, Color? color})>[] : wakeAlarmMessages(alarmResult);
+    final alarmWarnings = alarmMessages.where((message) => message.color != null).map((message) => message.text);
+    // N19：睡眠中で手動起床がないときは main を登録しないので、「起床時刻を更新」とは出さない
+    final savedText = alarmResult != null && alarmResult.manualWakeAt == null
+        ? '✅ 設定を保存しました'
+        : '✅ 起床時刻 ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')} に更新されました';
+    final messages = [
+      ...settingsSaveMessages(
+        savedText: savedText,
+        mainAlarmError: alarmError ?? (alarmWarnings.isEmpty ? null : alarmWarnings.join('\n')),
+        preAction: preResult.action,
+        preCount: preResult.count,
+        preErrorMessage: AlarmService.alarmErrorMessage(preResult.errorCode),
+        preReadFailed: preResult.readFailed,
+      ),
+      ...alarmMessages.where((message) => message.color == null),
+    ];
     for (final message in messages) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(message.text),
           backgroundColor: message.color,
-          duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+          duration: Duration(seconds: message.color == Colors.green ? 2 : 6),
         ),
       );
     }
@@ -1617,52 +1629,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
-    }
-  }
-    /// 就寝中のアラーム再登録（古いアラーム削除→新規登録）
-  // ✅ N22: 戻り値 null=成功 / 文字列=オレンジで表示する文言（表示は _saveSettings で行う）
-  // N125：音は画面の _selectedAlarmSound ではなく、保存した設定（DB）の音を使う
-  Future<String?> _rescheduleAlarmDuringSleep(SleepProvider sleepProvider, AppSettings savedSettings) async {
-    try {
-      print('[Settings] 🔄 アラーム再登録処理を開始...');
-
-      final now = DateTime.now();
-      final alarmTime = _wakeUpTime;
-      final alarmTimeBeforeShift = _currentSettings?.alarmTimeBeforeShift ?? 30;
-      final selectedAlarmSound = savedSettings.selectedAlarmSound;
-
-      final hour = alarmTime.hour;
-      final minute = alarmTime.minute;
-
-      final todayWakeUp = DateTime(now.year, now.month, now.day, hour, minute);
-      final shiftDate = todayWakeUp.isAfter(now)
-          ? DateTime(now.year, now.month, now.day)
-          : DateTime(now.year, now.month, now.day + 1);
-
-      print('[Settings] 🛑 古いアラームをキャンセル中...');
-      // ✅ H1: 起床アラーム（main）だけをキャンセル。同じ日の出勤前アラーム（pre）は残す
-      // ✅ N17: 前回が別の日付で登録されていても残らないよう、今日と明日の main をキャンセル
-      await ManualWakeService.cancelTodayAndTomorrow();
-      print('[Settings] ✅ 古いアラームキャンセル完了');
-
-      print('[Settings] 📞 新しいアラーム再登録: $shiftDate ${alarmTime.hour}:${alarmTime.minute.toString().padLeft(2, '0')}');
-      final errorCode = await AlarmService.scheduleAlarmForShift(
-        shiftDate: shiftDate,
-        alarmTime: alarmTime,
-        preAlarmEnabled: false,
-        preAlarmMinutes: alarmTimeBeforeShift,
-        selectedAlarmSound: selectedAlarmSound,
-        isManualWake: true,  // ✅ N9: 通知文言を「起床時間です」にする
-      );
-
-      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
-      print('[Settings] 📨 新しいアラーム登録処理を実行（起床時刻のみ）※登録/スキップの結果は [AlarmService] ログを参照');
-
-      // ✅ Step2-2: 登録に失敗したときだけユーザーに知らせる（古いアラームは取り消し済みのため重要）
-      return AlarmService.alarmErrorMessage(errorCode);
-    } catch (e) {
-      print('[Settings] ❌ アラーム再登録エラー: $e');
-      return '⚠️ 起床時刻は保存しましたが、アラームを設定できませんでした';
     }
   }
 }

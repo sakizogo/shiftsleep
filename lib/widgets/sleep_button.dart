@@ -10,9 +10,8 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
-import 'package:shiftsleep/constants/shift_enums.dart';
-import '../services/manual_wake_service.dart';
 import '../services/wake_alarm_choice.dart';  // N118
+import '../services/wake_alarm_registration_service.dart';  // N19
 
 class SleepButton extends StatefulWidget {
   final String userId;
@@ -134,7 +133,7 @@ class _SleepButtonState extends State<SleepButton>
       }
 
       // ✨ Step 7：isAlarmEnabled が true の場合のみアラームをセット
-      // ✅ N4: 手動起床時刻とシフト基準を比べ、早い方だけを登録
+      // N19：手動起床と今日の出勤前アラームから、登録するものを決める（手動が早ければ 2 本）
       String? alarmWarning;  // N118：設定・シフトを読めなかったときの ⚠️（「💤 睡眠中」のあとに出す）
       // N121：記録は保存できているので、ここで失敗しても睡眠中のままにして ⚠️ で知らせる
       try {
@@ -224,14 +223,9 @@ class _SleepButtonState extends State<SleepButton>
   }
   // ==================================================
 
-    /// ✅ N4: 手動起床時刻とシフト基準（出勤前アラーム）を比べ、早い方だけを登録する
-  /// - 手動なし → 今まで通りシフト基準
-  /// - シフト基準なし、または手動の方が早い → 手動起床（📳 1秒バイブ）
-  /// - シフト基準の方が早い → シフト基準＋理由をメッセージで表示
-  /// N118：戻り値は「💤 睡眠中」のあとに出す ⚠️ の文言（なければ null）
+  /// N19：判定と登録は WakeAlarmRegistrationService にまとめた。ここでは設定を読み、結果を知らせる
+  /// ⏰ の案内はここで出す。戻り値は「💤 睡眠中」のあとに出す ⚠️ の文言（なければ null）
   Future<String?> _scheduleWakeAlarm(DateTime now, ScaffoldMessengerState messenger) async {
-    final manualWakeAt = await ManualWakeService.getActive();
-
     // N118：設定はここで 1 回だけ読む（行がない・読めない → 既定値で進める）
     final read = await _readWakeAlarmSettings(now);
     final settings = read.settings;
@@ -239,91 +233,32 @@ class _SleepButtonState extends State<SleepButton>
         ? '⚠️ 設定を読めなかったため、既定値（出勤 ${settings.alarmTimeBeforeShift} 分前）でアラームを登録しました'
         : null;
 
-    // 手動起床なし → 今まで通り
-    if (manualWakeAt == null) {
-      print('[SleepButton] ℹ️ 手動起床なし：シフト基準アラームを登録');
-      await _scheduleAlarmForTodayShift(now, messenger, settings);
-      return settingsWarning;
-    }
+    final result = await WakeAlarmRegistrationService.register(
+      now: now,
+      settings: settings,
+      vibrateOnMain: true,
+    );
+    final messages = wakeAlarmMessages(result);
+    final warnings = messages.where((message) => message.color != null).map((message) => message.text);
+    final infos = messages.where((message) => message.color == null);
 
-    // N118：今日のシフト・パターンを読めなかったら「シフトなし」として手動起床で進める（あとで知らせる）
-    // 出勤前アラームが無効（0）なら、シフトは読まない
-    final today = DateTime(now.year, now.month, now.day);
-    final todayShifts = settings.alarmTimeBeforeShift > 0
-        ? await _readTodayShifts(today)
-        : <Map<String, dynamic>>[];
-    var shiftsFailed = todayShifts == null;
-    ({DateTime alarmAt, DateTime startAt, int minutesBefore})? shiftPre;
-    if (todayShifts != null) {
-      try {
-        shiftPre = await _getTodayShiftPreAlarm(now, settings.alarmTimeBeforeShift, todayShifts);
-      } catch (e) {
-        debugPrint('[SleepButton] ❌ 今日のシフトのパターンを読めませんでした: $e');
-        shiftsFailed = true;
+    // 設定画面の「更新されました」などが順番待ちしていると埋もれるため、先に消してから表示
+    // ⏰ は登録に失敗していないときだけなので、⚠️ を消すことはない
+    if (infos.isNotEmpty) {
+      messenger.clearSnackBars();
+      for (final message in infos) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(message.text), duration: const Duration(seconds: 6)),
+        );
       }
     }
-    String hm(DateTime t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
 
-    // シフト基準の方が早い（同時刻含む）→ シフト基準だけ登録
-    final choice = chooseWakeAlarm(manualWakeAt: manualWakeAt, shiftPreAlarmAt: shiftPre?.alarmAt);
-    if (choice == WakeAlarmChoice.shiftPre && shiftPre != null) {
-      print('[SleepButton] 🏢 シフト基準の方が早い：${hm(shiftPre.alarmAt)}（手動 ${hm(manualWakeAt)} は登録しない）');
-      final registered = await _scheduleAlarmForTodayShift(now, messenger, settings);
-      // N133：登録できなかったら「○時に鳴ります」は出さず、⚠️ も消さない
-      if (!registered) return settingsWarning;
-
-      final text = manualWakeAt.isBefore(shiftPre.startAt)
-          ? '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出勤前アラーム（${shiftPre.minutesBefore}分前）より遅いため、${hm(shiftPre.alarmAt)} に鳴ります'
-          : '⏰ 設定した起床時刻 ${hm(manualWakeAt)} は出社予定時刻（${hm(shiftPre.startAt)}）より遅いため、出勤前アラーム（${shiftPre.minutesBefore}分前）の ${hm(shiftPre.alarmAt)} に鳴ります';
-      // 設定画面の「更新されました」などが順番待ちしていると埋もれるため、先に消してから表示
-      messenger.clearSnackBars();
-      messenger.showSnackBar(
-        SnackBar(content: Text(text), duration: const Duration(seconds: 6)),
-      );
-      return settingsWarning;
-    }
-
-    // 手動起床の方が早い、またはシフト基準なし → 手動起床だけ登録
-    print('[SleepButton] ⏰ 手動起床を登録：${hm(manualWakeAt)}（シフト基準: ${shiftPre == null ? "なし" : hm(shiftPre.alarmAt)}）');
-    final error = await ManualWakeService.scheduleAlarm(
-      target: manualWakeAt,
-      preAlarmMinutes: settings.alarmTimeBeforeShift,
-      selectedAlarmSound: settings.selectedAlarmSound,
-    );
-    if (error != null) {
-      // 手動起床を登録できなかったので、「登録しました」「登録済みです」の ⚠️ は出さない
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(error),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-      return null;
-    }
-    if (shiftsFailed) {
-      // N118：出勤前アラームのほうが早かったかもしれないので、「💤 睡眠中」のあとに知らせる
-      return [
-        if (settingsWarning != null) settingsWarning,
-        '⚠️ シフトを読めなかったため、出勤前アラームを登録できませんでした。手動の起床アラームは登録済みです',
-      ].join('\n');
-    }
-    if (manualWakeAt.hour == now.hour &&
-        manualWakeAt.minute == now.minute &&
-        manualWakeAt.year == DateTime(now.year, now.month, now.day + 1).year &&
-        manualWakeAt.month == DateTime(now.year, now.month, now.day + 1).month &&
-        manualWakeAt.day == DateTime(now.year, now.month, now.day + 1).day) {
-      // ✅ N18: 起床時刻が今と同じ時・分のため翌日になったことを知らせる（普通の翌日起床では出さない）
-      print('[SleepButton] ℹ️ 起床時刻が今と同じ分のため翌日に設定：${manualWakeAt}');
-      messenger.clearSnackBars();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('⏰ 起床時刻 ${hm(manualWakeAt)} は今と同じ時刻のため、明日 ${hm(manualWakeAt)} に設定しました'),
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    }
-    return settingsWarning;
+    final warningTexts = [
+      // 手動起床を登録できなかったときは、「既定値で登録しました」の ⚠️ は出さない
+      if (settingsWarning != null && result.mainError == null) settingsWarning,
+      ...warnings,
+    ];
+    return warningTexts.isEmpty ? null : warningTexts.join('\n');
   }
 
   /// N118：起床アラームに使う設定を読む
@@ -342,182 +277,6 @@ class _SleepButtonState extends State<SleepButton>
       return (settings: defaults(), failed: true);
     }
   }
-
-  /// N118：今日のシフトの行を読む。読めなかったら null（呼ぶ側で「シフトなし」として進め、知らせる）
-  /// 寝る処理（記録・睡眠中の状態・手動起床）は止めない
-  Future<List<Map<String, dynamic>>?> _readTodayShifts(DateTime today) async {
-    try {
-      return await _shiftRepository.getShiftsForDateRange(today, today);
-    } catch (e) {
-      debugPrint('[SleepButton] ❌ 今日のシフトを読めませんでした: $e');
-      return null;
-    }
-  }
-
-  /// ✅ N4: 今日のシフトの出勤前アラーム時刻を計算する（登録はしない）
-  /// 出勤前アラーム無効・シフトなし・休日・出勤時刻なし・すでに過ぎた時刻 → null
-  /// N118：shifts は _readTodayShifts で読んだ今日のシフトの行
-  Future<({DateTime alarmAt, DateTime startAt, int minutesBefore})?> _getTodayShiftPreAlarm(
-      DateTime now, int minutesBefore, List<Map<String, dynamic>> shifts) async {
-    if (minutesBefore <= 0) return null;
-
-    final today = DateTime(now.year, now.month, now.day);
-    if (shifts.isEmpty) return null;
-
-    final patternId = shifts.first['pattern_id'] as String;
-    if (patternId == 'default_dayoff') return null;
-
-    final pattern = await _shiftRepository.getPatternById(patternId);
-    if (pattern == null || pattern.startTime == null) return null;
-    // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
-    if (pattern.patternType != ShiftType.work) return null;
-
-    final startTime = pattern.startTime!;
-    final startAt = DateTime(today.year, today.month, today.day, startTime.hour, startTime.minute);
-    final alarmAt = startAt.subtract(Duration(minutes: minutesBefore));
-    if (!alarmAt.isAfter(now)) return null;
-
-    return (alarmAt: alarmAt, startAt: startAt, minutesBefore: minutesBefore);
-  }
-
-  // ========== Step 7：今日のシフト始業30分前アラームをセット ==========
-  /// 
-  /// 流れ:
-  /// 1. 今日のシフトを getShiftsForDateRange(today, today) で取得
-  /// 2. pattern_id から ShiftPatternModel を取得
-  /// 3. 出勤時刻 - alarmTimeBeforeShift = アラーム時刻
-  /// 4. AlarmService.scheduleAlarmForShift() でアラーム登録
-  /// N118：settings は _scheduleWakeAlarm で 1 回だけ読んだもの（読めなければ既定値）
-  /// N133：戻り値は出勤前アラームを登録できたら true（登録しなかった・失敗したら false）
-  Future<bool> _scheduleAlarmForTodayShift(
-      DateTime wakeUpTime, ScaffoldMessengerState messenger, AppSettings settings) async {
-    try {
-      print('[SleepButton] 🔔 今日のシフト始業30分前アラームをセット中...');
-
-      // ========== ステップ1️⃣：設定（呼び出し元で読んだもの） ==========
-      final alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
-      final selectedAlarmSound = settings.selectedAlarmSound;
-      print('[SleepButton] ✅ 設定取得: 出勤前${alarmTimeBeforeShift}分、音=${selectedAlarmSound}');
-
-      // ✅ ShiftPre: 出勤前アラームが「無効（0）」ならシフト勤務アラームを登録しない
-      if (alarmTimeBeforeShift <= 0) {
-        print('[SleepButton] ℹ️ 出勤前アラームが無効（0）のため登録しません');
-        return false;
-      }
-      // ========================================
-
-      // ========== ステップ2️⃣：**今日**のシフトを取得 ==========
-      final today = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
-      print('[SleepButton] 📅 今日のシフト検索: $today');
-
-      final shiftsMapList = await _readTodayShifts(today);
-      if (shiftsMapList == null) {
-        // N118：読めなかったら「シフトなし」として進め、出勤前アラームを登録できなかったことを知らせる
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ シフトを読めなかったため、出勤前アラームを登録できませんでした'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 6),
-          ),
-        );
-        return false;
-      }
-      print('[SleepButton] 📊 getShiftsForDateRange の結果: ${shiftsMapList.length}件');
-      
-      if (shiftsMapList.isEmpty) {
-        print('[SleepButton] ⚠️ 今日のシフトが見つかりません');
-        return false;
-      }
-
-      print('[SleepButton] 📅 今日のシフトが見つかりました');
-      // ================================================
-
-      // ========== ステップ3️⃣：pattern_id から出勤時刻を取得 ==========
-      final shiftMap = shiftsMapList.first;
-      final patternId = shiftMap['pattern_id'] as String;
-      
-      print('[SleepButton] 🔍 pattern_id: $patternId');
-      
-      // デフォルト休日はスキップ
-      if (patternId == 'default_dayoff') {
-        print('[SleepButton] ℹ️ 今日は休日です（スキップ）');
-        return false;
-      }
-
-      // pattern_id から ShiftPatternModel を取得
-      final pattern = await _shiftRepository.getPatternById(patternId);
-      if (pattern == null || pattern.startTime == null) {
-        print('[SleepButton] ⚠️ 出勤時刻が設定されていません');
-        return false;
-      }
-
-      // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
-      if (pattern.patternType != ShiftType.work) {
-        print('[SleepButton] ℹ️ 今日は出勤ではありません（種類: ${pattern.patternType}）（スキップ）');
-        return false;
-      }
-
-      final startTime = pattern.startTime!;
-      print('[SleepButton] ⏰ 出勤時刻: ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')}');
-      // =========================================================
-
-      // ========== ステップ4️⃣：アラーム時刻を計算 ==========
-      // 例：15:15 - 30分 = 14:45
-      final alarmDateTime = DateTime(
-        today.year,
-        today.month,
-        today.day,
-        startTime.hour,
-        startTime.minute,
-      ).subtract(Duration(minutes: alarmTimeBeforeShift));
-
-      print('[SleepButton] 🔔 アラーム時刻: ${alarmDateTime.hour}:${alarmDateTime.minute.toString().padLeft(2, '0')}');
-      // ================================================
-
-      // ========== ステップ5️⃣：AlarmService でアラームをスケジュール ==========
-      print('[SleepButton] 🚀 AlarmService.scheduleAlarmForShift() を呼び出し中...');
-
-      final errorCode = await AlarmService.scheduleAlarmForShift(
-        shiftDate: today,
-        alarmTime: startTime,
-        mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
-        preAlarmEnabled: true,
-        preAlarmMinutes: alarmTimeBeforeShift,
-        selectedAlarmSound: selectedAlarmSound,
-      );
-
-      // ✅ Step1-B: 過去時刻はスキップされ得るため「完了」と断定しない
-      print('[SleepButton] 📨 アラーム登録処理を実行: 今日 ${startTime.hour}:${startTime.minute.toString().padLeft(2, '0')} 出勤（${alarmTimeBeforeShift}分前）※登録/スキップの結果は [AlarmService] ログを参照');
-
-      // ✅ Step2-2: 登録に失敗したときだけユーザーに知らせる（Widget 破棄後も表示できるよう messenger を使用）
-      final alarmError = AlarmService.alarmErrorMessage(errorCode);
-      if (alarmError != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(alarmError),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
-      // ===================================================================
-      return alarmError == null;
-
-    } catch (e) {
-      print('[SleepButton] ❌ アラームスケジュールエラー: $e');
-      print('[SleepButton] 📍 スタックトレース: ${e.toString()}');
-      // N133：この経路では main も入らずアラームが 0 本になるので知らせる（睡眠の記録はそのまま残す）
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('⚠️ 起床アラームを登録できませんでした: $e『起きる』→『今から寝る』をやり直してください'),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    }
-    return false;
-  }
-  // =====================================================================================
 
   @override
   Widget build(BuildContext context) {

@@ -127,12 +127,13 @@ class ManualWakeService {
     return TimeOfDay(hour: hour, minute: minute);
   }
 
-  /// 手動起床時刻でアラームを登録し、成功したら1秒バイブ
+  /// 手動起床時刻でアラームを登録し、成功したら1秒バイブ（N19：vibrate が false なら鳴らさない）
   /// 戻り値：エラーメッセージ（成功時は null）
   static Future<String?> scheduleAlarm({
     required DateTime target,
     required int preAlarmMinutes,
     required String selectedAlarmSound,
+    bool vibrate = true,
   }) async {
     final shiftDate = DateTime(target.year, target.month, target.day);
 
@@ -157,7 +158,7 @@ class ManualWakeService {
         print('[ManualWake] ⏭️ 起床時刻を過ぎていたためアラーム未登録（バイブなし）: $target');
         return '⚠️ 起床時刻 ${target.hour}:${target.minute.toString().padLeft(2, '0')} を過ぎていたため、アラームを設定できませんでした';
       }
-      await _vibrate();
+      if (vibrate) await _vibrate();
     }
     return error;
   }
