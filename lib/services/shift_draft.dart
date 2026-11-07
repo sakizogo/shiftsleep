@@ -4,6 +4,9 @@
 // 読み直したときは、DB の新しい内容の上に差分を重ねる
 // 差分は ShiftDraftStore に入れて home_screen が持つ（シフト管理画面の State が作り直されても残る）
 // DB・画面には依存しない
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 
 /// 1 日分の未確定の変更
@@ -163,12 +166,117 @@ String? draftMergeNotice(ShiftDraftMergeResult result) {
   return lines.isEmpty ? null : lines.join('\n');
 }
 
+// ========== N140 2/4：文言と判定 ==========
+
+const String draftDiscardButtonLabel = '未確定を破棄';
+const String draftDiscardDialogTitle = '未確定のシフトを破棄しますか？';
+const String draftCloseDialogTitle = 'アプリを閉じますか？';
+const String deleteAllDialogTitle = 'すべてのシフトを削除しますか？';
+
+/// シフト管理画面のバナー
+String draftBannerText(int count) =>
+    '📝 未確定のシフトが $count日分あります。「確認へ進む」→「シフトを確定」で保存されます';
+
+/// 下のタブのバッジの数字
+String draftBadgeLabel(int count) => count > 99 ? '99+' : '$count';
+
+/// カレンダーでシフトを入れたとき。pending：その日が未確定になったか（確定済みと同じなら false）
+String shiftPlacedMessage(String patternName, {required bool pending}) => pending
+    ? '📝 $patternNameを入れました（未確定）'
+    : '✅ $patternNameは確定済みのシフトと同じです';
+
+/// カレンダーで有休を入れたとき（有休の行は 3/4 まで、確定の前に DB へ書く）
+/// replacedWork：出勤のシフトを置き換えたか（確定で出勤前アラームが取り消される）
+String vacationPlacedMessage(
+  String patternName, {
+  required bool pending,
+  required bool replacedWork,
+}) {
+  if (!pending) return shiftPlacedMessage(patternName, pending: false);
+  return '📝 $patternNameを入れました（未確定）\n'
+      '有休の残日数にはもう反映されています'
+      '${replacedWork ? '\n「シフトを確定」を押すと出勤前アラームが取り消されます' : ''}';
+}
+
+/// 期間指定でシフトを入れたとき
+String rangeAddedMessage(int days) => '📝 $days日入れました（未確定）';
+
+/// 一覧の見出し（全部 × しても削除の日数が分かるようにする）
+String shiftListHeader(int totalDays, ShiftDraft draft) {
+  if (draft.isEmpty) return '登録中のシフト: $totalDays日';
+  final deleted = draft.entries.values.where((entry) => entry.pattern == null).length;
+  final addedOrChanged = draft.length - deleted;
+  return '登録中のシフト: $totalDays日'
+      '（📝 未確定 ${draft.length}日：追加・変更 $addedOrChanged／削除 $deleted）';
+}
+
+/// 未確定を破棄するダイアログの本文
+String draftDiscardDialogBody(int count) =>
+    '未確定の $count日分を取り消します。確定済みのシフトは変わりません。\n'
+    '有休・半休の登録は元に戻りません（残日数もそのままです）。消すときは、その日を選んで長押ししてください。';
+
+/// 破棄したあとの知らせ
+String draftDiscardedMessage(int count) => '📝 未確定の $count日分を破棄しました';
+
+/// 戻るボタンでアプリを閉じるときのダイアログの本文
+String draftCloseDialogBody(int count) =>
+    '未確定のシフトが $count日分あります。閉じると消えます。'
+    '残すには「確認へ進む」→「シフトを確定」を押してください。';
+
+/// 「確認へ進む」を押せるか（全部 × したあとも、削除を確定できるようにする）
+bool canProceedToConfirm({required int totalDays, required int pendingDays}) =>
+    totalDays > 0 || pendingDays > 0;
+
+/// 「シフトを確定」の前に、全部消してよいか確かめるか
+/// もともと確定済みのシフトがなければ、消えるものがないので確かめない
+bool shouldConfirmDeleteAll({required int shiftDays, required int confirmedDays}) =>
+    shiftDays == 0 && confirmedDays > 0;
+
+/// 全部消すときのダイアログの本文
+String deleteAllDialogBody(int confirmedDays) =>
+    '確定済みのシフト $confirmedDays日分がすべて削除され、出勤前アラームも取り消されます。';
+
+/// 戻るボタンで何をするか
+enum ShiftBackAction {
+  /// 詳細確認からカレンダーへ戻る（アプリは閉じない）
+  backToCalendar,
+
+  /// 未確定が消えることを確かめてから閉じる
+  confirmClose,
+
+  /// そのまま閉じる
+  close,
+}
+
+ShiftBackAction shiftBackAction({required bool isDetails, required int pendingCount}) {
+  if (isDetails) return ShiftBackAction.backToCalendar;
+  return pendingCount > 0 ? ShiftBackAction.confirmClose : ShiftBackAction.close;
+}
+
 /// 未確定の差分の置き場所（home_screen が 1 つ持つ）
 class ShiftDraftStore {
   ShiftDraft _draft = const ShiftDraft();
   Map<DateTime, ShiftPatternModel>? _base;
+  bool _disposed = false;
+
+  /// 未確定の日数（バッジが見る）。シフト管理画面の表示中は、画面が reportLive で伝える
+  final ValueNotifier<int> pendingCount = ValueNotifier<int>(0);
 
   ShiftDraft get draft => _draft;
+
+  /// 確定済みのシフトの日数（預かった基準の日数）
+  int get confirmedCount => _base?.length ?? 0;
+
+  void _publish() {
+    if (_disposed) return;
+    pendingCount.value = _draft.length;
+  }
+
+  /// シフト管理画面の表示中の差分を伝える（件数だけ変える。預かっている差分には触らない）
+  void reportLive(ShiftDraft live) {
+    if (_disposed) return;
+    pendingCount.value = live.length;
+  }
 
   /// シフト管理画面の State が消えるときに、その内容を預かる
   /// base が null（この State で一度も読めていない）なら、入れた分だけを今の差分に重ねる
@@ -178,28 +286,38 @@ class ShiftDraftStore {
   }) {
     if (base == null) {
       _draft = overlayShiftDraft(_draft, editsWithoutBase(current));
-      return;
+    } else {
+      _base = base;
+      _draft = computeShiftDraft(base: base, current: current);
     }
-    _base = base;
-    _draft = computeShiftDraft(base: base, current: current);
+    // dispose の中で呼ばれる。ウィジェットツリーのロック中に通知すると例外になるので遅らせる
+    scheduleMicrotask(_publish);
   }
 
   /// State が消えたあとに終わった期間指定の分を重ねる
   void addLateEdits(ShiftDraft edits) {
     _draft = overlayShiftDraft(_draft, edits);
+    _publish();
   }
 
-  /// 詳細確認画面からタブを移動するときに、詳細確認での編集を預かる
+  /// 詳細確認での編集を預かる
   /// 基準がなければ（確定できて clear したあとも）何もしない
   void captureDetails(Map<DateTime, ShiftPatternModel> current) {
     final base = _base;
     if (base == null) return;
     _draft = computeShiftDraft(base: base, current: current);
+    _publish();
   }
 
-  /// 確定できたら空にする
+  /// 確定できたとき・破棄したときに空にする
   void clear() {
     _draft = const ShiftDraft();
     _base = null;
+    _publish();
+  }
+
+  void dispose() {
+    _disposed = true;
+    pendingCount.dispose();
   }
 }

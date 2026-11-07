@@ -80,6 +80,18 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Map<DateTime, ShiftPatternModel>? _baseShifts;
   bool _patternsLoaded = false;  // N140：この State でパターンを読めたか
 
+  /// N140 2/4：画面が変わるたびに、未確定の件数をバッジへ伝える（_shiftMap を変える場所を 1 か所ずつ直さなくて済むように）
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _syncDraftCount();
+  }
+
+  void _syncDraftCount() {
+    if (!mounted) return;
+    widget.draftStore.reportLive(_liveDraft());
+  }
+
   @override
   void dispose() {
     // N140：State が消えても未確定が残るように、差分を預ける
@@ -183,6 +195,90 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     return base == null ? editsWithoutBase(current) : computeShiftDraft(base: base, current: current);
   }
 
+  /// N140 2/4：表示する未確定（基準を読む前は、預かっている差分にこの State で入れた分を重ねる）
+  ShiftDraft _liveDraft() {
+    final local = _currentDraft();
+    return _baseShifts == null ? overlayShiftDraft(widget.draftStore.draft, local) : local;
+  }
+
+  /// N140 2/4：未確定を破棄する（確定済みのシフトは DB にあるので変わらない。有休の行は 3/4 まで戻らない）
+  Future<void> _confirmDiscardDraft(int count) async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(draftDiscardDialogTitle),
+        content: Text(draftDiscardDialogBody(count)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('やめる'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('破棄する'),
+          ),
+        ],
+      ),
+    );
+    if (discard != true || !mounted) return;
+
+    widget.draftStore.clear();
+    setState(() {
+      _shiftMap.clear();
+      _baseShifts?.forEach((date, pattern) {
+        _shiftMap[date] = ShiftData(date: date, pattern: pattern);
+      });
+    });
+    debugPrint('[ShiftDraft] 破棄：$count 件');
+    // 読み直しに失敗したときの知らせが優先されるように、読み直す前に出す
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(draftDiscardedMessage(count)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    await loadShifts();
+  }
+
+  /// N140 2/4：未確定があることを知らせるバナー（青系。📝 と文章・日数で意味が分かるようにする）
+  Widget _buildDraftBanner(int count) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: const BoxDecoration(
+        color: AppColors.draftBannerBg,
+        border: Border(left: BorderSide(color: AppColors.draftAccent, width: 4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            draftBannerText(count),
+            style: AppTextStyles.bodyTextStyle.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton(
+              // 期間指定の処理中は押せない（破棄のあとに残りの日が入らないように）
+              onPressed: _isApplyingRange ? null : () => _confirmDiscardDraft(count),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textPrimary,
+                side: const BorderSide(color: AppColors.textPrimary),
+              ),
+              child: const Text(draftDiscardButtonLabel),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// N118：読み込みに失敗した部分を覚えて知らせる（その部分の表示は消さずに残す）
   void _onLoadFailed(ShiftLoadPart part, Object e) {
     if (!mounted) return;
@@ -282,6 +378,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final draft = _liveDraft();  // N140 2/4
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -301,12 +398,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               _buildLoadErrorBanner(),
               const SizedBox(height: AppDimensions.paddingMedium),
             ],
+            // N140 2/4：未確定があるときだけ出す
+            if (!draft.isEmpty) ...[
+              _buildDraftBanner(draft.length),
+              const SizedBox(height: AppDimensions.paddingMedium),
+            ],
             _buildInputMethodTabs(),
             const SizedBox(height: AppDimensions.paddingLarge),
             if (_selectedInputMethod == 0)
-              _buildCalendarInputMethod()
+              _buildCalendarInputMethod(draft)
             else if (_selectedInputMethod == 1)
-              _buildRangeInputMethod(),
+              _buildRangeInputMethod(draft),
             // タブ2は表示しない（直接遷移するため）
             // ===================================================
           ],
@@ -462,7 +564,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  Widget _buildCalendarInputMethod() {
+  Widget _buildCalendarInputMethod(ShiftDraft draft) {
+    final canProceed = canProceedToConfirm(totalDays: _shiftMap.length, pendingDays: draft.length);  // N140 2/4
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -624,10 +727,13 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      '✅ ${pattern.patternName}を登録しました'
-                      '${replacedWork ? '\n「シフトを確定」を押すと出勤前アラームが取り消されます' : ''}',
+                      vacationPlacedMessage(
+                        pattern.patternName,
+                        pending: _liveDraft().entries.containsKey(selectedDate),
+                        replacedWork: replacedWork,
+                      ),
                     ),
-                    duration: const Duration(seconds: 2),
+                    duration: const Duration(seconds: 3),
                   ),
                 );
                 print('[ShiftManagementScreen] ✅ 有休を登録: ${selectedDay.month}月${selectedDay.day}日');
@@ -672,7 +778,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ScaffoldMessenger.of(context).hideCurrentSnackBar();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('✅ ${pattern.patternName}を登録しました'),
+                  content: Text(
+                    shiftPlacedMessage(
+                      pattern.patternName,
+                      pending: _liveDraft().entries.containsKey(selectedDate),
+                    ),
+                  ),
                   duration: const Duration(seconds: 2),
                 ),
               );
@@ -761,7 +872,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _shiftMap.isNotEmpty
+            onPressed: canProceed
                 ? () {
                     if (!_ensureLoaded()) return;  // N118
                     if (!_ensureBaseLoaded()) return;  // N140
@@ -779,7 +890,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   }
                 : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: _shiftMap.isNotEmpty
+              backgroundColor: canProceed
                   ? AppColors.primaryGradientStart
                   : AppColors.borderDefault,
               padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
@@ -788,9 +899,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ),
             ),
             child: Text(
-              'シフト保存',
+              '確認へ進む',
               style: AppTextStyles.bodyTextStyle.copyWith(
-                color: _shiftMap.isNotEmpty ? Colors.white : AppColors.textMuted,
+                color: canProceed ? Colors.white : AppColors.textMuted,
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
               ),
@@ -808,7 +919,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
         
         const SizedBox(height: AppDimensions.paddingMedium),
-        if (_shiftMap.isNotEmpty)
+        if (canProceed)
           Container(
             padding: const EdgeInsets.all(AppDimensions.paddingSmall),
             decoration: BoxDecoration(
@@ -818,7 +929,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('保存予定: ${_shiftMap.length}日', style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 12)),
+                Text(shiftListHeader(_shiftMap.length, draft), style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 12)),
                 const SizedBox(height: 6.0),
                 ..._shiftMap.entries.map((entry) {
                   final patternColor = entry.value.pattern?.color ?? Colors.grey;
@@ -840,7 +951,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                             ),
                             const SizedBox(width: 8.0),
                             Text(
-                              '${entry.key.month}/${entry.key.day}: ${entry.value.pattern?.patternName ?? ''}',
+                              '${entry.key.month}/${entry.key.day}: ${entry.value.pattern?.patternName ?? ''}'
+                              '${draft.entries.containsKey(entry.key) ? ' 📝未確定' : ''}',
                               style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 11, color: AppColors.textSecondary),
                             ),
                           ],
@@ -965,7 +1077,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         : cell;
   }
 
-  Widget _buildRangeInputMethod() {
+  Widget _buildRangeInputMethod(ShiftDraft draft) {
+    final canProceed = canProceedToConfirm(totalDays: _shiftMap.length, pendingDays: draft.length);  // N140 2/4
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1068,7 +1181,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
+            onPressed: canProceed
                 ? () async {
                     if (!_ensureLoaded()) return;  // N118
                     if (!_ensureBaseLoaded()) return;  // N140
@@ -1088,7 +1201,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   }
                 : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
+              backgroundColor: canProceed
                   ? AppColors.primaryGradientStart
                   : AppColors.borderDefault,
               padding: EdgeInsets.symmetric(vertical: AppDimensions.paddingMedium),
@@ -1097,11 +1210,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ),
             ),
             child: Text(
-              'シフト保存',
+              '確認へ進む',
               style: AppTextStyles.bodyTextStyle.copyWith(
-                color: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
-                    ? Colors.white
-                    : AppColors.textMuted,
+                color: canProceed ? Colors.white : AppColors.textMuted,
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
               ),
@@ -1226,6 +1337,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
         if (replacesWork) replacedWorkDays++;
         lastSucceeded = normalized;
+        _syncDraftCount();  // N140 2/4：ループの途中は setState を呼ばないので、ここで伝える
         current = current.add(const Duration(days: 1));
       }
     } catch (e) {
@@ -1265,7 +1377,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          '${isHalfVacation ? '半休 $rangeDays日を登録しました' : '$rangeDays日追加'}'
+          '${isHalfVacation ? '半休 $rangeDays日を登録しました' : rangeAddedMessage(rangeDays)}'
           '${replacedWorkDays > 0 ? '\n出勤 $replacedWorkDays日を${pattern.patternName}にしました。「シフトを確定」を押すと、その日の出勤前アラームが取り消されます' : ''}',
         ),
         backgroundColor: AppColors.primaryGradientStart,

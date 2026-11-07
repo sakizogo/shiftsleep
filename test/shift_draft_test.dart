@@ -330,5 +330,214 @@ void main() {
       store.addLateEdits(computeShiftDraft(base: {}, current: {dayB: late}));
       expect(store.draft.entries.keys, containsAll([dayA, dayB]));
     });
+
+    test('confirmedCount は預かった基準の日数で、clear で 0 に戻る', () {
+      final store = ShiftDraftStore();
+      expect(store.confirmedCount, 0);
+      store.saveFromScreen(base: {dayA: early, dayB: late}, current: {});
+      expect(store.confirmedCount, 2);
+      store.clear();
+      expect(store.confirmedCount, 0);
+    });
+  });
+
+  // N140 2/4
+  group('未確定の日数', () {
+    test('追加・変更・削除はそれぞれ 1 日に数える', () {
+      final draft = computeShiftDraft(
+        base: {dayA: early, dayB: early},
+        current: {dayA: late, dayC: early},
+      );
+      expect(draft.length, 3);
+    });
+
+    test('入れて元に戻すと 0 日になる', () {
+      final base = {dayA: early};
+      expect(computeShiftDraft(base: base, current: {dayA: late}).length, 1);
+      expect(computeShiftDraft(base: base, current: {dayA: early}).length, 0);
+    });
+  });
+
+  group('ShiftDraftStore.pendingCount', () {
+    test('saveFromScreen はその場では通知せず、microtask のあとに件数が変わる', () async {
+      final store = ShiftDraftStore();
+      store.saveFromScreen(base: {}, current: {dayA: early, dayB: early});
+      expect(store.pendingCount.value, 0);
+      await Future<void>.delayed(Duration.zero);
+      expect(store.pendingCount.value, 2);
+    });
+
+    test('captureDetails で詳細確認の編集が反映される', () async {
+      final store = ShiftDraftStore();
+      store.saveFromScreen(base: {dayA: early}, current: {dayA: early});
+      await Future<void>.delayed(Duration.zero);
+      expect(store.pendingCount.value, 0);
+      store.captureDetails({dayA: late, dayB: late});
+      expect(store.pendingCount.value, 2);
+    });
+
+    test('addLateEdits で増える', () {
+      final store = ShiftDraftStore();
+      store.addLateEdits(computeShiftDraft(base: {}, current: {dayA: early}));
+      expect(store.pendingCount.value, 1);
+    });
+
+    test('clear で 0 になる', () {
+      final store = ShiftDraftStore();
+      store.addLateEdits(computeShiftDraft(base: {}, current: {dayA: early}));
+      store.clear();
+      expect(store.pendingCount.value, 0);
+    });
+
+    test('reportLive は件数だけを変え、預かっている差分には触らない', () {
+      final store = ShiftDraftStore();
+      store.addLateEdits(computeShiftDraft(base: {}, current: {dayA: early}));
+      store.reportLive(computeShiftDraft(base: {}, current: {dayA: early, dayB: early, dayC: early}));
+      expect(store.pendingCount.value, 3);
+      expect(store.draft.length, 1);
+    });
+
+    test('dispose のあとに microtask が動いても、呼ばれても例外にならない', () async {
+      final store = ShiftDraftStore();
+      store.saveFromScreen(base: {}, current: {dayA: early});
+      store.dispose();
+      await Future<void>.delayed(Duration.zero);
+      store.reportLive(const ShiftDraft());
+      store.addLateEdits(const ShiftDraft());
+      store.clear();
+    });
+  });
+
+  group('文言', () {
+    test('バナーに日数と進み方が出る', () {
+      expect(
+        draftBannerText(3),
+        '📝 未確定のシフトが 3日分あります。「確認へ進む」→「シフトを確定」で保存されます',
+      );
+    });
+
+    test('バッジは 99 までそのまま、100 からは 99+', () {
+      expect(draftBadgeLabel(1), '1');
+      expect(draftBadgeLabel(99), '99');
+      expect(draftBadgeLabel(100), '99+');
+    });
+
+    test('シフトを入れたときは未確定と書く', () {
+      expect(shiftPlacedMessage('日勤', pending: true), '📝 日勤を入れました（未確定）');
+    });
+
+    test('確定済みと同じなら未確定と書かない', () {
+      expect(shiftPlacedMessage('日勤', pending: false), '✅ 日勤は確定済みのシフトと同じです');
+    });
+
+    test('有休は残日数に反映済みと書く', () {
+      expect(
+        vacationPlacedMessage('有休', pending: true, replacedWork: false),
+        '📝 有休を入れました（未確定）\n有休の残日数にはもう反映されています',
+      );
+    });
+
+    test('出勤を有休にしたらアラームの案内も足す', () {
+      expect(
+        vacationPlacedMessage('有休', pending: true, replacedWork: true),
+        '📝 有休を入れました（未確定）\n有休の残日数にはもう反映されています\n'
+        '「シフトを確定」を押すと出勤前アラームが取り消されます',
+      );
+    });
+
+    test('有休が確定済みと同じなら未確定と書かない', () {
+      expect(
+        vacationPlacedMessage('有休', pending: false, replacedWork: true),
+        '✅ 有休は確定済みのシフトと同じです',
+      );
+    });
+
+    test('期間指定も未確定と書く', () {
+      expect(rangeAddedMessage(5), '📝 5日入れました（未確定）');
+    });
+
+    test('見出し：未確定がなければ全日数だけ', () {
+      expect(shiftListHeader(20, const ShiftDraft()), '登録中のシフト: 20日');
+    });
+
+    test('見出し：未確定があれば追加・変更と削除を分ける', () {
+      final draft = computeShiftDraft(
+        base: {dayA: early, dayB: early},
+        current: {dayA: late, dayC: early},
+      );
+      expect(shiftListHeader(2, draft), '登録中のシフト: 2日（📝 未確定 3日：追加・変更 2／削除 1）');
+    });
+
+    test('見出し：全部 × しても削除の日数が出る', () {
+      final draft = computeShiftDraft(base: {dayA: early, dayB: early}, current: {});
+      expect(shiftListHeader(0, draft), '登録中のシフト: 0日（📝 未確定 2日：追加・変更 0／削除 2）');
+    });
+
+    test('破棄のダイアログは、確定済みが変わらないことと有休が戻らないことを書く', () {
+      final body = draftDiscardDialogBody(2);
+      expect(body, contains('未確定の 2日分'));
+      expect(body, contains('確定済みのシフトは変わりません'));
+      expect(body, contains('有休・半休の登録は元に戻りません'));
+    });
+
+    test('破棄したあとの知らせに日数が出る', () {
+      expect(draftDiscardedMessage(2), '📝 未確定の 2日分を破棄しました');
+    });
+
+    test('閉じるダイアログは、閉じると消えることを書く', () {
+      final body = draftCloseDialogBody(4);
+      expect(body, contains('未確定のシフトが 4日分'));
+      expect(body, contains('閉じると消えます'));
+    });
+
+    test('全部消すダイアログは、日数とアラームの取り消しを書く', () {
+      expect(
+        deleteAllDialogBody(5),
+        '確定済みのシフト 5日分がすべて削除され、出勤前アラームも取り消されます。',
+      );
+    });
+  });
+
+  group('canProceedToConfirm', () {
+    test('シフトがあれば押せる', () {
+      expect(canProceedToConfirm(totalDays: 3, pendingDays: 0), isTrue);
+    });
+
+    test('全部 × して 0 日でも、未確定があれば押せる', () {
+      expect(canProceedToConfirm(totalDays: 0, pendingDays: 2), isTrue);
+    });
+
+    test('シフトも未確定もなければ押せない', () {
+      expect(canProceedToConfirm(totalDays: 0, pendingDays: 0), isFalse);
+    });
+  });
+
+  group('shouldConfirmDeleteAll', () {
+    test('0 日で確定済みがあれば確かめる', () {
+      expect(shouldConfirmDeleteAll(shiftDays: 0, confirmedDays: 5), isTrue);
+    });
+
+    test('1 日でも残っていれば確かめない', () {
+      expect(shouldConfirmDeleteAll(shiftDays: 1, confirmedDays: 5), isFalse);
+    });
+
+    test('確定済みがなければ消えるものがないので確かめない', () {
+      expect(shouldConfirmDeleteAll(shiftDays: 0, confirmedDays: 0), isFalse);
+    });
+  });
+
+  group('shiftBackAction', () {
+    test('詳細確認ならカレンダーへ戻る（未確定があっても閉じない）', () {
+      expect(shiftBackAction(isDetails: true, pendingCount: 3), ShiftBackAction.backToCalendar);
+      expect(shiftBackAction(isDetails: true, pendingCount: 0), ShiftBackAction.backToCalendar);
+    });
+
+    test('未確定があれば確かめてから閉じる', () {
+      expect(shiftBackAction(isDetails: false, pendingCount: 1), ShiftBackAction.confirmClose);
+    });
+
+    test('未確定がなければそのまま閉じる', () {
+      expect(shiftBackAction(isDetails: false, pendingCount: 0), ShiftBackAction.close);
+    });
   });
 }

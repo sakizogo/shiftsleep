@@ -8,6 +8,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/confirm_alarm_plan.dart';
+import 'package:shiftsleep/services/shift_draft.dart';  // N140
 import 'shift_management_screen.dart';
 
 class ShiftDetailScreen extends StatefulWidget {
@@ -19,6 +20,11 @@ class ShiftDetailScreen extends StatefulWidget {
   // ======================================================
   // N140：DB に書けた直後に呼ぶ（タブを切り替えたあとでも呼ぶ。未確定の差分を空にするため）
   final VoidCallback? onConfirmed;
+  // N140 2/4：編集・削除のたびに呼ぶ（バッジの件数を変えるため）
+  final VoidCallback? onChanged;
+  // N140 2/4：確定済みのシフトの日数（0 日で確定するときの確認に使う）
+  // 基準を預かるのはこの画面を作ったあとなので、値ではなく、押した時点で読む関数で受け取る
+  final int Function()? confirmedDays;
 
   const ShiftDetailScreen({
     Key? key,
@@ -26,6 +32,8 @@ class ShiftDetailScreen extends StatefulWidget {
     required this.patterns,
     this.onBack,  // ← 追加
     this.onConfirmed,
+    this.onChanged,
+    this.confirmedDays,
   }) : super(key: key);
 
   @override
@@ -408,6 +416,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
                           pattern: pattern,
                         );
                       });
+                      widget.onChanged?.call();  // N140 2/4
                       Navigator.pop(context);
                     },
                     child: Container(
@@ -457,6 +466,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
                     setState(() {
                       widget.shiftDataMap.remove(date);
                     });
+                    widget.onChanged?.call();  // N140 2/4
 
                     print('🔍 ダイアログを閉じる');
                     Navigator.pop(context);
@@ -514,10 +524,40 @@ const SizedBox(height: AppDimensions.paddingLarge),
     if (_isSaving) return;
     setState(() => _isSaving = true);
     try {
+      if (!await _confirmDeleteAllIfNeeded()) return;
       await _saveShiftsAndScheduleAlarms();
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// N140 2/4：0 日で確定するときだけ、全部消してよいか確かめる。進んでよければ true
+  Future<bool> _confirmDeleteAllIfNeeded() async {
+    final confirmedDays = widget.confirmedDays?.call() ?? 0;
+    if (!shouldConfirmDeleteAll(
+      shiftDays: widget.shiftDataMap.length,
+      confirmedDays: confirmedDays,
+    )) {
+      return true;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(deleteAllDialogTitle),
+        content: Text(deleteAllDialogBody(confirmedDays)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('やめる'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('削除して確定'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true && mounted;
   }
 
   Future<void> _saveShiftsAndScheduleAlarms() async {

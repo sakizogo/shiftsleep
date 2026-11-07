@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import 'dart:io';
@@ -489,7 +490,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // ========== Week 7 Phase 3: Timer をキャンセル（メモリリーク防止） ==========
     _timeUpdateTimer?.cancel();
     // =====================================================================
+    _shiftDraftStore.dispose();  // N140 2/4
     super.dispose();
+  }
+
+  /// N140：詳細確認での編集を未確定として預ける
+  void _captureDetailsDraft() {
+    final detailsMap = _shiftDataMapForDetails;
+    if (_shiftManagementView == ShiftManagementView.details && detailsMap != null) {
+      _shiftDraftStore.captureDetails(shiftPatternsOf(detailsMap));
+      debugPrint('[ShiftDraft] 詳細確認の編集を預かる：差分 ${_shiftDraftStore.draft.length} 件');
+    }
+  }
+
+  /// N140 2/4：戻るボタン。アプリの最初の画面なので、そのまま戻るとアプリが閉じる
+  Future<void> _onBackPressed() async {
+    final pendingCount = _shiftDraftStore.pendingCount.value;
+    final action = shiftBackAction(
+      isDetails: _shiftManagementView == ShiftManagementView.details && _shiftDataMapForDetails != null,
+      pendingCount: pendingCount,
+    );
+    switch (action) {
+      case ShiftBackAction.backToCalendar:
+        // 詳細確認は別の画面ではないので、表示を切り替えて戻る（編集は未確定として残す）
+        _captureDetailsDraft();
+        setState(() => _shiftManagementView = ShiftManagementView.calendar);
+        _loadPatterns();
+      case ShiftBackAction.close:
+        await SystemNavigator.pop();
+      case ShiftBackAction.confirmClose:
+        final close = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text(draftCloseDialogTitle),
+            content: Text(draftCloseDialogBody(pendingCount)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('アプリに戻る'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('閉じる'),
+              ),
+            ],
+          ),
+        );
+        if (close == true) await SystemNavigator.pop();
+    }
+  }
+
+  /// N140 2/4：シフト管理タブのアイコン。未確定があれば件数の数字を出す（色だけに頼らない）
+  Widget _buildShiftTabIcon() {
+    return ValueListenableBuilder<int>(
+      valueListenable: _shiftDraftStore.pendingCount,
+      builder: (context, count, child) => Badge(
+        isLabelVisible: count > 0,
+        label: Text(draftBadgeLabel(count)),
+        backgroundColor: AppColors.draftAccent,
+        textColor: Colors.white,
+        child: child,
+      ),
+      child: const Icon(Icons.calendar_today),
+    );
   }
 
   Future<void> _loadPatterns() async {
@@ -509,6 +572,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // N140 2/4：戻るボタンは _onBackPressed で判断する（イベント追加などの別の画面・ダイアログには効かない）
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _onBackPressed();
+      },
+      child: _buildScaffold(),
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       appBar: AppBar(
@@ -540,11 +614,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         currentIndex: _selectedIndex,
         onTap: (index) {
           // N140：詳細確認の表示中にタブを押したら、詳細確認での編集を未確定として預ける（下でカレンダー表示に戻るため）
-          final detailsMap = _shiftDataMapForDetails;
-          if (_shiftManagementView == ShiftManagementView.details && detailsMap != null) {
-            _shiftDraftStore.captureDetails(shiftPatternsOf(detailsMap));
-            debugPrint('[ShiftDraft] 詳細確認からタブ移動：差分 ${_shiftDraftStore.draft.length} 件');
-          }
+          _captureDetailsDraft();
           setState(() {
             _selectedIndex = index;
             // ========== Week 3 Day 6-2 修正: シフト管理タブ切り替え時にリセット ==========
@@ -571,20 +641,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         backgroundColor: Colors.white,
         selectedItemColor: AppColors.primaryGradientStart,
         unselectedItemColor: AppColors.textMuted,
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'ホーム',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
+            icon: _buildShiftTabIcon(),  // N140 2/4
             label: 'シフト管理',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.settings),
             label: '設定',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.list),
             label: '詳細',
           ),
@@ -604,6 +674,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return ShiftDetailScreen(
             shiftDataMap: _shiftDataMapForDetails!,
             patterns: _patternsForDetails!,
+            onChanged: _captureDetailsDraft,  // N140 2/4
+            confirmedDays: () => _shiftDraftStore.confirmedCount,  // N140 2/4
             // N140：DB に書けたら未確定はなくなる
             onConfirmed: () {
               _shiftDraftStore.clear();
