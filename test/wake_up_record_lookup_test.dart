@@ -354,7 +354,7 @@ void main() {
       );
     });
 
-    test('読み取りが例外なら notProcessed で睡眠中のまま', () async {
+    test('読み取りが例外なら失敗の結果で、睡眠中のまま', () async {
       final now = DateTime.now();
       final start = now.subtract(const Duration(hours: 8));
       repository.records['a'] = _record('a', start);
@@ -365,10 +365,10 @@ void main() {
       );
       repository.failReadById = true;
 
-      expect(
-        await WakeUpService.processPendingAlarmStop(provider),
-        PendingAlarmStopResult.notProcessed,
-      );
+      final result = await WakeUpService.processPendingAlarmStop(provider);
+
+      expect(result.isFailed, isTrue);
+      expect(result.recordedWake, isFalse);
       await expectStillSleeping(provider, id: 'a');
     });
   });

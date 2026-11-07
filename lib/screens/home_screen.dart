@@ -107,7 +107,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (_pendingStopCheckSeconds >= 5) {
           _pendingStopCheckSeconds = 0;
           if (mounted && context.read<SleepProvider>().isSleepingNow) {
-            _handlePendingAlarmStop();
+            // N142：失敗した同じ停止時刻は、タイマーではやり直さない（起動時・復帰時だけ）
+            _handlePendingAlarmStop(retryFailed: false);
           }
         }
       },
@@ -453,12 +454,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   /// 通知の「停止」ボタンで保存された停止時刻があれば起床処理を行う
-  Future<void> _handlePendingAlarmStop() async {
+  Future<void> _handlePendingAlarmStop({bool retryFailed = true}) async {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final provider = context.read<SleepProvider>();
 
-    final result = await WakeUpService.processPendingAlarmStop(provider);
+    final result = await WakeUpService.processPendingAlarmStop(provider, retryFailed: retryFailed);
     // N142：記録なしの起床では「記録しました」を出さない
     if (result.recordedWake) {
       messenger.showSnackBar(

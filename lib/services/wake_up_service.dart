@@ -34,15 +34,37 @@ List<String> wakeUpWarningTexts(WakeUpResult result) => [
       if (!result.stateCleared) stateClearFailedText,
     ];
 
+/// N142：通知の「停止」の起床を記録できなかったときの文言
+String pendingStopFailedText(DateTime stoppedAt) {
+  final time = '${stoppedAt.hour}:${stoppedAt.minute.toString().padLeft(2, '0')}';
+  return '⚠️ $time に止めたアラームの起床を記録できませんでした。次にアプリを開いたときに自動でやり直します。「起きる」を押すと、押した時刻で記録されます';
+}
+
 /// N19：通知の「停止」で保存された停止時刻を処理した結果
 class PendingAlarmStopResult {
-  const PendingAlarmStopResult._(this.wakeUpResult);
+  const PendingAlarmStopResult._(
+    this.wakeUpResult, {
+    this.failedStoppedAt,
+    this.failureAlreadyNotified = false,
+  });
 
   /// N142：起床処理の結果から作る
   factory PendingAlarmStopResult.fromWakeUp(WakeUpResult result) => PendingAlarmStopResult._(result);
 
-  /// 起床処理の結果（null は起床処理をしなかった）
+  /// N142：起床処理が例外で終わった（キーは残っている）
+  factory PendingAlarmStopResult.failed(DateTime stoppedAt, {required bool alreadyNotified}) =>
+      PendingAlarmStopResult._(null, failedStoppedAt: stoppedAt, failureAlreadyNotified: alreadyNotified);
+
+  /// 起床処理の結果（null は起床処理をしなかった、または失敗した）
   final WakeUpResult? wakeUpResult;
+
+  /// N142：起床処理が失敗したときの停止時刻
+  final DateTime? failedStoppedAt;
+
+  /// N142：同じ停止時刻の失敗をもう知らせた（⚠️ を出さない）
+  final bool failureAlreadyNotified;
+
+  bool get isFailed => failedStoppedAt != null;
 
   static const notProcessed = PendingAlarmStopResult._(null);  // 起床処理をしなかった
   static const woke = PendingAlarmStopResult._((recorded: true, alarmsCancelled: true, stateCleared: true));  // 起床処理をした
@@ -55,19 +77,27 @@ class PendingAlarmStopResult {
 
   /// N142：⏰ のあとに出す ⚠️ の文言（出す順）
   List<String> get warningTexts {
+    final stoppedAt = failedStoppedAt;
+    if (stoppedAt != null) {
+      return failureAlreadyNotified ? const [] : [pendingStopFailedText(stoppedAt)];
+    }
     final result = wakeUpResult;
     return result == null ? const [] : wakeUpWarningTexts(result);
   }
 
   @override
   bool operator ==(Object other) =>
-      other is PendingAlarmStopResult && other.wakeUpResult == wakeUpResult;
+      other is PendingAlarmStopResult &&
+      other.wakeUpResult == wakeUpResult &&
+      other.failedStoppedAt == failedStoppedAt &&
+      other.failureAlreadyNotified == failureAlreadyNotified;
 
   @override
-  int get hashCode => wakeUpResult.hashCode;
+  int get hashCode => Object.hash(wakeUpResult, failedStoppedAt, failureAlreadyNotified);
 
   @override
-  String toString() => 'PendingAlarmStopResult($wakeUpResult)';
+  String toString() =>
+      'PendingAlarmStopResult($wakeUpResult, failedStoppedAt: $failedStoppedAt, alreadyNotified: $failureAlreadyNotified)';
 }
 
 /// 起床処理（UI を含まない部分）
@@ -83,18 +113,31 @@ class WakeUpService {
   static const String _alarmStoppedAtKey = 'alarm_stopped_at_ms';
   static bool _isProcessingPendingStop = false;
 
+  /// N142：起床処理に失敗した停止時刻（⚠️ を 1 回だけ出す、タイマーではやり直さないために覚える）
+  /// メモリだけに持つので、プロセスが終わると忘れる（同じ時刻でまた失敗したら、もう 1 回だけ知らせる）
+  static int? _failedStoppedAtMs;
+
+  /// N142：テストの間で失敗の記憶を残さない
+  @visibleForTesting
+  static void resetFailedStoppedAtForTest() => _failedStoppedAtMs = null;
+
   /// wakeUpTime: 起床時刻（「起きる」ボタンなら DateTime.now()、通知の「停止」なら押した時刻）
+  /// stopSound: 今鳴っている音を止めるか（N142：通知の「停止」では AlarmReceiver が止めているので false。
+  /// このとき鳴っている音は別のアラームなので、黙って止めない）
   /// N19：どちらの起床でも、wakeUpTime の日付の main・pre と、今日・明日の main を取り消す
   /// N142：記録が見つからなくても、記録なしの起床として最後まで進める（睡眠中から必ず抜けられる）
   /// DB を読めない・更新できないときは例外を投げ、睡眠中のままにする（もう一度「起きる」を押せる）
   /// 戻り値の知らせは呼び出し元が出す（wakeUpWarningTexts）
   static Future<WakeUpResult> wakeUp(
     SleepProvider provider,
-    DateTime wakeUpTime,
-  ) async {
+    DateTime wakeUpTime, {
+    bool stopSound = true,
+  }) async {
     // N33: 睡眠記録がない・id がない・途中で例外が出ても、音は必ず止める（stopAlarmSound は例外を外に出さない）
-    await AlarmService.stopAlarmSound();
-    print('[SleepButton] 🔊 アラーム音を停止しました');
+    if (stopSound) {
+      await AlarmService.stopAlarmSound();
+      print('[SleepButton] 🔊 アラーム音を停止しました');
+    }
 
     final sleepRecord = await _findSleepingRecord(provider);
 
@@ -197,7 +240,12 @@ class WakeUpService {
   }
 
   /// 通知の「停止」ボタン（AlarmReceiver.kt）が保存した停止時刻で起床処理を行う
-  static Future<PendingAlarmStopResult> processPendingAlarmStop(SleepProvider provider) async {
+  /// N142：キーは起床処理が例外なく終わってから消す。失敗したら残し、起動時・復帰時に同じ時刻でやり直す
+  /// retryFailed: 失敗した同じ停止時刻をやり直すか（5 秒ごとのタイマーは false）
+  static Future<PendingAlarmStopResult> processPendingAlarmStop(
+    SleepProvider provider, {
+    bool retryFailed = true,
+  }) async {
     if (_isProcessingPendingStop) {
       print('[WakeUpService] ⏭️ 停止時刻の処理中のためスキップ');
       return PendingAlarmStopResult.notProcessed;
@@ -223,36 +271,60 @@ class WakeUpService {
         return PendingAlarmStopResult.notProcessed;
       }
 
-      // 二重実行を防ぐため、起床処理より先に消す
-      await prefs.remove(_alarmStoppedAtKey);
+      // 起床処理をしない停止時刻はキーを消す
+      final discardReason = _stoppedAtDiscardReason(provider, stoppedAt);
+      if (discardReason != null) {
+        debugPrint('[WakeUpService] ℹ️ 起床処理をしません: $discardReason');
+        await _removeStoppedAt(prefs);
+        return PendingAlarmStopResult.notProcessed;
+      }
 
-      final sleepStartTime = provider.sleepStartTime;
-      if (!provider.isSleepingNow) {
-        print('[WakeUpService] ℹ️ 睡眠中ではないため起床処理をしません');
-        return PendingAlarmStopResult.notProcessed;
-      }
-      if (sleepStartTime == null) {
-        print('[WakeUpService] ⚠️ 睡眠開始時刻がないため起床処理をしません');
-        return PendingAlarmStopResult.notProcessed;
-      }
-      if (!stoppedAt.isAfter(sleepStartTime)) {
-        print('[WakeUpService] ℹ️ 停止時刻が睡眠開始（$sleepStartTime）以前のため起床処理をしません');
-        return PendingAlarmStopResult.notProcessed;
-      }
-      if (stoppedAt.isAfter(DateTime.now())) {
-        print('[WakeUpService] ⚠️ 停止時刻が未来のため起床処理をしません');
+      if (!retryFailed && stoppedAtMs == _failedStoppedAtMs) {
+        debugPrint('[WakeUpService] ⏭️ 失敗した停止時刻は起動時・復帰時にやり直します');
         return PendingAlarmStopResult.notProcessed;
       }
 
       print('[WakeUpService] 🌅 停止時刻で起床処理を実行します');
-      final result = await wakeUp(provider, stoppedAt);
+      final WakeUpResult result;
+      try {
+        result = await wakeUp(provider, stoppedAt, stopSound: false);
+      } catch (e) {
+        debugPrint('[WakeUpService] ❌ 停止時刻での起床処理に失敗（キーを残してやり直します）: $e');
+        final alreadyNotified = stoppedAtMs == _failedStoppedAtMs;
+        _failedStoppedAtMs = stoppedAtMs;
+        return PendingAlarmStopResult.failed(stoppedAt, alreadyNotified: alreadyNotified);
+      }
       print('[WakeUpService] ✅ 停止時刻での起床処理が完了しました');
+      await _removeStoppedAt(prefs);
       return PendingAlarmStopResult.fromWakeUp(result);
     } catch (e) {
       print('[WakeUpService] ❌ 停止時刻の処理エラー: $e');
       return PendingAlarmStopResult.notProcessed;
     } finally {
       _isProcessingPendingStop = false;
+    }
+  }
+
+  /// N142：この停止時刻で起床処理をしない理由（するなら null）
+  static String? _stoppedAtDiscardReason(SleepProvider provider, DateTime stoppedAt) {
+    final sleepStartTime = provider.sleepStartTime;
+    if (!provider.isSleepingNow) return '睡眠中ではない';
+    if (sleepStartTime == null) return '睡眠開始時刻がない';
+    if (!stoppedAt.isAfter(sleepStartTime)) return '停止時刻が睡眠開始（$sleepStartTime）以前';
+    if (stoppedAt.isAfter(DateTime.now())) return '停止時刻が未来';
+    return null;
+  }
+
+  /// N142：停止時刻のキーを消す。消せなくても処理の結果は変えない
+  /// （残っても次の確認で、睡眠中でなければ消える。睡眠中に戻っていても完了済みの記録は上書きしない）
+  static Future<void> _removeStoppedAt(SharedPreferences prefs) async {
+    _failedStoppedAtMs = null;
+    try {
+      if (!await prefs.remove(_alarmStoppedAtKey)) {
+        debugPrint('[WakeUpService] ⚠️ 停止時刻のキーを消せませんでした');
+      }
+    } catch (e) {
+      debugPrint('[WakeUpService] ⚠️ 停止時刻のキーを消せませんでした: $e');
     }
   }
 }
