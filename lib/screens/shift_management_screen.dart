@@ -10,6 +10,7 @@ import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
+import 'package:shiftsleep/services/delete_dialog_selection.dart';  // N140 4/4
 import 'package:shiftsleep/services/shift_draft.dart';  // N140
 import 'package:shiftsleep/services/shift_load.dart';  // N118
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
@@ -720,7 +721,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                      shiftPlacedMessage(pattern.patternName, pending: _isDayPending(selectedDate)),
+                      // N140 4/4：確定済みと同じなら「✅ 半休は確定済みと同じです」（有休と同じ形）
+                      vacationPlacedMessage(
+                        pattern.patternName,
+                        pending: _isDayPending(selectedDate),
+                        replacedWork: false,
+                      ),
                     ),
                     duration: const Duration(seconds: 2),
                   ),
@@ -1557,9 +1563,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
     if (!mounted) return;
     
-    final selectedItems = <String>{};
-    selectedItems.addAll(targets.keys);
-    
+    // N140 4/4：項目が 1 つならチェックあり、2 つ以上なら全部チェックなしで開く
+    final selectedItems = initialDeleteSelection(targets.keys);
+
     if (!mounted) return;
     
     showDialog(
@@ -1571,21 +1577,37 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               title: const Text('削除確認'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: targets.entries.map((entry) {
-                  return CheckboxListTile(
-                    title: Text(entry.value as String),
-                    value: selectedItems.contains(entry.key),
-                    onChanged: (bool? isChecked) {
-                      setState(() {
-                        if (isChecked == true) {
-                          selectedItems.add(entry.key);
-                        } else {
-                          selectedItems.remove(entry.key);
-                        }
-                      });
-                    },
-                  );
-                }).toList(),
+                children: [
+                  ...targets.entries.map((entry) {
+                    return CheckboxListTile(
+                      title: Text(entry.value as String),
+                      value: selectedItems.contains(entry.key),
+                      onChanged: (bool? isChecked) {
+                        setState(() {
+                          if (isChecked == true) {
+                            selectedItems.add(entry.key);
+                          } else {
+                            selectedItems.remove(entry.key);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                  // N140 4/4：チェックが 0 個のあいだは「削除」を押せない理由を文字で出す（色は本文に近い濃さ）
+                  if (showDeleteSelectionHint(selectedItems))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          deleteSelectionHint,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               actions: [
                 TextButton(

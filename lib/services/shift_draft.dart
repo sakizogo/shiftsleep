@@ -334,14 +334,15 @@ String shiftPlacedMessage(String patternName, {required bool pending}) => pendin
     ? '📝 $patternNameを入れました（未確定）'
     : '✅ $patternNameは確定済みのシフトと同じです';
 
-/// カレンダーで有休を入れたとき
+/// カレンダーで有休・半休を入れたとき
 /// replacedWork：出勤のシフトを置き換えたか（確定で出勤前アラームが取り消される）
+/// N140 4/4：確定済みと同じときは「シフト」と書かない（有休・半休はシフトではないため）
 String vacationPlacedMessage(
   String patternName, {
   required bool pending,
   required bool replacedWork,
 }) {
-  if (!pending) return shiftPlacedMessage(patternName, pending: false);
+  if (!pending) return '✅ $patternNameは確定済みと同じです';
   return '📝 $patternNameを入れました（未確定）'
       '${replacedWork ? '\n「シフトを確定」を押すと出勤前アラームが取り消されます' : ''}';
 }

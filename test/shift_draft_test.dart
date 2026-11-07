@@ -437,7 +437,21 @@ void main() {
     test('有休が確定済みと同じなら未確定と書かない', () {
       expect(
         vacationPlacedMessage('有休', pending: false, replacedWork: true),
-        '✅ 有休は確定済みのシフトと同じです',
+        '✅ 有休は確定済みと同じです',
+      );
+    });
+
+    test('半休が確定済みと同じなら「シフト」と書かない（N140 4/4）', () {
+      expect(
+        vacationPlacedMessage('半休', pending: false, replacedWork: false),
+        '✅ 半休は確定済みと同じです',
+      );
+    });
+
+    test('半休も未確定なら未確定と書く（N140 4/4）', () {
+      expect(
+        vacationPlacedMessage('半休', pending: true, replacedWork: false),
+        '📝 半休を入れました（未確定）',
       );
     });
 
