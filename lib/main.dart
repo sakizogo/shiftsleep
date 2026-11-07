@@ -9,6 +9,7 @@ import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/orphan_sleep_record_service.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'screens/home_screen.dart';
 
@@ -132,7 +133,9 @@ class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
   /// 睡眠状態を復元
   Future<void> _initializeSleep() async {
     print('[_HomeScreenWrapperState] 🛏️  睡眠状態の初期化を開始...');
-    
+    // N142：SleepButton を押せるようになる前の時刻（以後に作られた記録は片付けない）
+    final appStartedAt = DateTime.now();
+
     // ここで MultiProvider が存在するので、SleepProvider にアクセス可能
     await Future.delayed(Duration(milliseconds: 500), () async {
       try {
@@ -165,6 +168,22 @@ class _HomeScreenWrapperState extends State<_HomeScreenWrapper> {
           );
         }
         // ======================================================================
+
+        // N142：「今から寝る」の途中で記録だけ残ったものを消す（通知の「停止」の起床のあとに判定する）
+        final removed = await OrphanSleepRecordService.cleanUp(
+          provider: sleepProvider,
+          repository: SleepRepository(),
+          appStartedAt: appStartedAt,
+        );
+        if (removed.isNotEmpty) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(orphanRecordsRemovedText(removed)),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
       } catch (e) {
         print('[_HomeScreenWrapperState] ❌ 睡眠状態の初期化エラー: $e');
       }

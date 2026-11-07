@@ -53,6 +53,17 @@ class SleepPreferenceService {
     }
   }
 
+  /// N142：片付け用。開始時刻と記録 ID を読む。getSleepStartTime と違い、読めないときの例外をそのまま外に出す
+  /// （読めないのに「睡眠中ではない」と判断して記録を消さないように）
+  static Future<({DateTime? startTime, String? recordId})> readSleepStateOrThrow() async {
+    final prefs = await SharedPreferences.getInstance();
+    final milliseconds = prefs.getInt(_sleepStartTimeKey);
+    return (
+      startTime: milliseconds == null ? null : DateTime.fromMillisecondsSinceEpoch(milliseconds),
+      recordId: prefs.getString(_currentSleepRecordIdKey),
+    );
+  }
+
   /// 関連するシフトIDを取得
   static Future<int?> getShiftId() async {
     try {
