@@ -9,6 +9,7 @@ import 'package:shiftsleep/services/alarm_ringing.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
+import 'package:shiftsleep/services/shift_draft.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
@@ -44,6 +45,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ShiftManagementView _shiftManagementView = ShiftManagementView.calendar;
   Map<DateTime, ShiftData>? _shiftDataMapForDetails;
   List<ShiftPatternModel>? _patternsForDetails;
+  // N140：未確定の差分（シフト管理画面の State が作り直されても残るように、ここで持つ）
+  final ShiftDraftStore _shiftDraftStore = ShiftDraftStore();
 
   final ShiftRepository _shiftRepository = ShiftRepository();
   List<ShiftPatternModel> _patterns = [];
@@ -536,6 +539,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
+          // N140：詳細確認の表示中にタブを押したら、詳細確認での編集を未確定として預ける（下でカレンダー表示に戻るため）
+          final detailsMap = _shiftDataMapForDetails;
+          if (_shiftManagementView == ShiftManagementView.details && detailsMap != null) {
+            _shiftDraftStore.captureDetails(shiftPatternsOf(detailsMap));
+            debugPrint('[ShiftDraft] 詳細確認からタブ移動：差分 ${_shiftDraftStore.draft.length} 件');
+          }
           setState(() {
             _selectedIndex = index;
             // ========== Week 3 Day 6-2 修正: シフト管理タブ切り替え時にリセット ==========
@@ -595,6 +604,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return ShiftDetailScreen(
             shiftDataMap: _shiftDataMapForDetails!,
             patterns: _patternsForDetails!,
+            // N140：DB に書けたら未確定はなくなる
+            onConfirmed: () {
+              _shiftDraftStore.clear();
+              debugPrint('[ShiftDraft] 確定：差分 ${_shiftDraftStore.draft.length} 件');
+            },
             onBack: () {
               setState(() {
                 _shiftManagementView = ShiftManagementView.calendar;
@@ -612,9 +626,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return ShiftManagementScreen(
             key: _shiftManagementKey,  // ========== Week 3 Day 6-2 修正: GlobalKey に変更 ==========
             patterns: _patterns,
+            draftStore: _shiftDraftStore,  // N140
             onNavigateToDetails: (shiftDataMap, patterns) {
               setState(() {
-                _shiftDataMapForDetails = shiftDataMap;
+                // N140：_shiftMap とは別の Map にする（読み直し・遅れて終わる期間指定が詳細確認の内容を変えないように）
+                _shiftDataMapForDetails = Map.of(shiftDataMap);
                 _patternsForDetails = patterns;
                 _shiftManagementView = ShiftManagementView.details;
               });

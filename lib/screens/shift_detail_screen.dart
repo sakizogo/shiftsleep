@@ -17,12 +17,15 @@ class ShiftDetailScreen extends StatefulWidget {
   // ========== Week 3 Day 5 追加: 戻るコールバック ==========
   final VoidCallback? onBack;
   // ======================================================
+  // N140：DB に書けた直後に呼ぶ（タブを切り替えたあとでも呼ぶ。未確定の差分を空にするため）
+  final VoidCallback? onConfirmed;
 
   const ShiftDetailScreen({
     Key? key,
     required this.shiftDataMap,
     required this.patterns,
     this.onBack,  // ← 追加
+    this.onConfirmed,
   }) : super(key: key);
 
   @override
@@ -520,6 +523,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
   Future<void> _saveShiftsAndScheduleAlarms() async {
     // N133：登録の途中でタブを切り替えても結果を知らせるよう、最初の await より前に取得
     final messenger = ScaffoldMessenger.of(context);
+    final onConfirmed = widget.onConfirmed;  // N140：同じく最初の await より前に取得
     // ========== デバッグログ追加 ==========
     print('💾 保存開始 - シフト数: ${widget.shiftDataMap.length}');
     print('💾 保存データ:');
@@ -577,6 +581,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
     }
 
     print('✅ DB保存完了');
+    onConfirmed?.call();  // N140：アラームの結果に関係なく、DB に書けたら未確定はなくなる
 
     // N117：古い行の日の pre を取り消し、新しい出勤日の pre を登録する（どちらも今日〜CalendarRange の終わり）
     final plan = confirmAlarmPlan(oldShifts, patternMap, DateTime.now(), CalendarRange.lastDate);

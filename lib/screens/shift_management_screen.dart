@@ -11,6 +11,7 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
 import 'package:shiftsleep/services/range_apply_message.dart';  // N93
+import 'package:shiftsleep/services/shift_draft.dart';  // N140
 import 'package:shiftsleep/services/shift_load.dart';  // N118
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
 import 'package:shiftsleep/widgets/vacation_stats_widget.dart';
@@ -30,13 +31,23 @@ class ShiftData {
   });
 }
 
+/// N140：差分を作るために、日付 → パターンの Map にする（パターンのない ShiftData は保存されないので飛ばす）
+Map<DateTime, ShiftPatternModel> shiftPatternsOf(Map<DateTime, ShiftData> shiftMap) {
+  return {
+    for (final entry in shiftMap.entries)
+      if (entry.value.pattern != null) entry.key: entry.value.pattern!,
+  };
+}
+
 class ShiftManagementScreen extends StatefulWidget {
   final List<ShiftPatternModel> patterns;
   final Function(Map<DateTime, ShiftData>, List<ShiftPatternModel>)? onNavigateToDetails;
+  final ShiftDraftStore draftStore;  // N140：未確定の差分の置き場所（home_screen が持つ）
 
   const ShiftManagementScreen({
     Key? key,
     required this.patterns,
+    required this.draftStore,
     this.onNavigateToDetails,
   }) : super(key: key);
 
@@ -65,6 +76,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   // N118：読み込みに失敗している部分（空でないあいだは登録・保存を止め、バナーを出す）
   final Set<ShiftLoadPart> _loadFailures = {};
   bool _isReloading = false;  // N118：［再読み込み］の処理中
+  // N140：この State で最後に DB から読めた内容（基準）。一度も読めていないあいだは null
+  Map<DateTime, ShiftPatternModel>? _baseShifts;
+  bool _patternsLoaded = false;  // N140：この State でパターンを読めたか
+
+  @override
+  void dispose() {
+    // N140：State が消えても未確定が残るように、差分を預ける
+    widget.draftStore.saveFromScreen(base: _baseShifts, current: shiftPatternsOf(_shiftMap));
+    debugPrint('[ShiftDraft] 画面を閉じる：差分 ${widget.draftStore.draft.length} 件');
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -137,6 +159,28 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     } finally {
       if (mounted) setState(() => _isReloading = false);
     }
+  }
+
+  /// N140：基準を読めるまで「シフト保存」を止める（replaceAllShifts は全行を書き直すので、読む前の Map では確定しない）
+  bool _ensureBaseLoaded() {
+    if (_baseShifts != null) return true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('⏳ シフトを読み込み中です。少し待ってからもう一度押してください'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return false;
+  }
+
+  /// N140：今の未確定の差分（基準を読む前なら、入れた分だけ）
+  ShiftDraft _currentDraft() {
+    final base = _baseShifts;
+    final current = shiftPatternsOf(_shiftMap);
+    return base == null ? editsWithoutBase(current) : computeShiftDraft(base: base, current: current);
   }
 
   /// N118：読み込みに失敗した部分を覚えて知らせる（その部分の表示は消さずに残す）
@@ -218,6 +262,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     if (!mounted) return;
     setState(() {
       _loadFailures.remove(ShiftLoadPart.patterns);
+      _patternsLoaded = true;
       _patterns = [
         _defaultDayOffPattern,
         _defaultVacation1Day,
@@ -505,6 +550,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   if (removeVacationShift) {
                     // 保存前に開き直しても有休パターンが戻らないよう、DB からもすぐ消す（N98 の長押し削除と同じ）
                     await _shiftRepository.deleteShift(selectedDate);
+                    _baseShifts?.remove(selectedDate);  // N140：DB から消したので基準からも外す
                     _shiftMap.remove(selectedDate);
                     vacationShiftRemoved = true;
                     // N78 で出勤を有休に置き換えて未保存なら、出勤前アラームが残っているので取り消す
@@ -718,6 +764,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             onPressed: _shiftMap.isNotEmpty
                 ? () {
                     if (!_ensureLoaded()) return;  // N118
+                    if (!_ensureBaseLoaded()) return;  // N140
                     if (widget.onNavigateToDetails != null) {
                       final result = widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                       if (result is Future) {
@@ -1024,6 +1071,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
                 ? () async {
                     if (!_ensureLoaded()) return;  // N118
+                    if (!_ensureBaseLoaded()) return;  // N140
                     if (widget.onNavigateToDetails != null) {
                       final result = await widget.onNavigateToDetails!(_shiftMap, widget.patterns);
                       if (result is Future) {
@@ -1124,6 +1172,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   /// それまでの日は残す（N68 で同じ日は上書きなので、同じ期間を登録し直せば続きが入る）
   Future<void> _applyRangeDays(
       ShiftPatternModel pattern, DateTime rangeStart, DateTime rangeEnd) async {
+    final draftStore = widget.draftStore;  // N140：途中で State が消えても預けられるように
     DateTime current = rangeStart;
     DateTime? lastSucceeded;
     var vacationChanged = false;  // 有休・半休の行を 1 日でも書き換えたら true
@@ -1156,6 +1205,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           // 有休パターンの日だけ、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
           if (_shiftMap[normalized]?.pattern?.patternType == ShiftType.vacation) {
             await _shiftRepository.deleteShift(normalized);
+            _baseShifts?.remove(normalized);  // N140：DB から消したので基準からも外す
             _shiftMap.remove(normalized);
             await AlarmService.cancelPreAlarm(normalized);
           }
@@ -1180,7 +1230,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       }
     } catch (e) {
       debugPrint('Error applying range shift: $e');
-      if (!mounted) return;
+      if (!mounted) {
+        draftStore.addLateEdits(_currentDraft());  // N140：State が消えたあとに入れた分も残す
+        return;
+      }
       setState(() {
         if (vacationChanged) _vacationStatsVersion++;
       });
@@ -1198,7 +1251,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       await _loadVacationData();
       return;
     }
-    if (!mounted) return;
+    if (!mounted) {
+      draftStore.addLateEdits(_currentDraft());  // N140：State が消えたあとに入れた分も残す
+      return;
+    }
 
     setState(() {
       if (vacationChanged) _vacationStatsVersion++;
@@ -1299,6 +1355,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   /// N118：失敗したら _shiftMap は消さずに残す（空のまま確定してほかの日が消えないように）
   /// 一度読めたあとの再読み込み（再開・タブ切り替え・確定後）が失敗したときも、表示は残す
+  /// N140：読めたら DB の内容に未確定の差分を重ねる（失敗したら差分・基準も変えない）
   Future<void> loadShifts() async {
     final Map<DateTime, ShiftPatternModel> loaded;
     try {
@@ -1314,13 +1371,42 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       return;
     }
     if (!mounted) return;
+    late final ShiftDraftMergeResult mergeResult;
     setState(() {
       _loadFailures.remove(ShiftLoadPart.shifts);
+      // await のあいだに入れた変更も入るよう、読めたあとで差分を作る
+      final localDraft = _currentDraft();
+      // この State で初めて読めたときだけ、預けてある差分を受け取る
+      final draft = _baseShifts == null
+          ? overlayShiftDraft(widget.draftStore.draft, localDraft)
+          : localDraft;
+      // パターンを読めていないあいだは、使用中のパターンを「削除された」と誤って判定しないようにする
+      final patternsTrusted = _patternsLoaded && !_loadFailures.contains(ShiftLoadPart.patterns);
+      mergeResult = mergeShiftDraft(
+        db: loaded,
+        draft: draft,
+        patterns: patternsTrusted ? _patterns : null,
+      );
+      _baseShifts = loaded;
       _shiftMap.clear();
-      loaded.forEach((date, pattern) {
+      mergeResult.merged.forEach((date, pattern) {
         _shiftMap[date] = ShiftData(date: date, pattern: pattern);
       });
     });
+    debugPrint('[ShiftDraft] 読み込み：差分 ${_currentDraft().length} 件'
+        '（衝突 ${mergeResult.conflictDates.length}・外した ${mergeResult.removedDates.length}）');
+    final notice = draftMergeNotice(mergeResult);
+    if (notice != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(notice),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
     print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
     _shiftMap.forEach((key, value) {
       print("  ${key.toString()}: ${value.pattern?.patternName}");
@@ -1506,6 +1592,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         await _shiftRepository.deleteShift(normalizedDate);
         // ✅ H3: 削除した日の出勤前アラーム（pre）だけをキャンセル（起床アラーム main は残す）
         await AlarmService.cancelPreAlarm(normalizedDate);
+        _baseShifts?.remove(normalizedDate);  // N140：DB から消したので基準からも外す
         _shiftMap.remove(normalizedDate);
       }
 
