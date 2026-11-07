@@ -77,6 +77,20 @@ void main() {
     expect(plan.schedule.map((s) => s.date), [DateTime(2026, 11, 5)]);
   });
 
+  test('N140 3/4：出勤を有休にした日は取り消して登録せず、有休を出勤にした日は登録する', () {
+    final plan = confirmAlarmPlan(
+      [
+        (shiftDate: '2026-11-05', patternId: early.id),
+        (shiftDate: '2026-11-06', patternId: vacation.id),
+      ],
+      {DateTime(2026, 11, 5): vacation, DateTime(2026, 11, 6): early},
+      today,
+      rangeEnd,
+    );
+    expect(plan.cancel, [DateTime(2026, 11, 5), DateTime(2026, 11, 6)]);
+    expect(plan.schedule.map((s) => s.date), [DateTime(2026, 11, 6)]);
+  });
+
   test('6. 日付は時刻を捨てて比べる（今日の時刻つき・UTC のキーも今日として扱う）', () {
     final plan = confirmAlarmPlan(
       [row('2026-11-02')],

@@ -503,6 +503,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// N140 3/4：詳細確認でシフトを変えた・消したとき。その日の有休・半休もカレンダーと同じ規則で変えてから預ける
+  void _onDetailsEdited(DateTime date, ShiftPatternModel? oldPattern, ShiftPatternModel? newPattern) {
+    final days = vacationDaysAfterShiftEdit(
+      currentDays: _shiftDraftStore.vacationDaysOn(date),
+      oldPattern: oldPattern,
+      newPattern: newPattern,
+    );
+    _shiftDraftStore.applyDetailVacationEdit(date, days);
+    _captureDetailsDraft();
+  }
+
   /// N140 2/4：戻るボタン。アプリの最初の画面なので、そのまま戻るとアプリが閉じる
   Future<void> _onBackPressed() async {
     final pendingCount = _shiftDraftStore.pendingCount.value;
@@ -674,12 +685,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           return ShiftDetailScreen(
             shiftDataMap: _shiftDataMapForDetails!,
             patterns: _patternsForDetails!,
-            onChanged: _captureDetailsDraft,  // N140 2/4
+            onChanged: _onDetailsEdited,  // N140 2/4・3/4
             confirmedDays: () => _shiftDraftStore.confirmedCount,  // N140 2/4
+            vacationDraft: () => _shiftDraftStore.vacationDraft,  // N140 3/4
             // N140：DB に書けたら未確定はなくなる
             onConfirmed: () {
               _shiftDraftStore.clear();
               debugPrint('[ShiftDraft] 確定：差分 ${_shiftDraftStore.draft.length} 件');
+              // N140 3/4：確定の途中でシフト管理タブへ移っていたら、有休の統計・表示を読み直す
+              _shiftManagementKey.currentState?.reloadAfterConfirm();
             },
             onBack: () {
               setState(() {
@@ -705,6 +719,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _shiftDataMapForDetails = Map.of(shiftDataMap);
                 _patternsForDetails = patterns;
                 _shiftManagementView = ShiftManagementView.details;
+              });
+              // N140 3/4：シフト管理画面が有休の差分を預けるのは、このフレームの終わり（dispose）なので、そのあとで描き直す
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() {});
               });
             },
           );

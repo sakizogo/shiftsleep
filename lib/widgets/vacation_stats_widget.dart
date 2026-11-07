@@ -5,10 +5,13 @@ import 'package:shiftsleep/constants/colors.dart';  // ← Week 27 追加
 
 class VacationStatsWidget extends StatefulWidget {
   final String userId;
+  // N140 3/4：有休・半休の未確定の 1 行（数字は確定済みだけ。未確定がなければ null）
+  final String? pendingText;
 
   const VacationStatsWidget({
     Key? key,
     required this.userId,
+    this.pendingText,
   }) : super(key: key);
 
   @override
@@ -172,6 +175,14 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                     '${_carriedOverPart(_balance!) > 0 ? '〈うち持ち越し ${_carriedOverPart(_balance!).toStringAsFixed(1)}日〉' : ''}'
                     ' − 使用 ${_balance!.totalUsed.toStringAsFixed(1)}日)',
                     style: TextStyle(fontSize: 10, color: AppColors.textMuted),
+                  ),
+                ],
+                // N140 3/4：未確定の有休・半休（確定するまで上の数字には入らない）
+                if (widget.pendingText != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.pendingText!,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                   ),
                 ],
               ],

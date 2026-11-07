@@ -218,6 +218,41 @@ class VacationRepository {
     print('✅ VacationUsage recorded: userId=$userId, daysUsed=$daysUsed');
   }
 
+  /// N140 3/4：カレンダーから入れた有休・半休の使用理由
+  static String calendarVacationReason(double days) =>
+      days == 0.5 ? 'カレンダーから登録（半休）' : 'カレンダーから登録（有休）';
+
+  /// N140 3/4：「シフトを確定」のトランザクションの中で、有休・半休の差分を書く
+  /// 渡された txn だけを使う（トランザクションの途中で DatabaseHelper の db を呼ぶと sqflite が固まるため）
+  /// 差分のある日だけ、その日の行を消してから（N68 と同じ条件）、days があれば入れ直す
+  /// 失敗したら例外がそのまま上がり、トランザクションごと確定前に戻る
+  static Future<void> applyVacationChanges(
+    DatabaseExecutor txn,
+    String userId,
+    List<({DateTime date, double? days})> changes,
+  ) async {
+    for (final change in changes) {
+      final day = DateTime(change.date.year, change.date.month, change.date.day);
+      final range = dayRangeForSql(day, day);
+      final deletedCount = await txn.delete(
+        'vacation_usage',
+        where: 'user_id = ? AND usage_date >= ? AND usage_date < ?',
+        whereArgs: [userId, range.start, range.endExclusive],
+      );
+      final days = change.days;
+      if (days != null) {
+        final usage = VacationUsage.create(
+          userId: userId,
+          usageDate: day,
+          daysUsed: days,
+          reason: calendarVacationReason(days),
+        );
+        await txn.insert('vacation_usage', usage.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      debugPrint('📝 N140：有休の確定 ${range.start} 消した行 $deletedCount 件 → ${days ?? 'なし'}');
+    }
+  }
+
   /// 指定期間の有給使用履歴を取得
   /// N70：開始日〜終了日の日付で比べる（時刻は見ない。終了日の日は Z つきの行も含めて丸ごと入る）
   Future<List<VacationUsage>> getVacationUsageInRange(

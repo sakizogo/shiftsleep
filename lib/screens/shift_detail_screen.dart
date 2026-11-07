@@ -21,10 +21,13 @@ class ShiftDetailScreen extends StatefulWidget {
   // N140：DB に書けた直後に呼ぶ（タブを切り替えたあとでも呼ぶ。未確定の差分を空にするため）
   final VoidCallback? onConfirmed;
   // N140 2/4：編集・削除のたびに呼ぶ（バッジの件数を変えるため）
-  final VoidCallback? onChanged;
+  // N140 3/4：その日の有休・半休もカレンダーと同じ規則で変えるため、変える前後のパターンも渡す（削除は newPattern が null）
+  final void Function(DateTime date, ShiftPatternModel? oldPattern, ShiftPatternModel? newPattern)? onChanged;
   // N140 2/4：確定済みのシフトの日数（0 日で確定するときの確認に使う）
   // 基準を預かるのはこの画面を作ったあとなので、値ではなく、押した時点で読む関数で受け取る
   final int Function()? confirmedDays;
+  // N140 3/4：有休・半休の未確定（確定で同じトランザクションに書く。表示にも使う）
+  final VacationDraft Function()? vacationDraft;
 
   const ShiftDetailScreen({
     Key? key,
@@ -34,6 +37,7 @@ class ShiftDetailScreen extends StatefulWidget {
     this.onConfirmed,
     this.onChanged,
     this.confirmedDays,
+    this.vacationDraft,
   }) : super(key: key);
 
   @override
@@ -57,6 +61,8 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
   Widget build(BuildContext context) {
     // シフトデータを日付順にソート
     final sortedDates = widget.shiftDataMap.keys.toList()..sort();
+    // N140 3/4：有休・半休の未確定（確定でシフトと一緒に書く）
+    final vacationDraft = widget.vacationDraft?.call() ?? const VacationDraft();
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -165,6 +171,41 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
 
 const SizedBox(height: AppDimensions.paddingLarge),
 // ================================================================
+              // N140 3/4：有休・半休の未確定（半休は一覧に出ないので、ここで中身が分かるようにする）
+              if (!vacationDraft.isEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  decoration: const BoxDecoration(
+                    color: AppColors.draftBannerBg,
+                    border: Border(left: BorderSide(color: AppColors.draftAccent, width: 4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        vacationDraftHeader(vacationDraft.length),
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      ...vacationDraftLines(vacationDraft).map((line) => Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              line,
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                fontSize: 12,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          )),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppDimensions.paddingLarge),
+              ],
               // ========================
               // シフト一覧
               // ========================
@@ -416,7 +457,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
                           pattern: pattern,
                         );
                       });
-                      widget.onChanged?.call();  // N140 2/4
+                      widget.onChanged?.call(date, shiftData.pattern, pattern);  // N140 2/4・3/4
                       Navigator.pop(context);
                     },
                     child: Container(
@@ -466,7 +507,7 @@ const SizedBox(height: AppDimensions.paddingLarge),
                     setState(() {
                       widget.shiftDataMap.remove(date);
                     });
-                    widget.onChanged?.call();  // N140 2/4
+                    widget.onChanged?.call(date, shiftData.pattern, null);  // N140 2/4・3/4
 
                     print('🔍 ダイアログを閉じる');
                     Navigator.pop(context);
@@ -603,9 +644,11 @@ const SizedBox(height: AppDimensions.paddingLarge),
 
     // N117：全件削除と作り直しを 1 つのトランザクションで行う（失敗したら確定前の行に戻る）
     // アラームはこれが成功してから動かす（失敗したらアラームには一切触らない）
+    // N140 3/4：有休・半休の未確定も同じトランザクションで書く（押した時点の差分）
+    final vacationChanges = vacationSaveChanges(widget.vacationDraft?.call() ?? const VacationDraft());
     final List<({String shiftDate, String? patternId})> oldShifts;
     try {
-      oldShifts = await _shiftRepository.replaceAllShifts(patternMap);
+      oldShifts = await _shiftRepository.replaceAllShifts(patternMap, vacationChanges: vacationChanges);
     } catch (e) {
       // 詳細確認画面に残り（編集した内容はそのまま）、アラームには進まない
       debugPrint('Error saving shifts: $e');

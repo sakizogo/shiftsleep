@@ -10,7 +10,6 @@ import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
-import 'package:shiftsleep/services/range_apply_message.dart';  // N93
 import 'package:shiftsleep/services/shift_draft.dart';  // N140
 import 'package:shiftsleep/services/shift_load.dart';  // N118
 import 'package:shiftsleep/screens/calendar_event_screen.dart';
@@ -72,13 +71,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   late ShiftPatternModel _defaultVacationHalf;
   late List<ShiftPatternModel> _patterns;
   int _vacationStatsVersion = 0;  // N77・N69：増やすと VacationStatsWidget を作り直して残日数を読み直す
-  bool _isApplyingRange = false;  // N93：期間指定の処理中（二度押しで 2 回走らないように）
   // N118：読み込みに失敗している部分（空でないあいだは登録・保存を止め、バナーを出す）
   final Set<ShiftLoadPart> _loadFailures = {};
   bool _isReloading = false;  // N118：［再読み込み］の処理中
   // N140：この State で最後に DB から読めた内容（基準）。一度も読めていないあいだは null
   Map<DateTime, ShiftPatternModel>? _baseShifts;
   bool _patternsLoaded = false;  // N140：この State でパターンを読めたか
+  // N140 3/4：この State で最後に DB から読めた有休・半休（基準）。一度も読めていないあいだは null
+  Map<DateTime, double>? _baseVacations;
+  // N140 3/4：有休の読み込みで見つかった衝突の日（次の loadShifts の知らせにまとめる）
+  final Set<DateTime> _vacationConflictDates = {};
 
   /// N140 2/4：画面が変わるたびに、未確定の件数をバッジへ伝える（_shiftMap を変える場所を 1 か所ずつ直さなくて済むように）
   @override
@@ -89,13 +91,18 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   void _syncDraftCount() {
     if (!mounted) return;
-    widget.draftStore.reportLive(_liveDraft());
+    widget.draftStore.reportLive(draftDayCount(_liveDraft(), _liveVacationDraft()));
   }
 
   @override
   void dispose() {
-    // N140：State が消えても未確定が残るように、差分を預ける
-    widget.draftStore.saveFromScreen(base: _baseShifts, current: shiftPatternsOf(_shiftMap));
+    // N140：State が消えても未確定が残るように、差分を預ける（N140 3/4：有休・半休も）
+    widget.draftStore.saveFromScreen(
+      base: _baseShifts,
+      current: shiftPatternsOf(_shiftMap),
+      vacationBase: _baseVacations,
+      vacationCurrent: Map.of(_vacationMap),
+    );
     debugPrint('[ShiftDraft] 画面を閉じる：差分 ${widget.draftStore.draft.length} 件');
     super.dispose();
   }
@@ -174,8 +181,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
   /// N140：基準を読めるまで「シフト保存」を止める（replaceAllShifts は全行を書き直すので、読む前の Map では確定しない）
+  /// N140 3/4：有休の基準も読めるまで止める（有休の差分を確定に渡すため）
   bool _ensureBaseLoaded() {
-    if (_baseShifts != null) return true;
+    if (_baseShifts != null && _baseVacations != null) return true;
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
@@ -201,7 +209,42 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     return _baseShifts == null ? overlayShiftDraft(widget.draftStore.draft, local) : local;
   }
 
-  /// N140 2/4：未確定を破棄する（確定済みのシフトは DB にあるので変わらない。有休の行は 3/4 まで戻らない）
+  /// N140 3/4：表示する有休・半休の未確定（有休を読む前は、預かっている差分のまま）
+  VacationDraft _liveVacationDraft() {
+    final base = _baseVacations;
+    return base == null
+        ? widget.draftStore.vacationDraft
+        : computeVacationDraft(base: base, current: _vacationMap);
+  }
+
+  /// N140 3/4：その日がシフトか有休・半休のどちらかで未確定か
+  bool _isDayPending(DateTime date) =>
+      _liveDraft().entries.containsKey(date) || _liveVacationDraft().entries.containsKey(date);
+
+  /// N140 3/4：有休を読めるまで、パターンの登録・× を止める（N77 の有休の判定に、読んだ日数が要るため）
+  bool _ensureVacationBaseLoaded() {
+    if (_baseVacations != null) return true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('⏳ 有休を読み込み中です。少し待ってからもう一度押してください'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return false;
+  }
+
+  /// N140 3/4：確定のあとに、有休の統計・表示とシフトを読み直す（確定の途中でこのタブへ移っていた場合）
+  Future<void> reloadAfterConfirm() async {
+    if (!mounted) return;
+    setState(() => _vacationStatsVersion++);
+    await _loadVacationData();
+    await loadShifts();
+  }
+
+  /// N140 2/4：未確定を破棄する（確定済みのシフト・有休は DB にあるので変わらない）
   Future<void> _confirmDiscardDraft(int count) async {
     final discard = await showDialog<bool>(
       context: context,
@@ -228,6 +271,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       _baseShifts?.forEach((date, pattern) {
         _shiftMap[date] = ShiftData(date: date, pattern: pattern);
       });
+      // N140 3/4：有休・半休も確定済みの日数に戻す
+      _vacationMap.clear();
+      _baseVacations?.forEach((date, days) => _vacationMap[date] = days);
     });
     debugPrint('[ShiftDraft] 破棄：$count 件');
     // 読み直しに失敗したときの知らせが優先されるように、読み直す前に出す
@@ -239,6 +285,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+    await _loadVacationData();
     await loadShifts();
   }
 
@@ -265,8 +312,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: OutlinedButton(
-              // 期間指定の処理中は押せない（破棄のあとに残りの日が入らないように）
-              onPressed: _isApplyingRange ? null : () => _confirmDiscardDraft(count),
+              onPressed: () => _confirmDiscardDraft(count),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.textPrimary,
                 side: const BorderSide(color: AppColors.textPrimary),
@@ -303,6 +349,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
     /// N118：失敗したら _vacationMap は消さずに残す（setState の前で止まる）
+    /// N140 3/4：読めたら DB の日数に未確定の差分を重ねる（失敗したら差分・基準も変えない）
     Future<void> _loadVacationData() async {
       final loaded = <DateTime, double>{};
       try {
@@ -338,10 +385,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       if (!mounted) return;
       setState(() {
         _loadFailures.remove(ShiftLoadPart.vacation);
+        // この State で初めて読めたときだけ、預けてある差分を受け取る
+        final draft = _liveVacationDraft();
+        final result = mergeVacationDraft(db: loaded, draft: draft);
+        _baseVacations = loaded;
         _vacationMap
           ..clear()
-          ..addAll(loaded);
+          ..addAll(result.merged);
+        _vacationConflictDates.addAll(result.conflictDates);
       });
+      debugPrint('[ShiftDraft] 有休の読み込み：差分 ${_liveVacationDraft().length} 件'
+          '（衝突 ${_vacationConflictDates.length}）');
       print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
     }
 
@@ -379,6 +433,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final draft = _liveDraft();  // N140 2/4
+    final vacationDraft = _liveVacationDraft();  // N140 3/4
+    final pendingDays = draftDayCount(draft, vacationDraft);
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -399,16 +455,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               const SizedBox(height: AppDimensions.paddingMedium),
             ],
             // N140 2/4：未確定があるときだけ出す
-            if (!draft.isEmpty) ...[
-              _buildDraftBanner(draft.length),
+            if (pendingDays > 0) ...[
+              _buildDraftBanner(pendingDays),
               const SizedBox(height: AppDimensions.paddingMedium),
             ],
             _buildInputMethodTabs(),
             const SizedBox(height: AppDimensions.paddingLarge),
             if (_selectedInputMethod == 0)
-              _buildCalendarInputMethod(draft)
+              _buildCalendarInputMethod(draft, vacationDraft)
             else if (_selectedInputMethod == 1)
-              _buildRangeInputMethod(draft),
+              _buildRangeInputMethod(pendingDays),
             // タブ2は表示しない（直接遷移するため）
             // ===================================================
           ],
@@ -564,8 +620,13 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  Widget _buildCalendarInputMethod(ShiftDraft draft) {
-    final canProceed = canProceedToConfirm(totalDays: _shiftMap.length, pendingDays: draft.length);  // N140 2/4
+  Widget _buildCalendarInputMethod(ShiftDraft draft, VacationDraft vacationDraft) {
+    final canProceed = canProceedToConfirm(
+      totalDays: _shiftMap.length,
+      pendingDays: draftDayCount(draft, vacationDraft),
+    );  // N140 2/4・3/4
+    // N140 3/4：有休・半休だけが変わった日の行（シフトの行がない日も、ある日も、シフトが未確定でない日は出す）
+    final vacationOnlyLines = vacationDraftLines(vacationDraft, exclude: draft.entries.keys.toSet());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -635,90 +696,48 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               
               return events;
             },
-            onDaySelected: (selectedDay, focusedDay) async {
+            onDaySelected: (selectedDay, focusedDay) {
               final selectedDate = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
 
               // N118：パターンを選んでいて、読み込みに失敗しているなら止める（日を選ぶだけなら止めない）
-              if (_selectedPattern != null && !_ensureLoaded()) return;
+              // N140 3/4：有休を読む前も止める
+              if (_selectedPattern != null && (!_ensureLoaded() || !_ensureVacationBaseLoaded())) return;
 
+              // N140 3/4：有休・半休は「シフトを確定」まで DB に書かない（_vacationMap の未確定にする）
               if (_selectedPattern?.patternType == ShiftType.halfVacation) {
-                // N93：await のあいだにパターンの選択が変わっても、押したときのパターンで続ける
                 final pattern = _selectedPattern!;
-                // N99：有休パターンの日に半休を入れたら、有休パターンを外す（シフトなし＋半休にする）
-                // 出勤・休日などは今までどおり残す（N77 の共存）
-                final removeVacationShift =
-                    _shiftMap[selectedDate]?.pattern?.patternType == ShiftType.vacation;
-                var vacationShiftRemoved = false;
-                try {
-                  if (removeVacationShift) {
-                    // 保存前に開き直しても有休パターンが戻らないよう、DB からもすぐ消す（N98 の長押し削除と同じ）
-                    await _shiftRepository.deleteShift(selectedDate);
-                    _baseShifts?.remove(selectedDate);  // N140：DB から消したので基準からも外す
-                    _shiftMap.remove(selectedDate);
-                    vacationShiftRemoved = true;
-                    // N78 で出勤を有休に置き換えて未保存なら、出勤前アラームが残っているので取り消す
-                    await AlarmService.cancelPreAlarm(selectedDate);
-                  }
-                  await _vacationRepository.recordVacationUsage(
-                    'test_user',
-                    selectedDay,
-                    0.5,
-                    'カレンダーから登録（半休）',
-                  );
-                } catch (e) {
-                  debugPrint('Error recording half vacation: $e');
-                  if (!mounted) return;
-                  // 有休パターンを外せたあとで失敗したときは、外した分だけ画面に出す
-                  if (vacationShiftRemoved) setState(() {});
-                  _showTapError('❌ 半休の登録に失敗しました: $e');
-                  return;
-                }
-                if (!mounted) return;
                 setState(() {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
-                  final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
-                  _vacationMap[dateKey] = 0.5;
-                  _vacationStatsVersion++;
+                  // N99：有休パターンの日に半休を入れたら、有休パターンを外す（シフトなし＋半休にする）
+                  // 出勤・休日などは今までどおり残す（N77 の共存）。pre は確定のときに取り消される
+                  if (_shiftMap[selectedDate]?.pattern?.patternType == ShiftType.vacation) {
+                    _shiftMap.remove(selectedDate);
+                  }
+                  _vacationMap[selectedDate] = 0.5;
                 });
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ ${pattern.patternName}を登録しました'),
+                    content: Text(
+                      shiftPlacedMessage(pattern.patternName, pending: _isDayPending(selectedDate)),
+                    ),
                     duration: const Duration(seconds: 2),
                   ),
                 );
-                print('[ShiftManagementScreen] ✅ 半休を登録: ${selectedDay.month}月${selectedDay.day}日');
+                print('[ShiftManagementScreen] 📝 半休を入れた（未確定）: ${selectedDay.month}月${selectedDay.day}日');
                 return;
               } else if (_selectedPattern?.patternType == ShiftType.vacation) {
-                // N93：await のあいだにパターンの選択が変わっても、押したときのパターンで続ける
                 final pattern = _selectedPattern!;
-                try {
-                  await _vacationRepository.recordVacationUsage(
-                    'test_user',
-                    selectedDay,
-                    1.0,
-                    'カレンダーから登録（有休）',
-                  );
-                } catch (e) {
-                  // N93：有休の行が入らなかったので、_vacationMap・_shiftMap はそのまま（その日は元のまま）
-                  debugPrint('Error recording vacation: $e');
-                  if (!mounted) return;
-                  _showTapError('❌ 有休の登録に失敗しました: $e');
-                  return;
-                }
-                if (!mounted) return;
                 // N78：置き換える前のシフト（出勤のシフトなら、保存でアラームが取り消されることを知らせる）
                 final previousPattern = _shiftMap[selectedDate]?.pattern;
                 final replacedWork = previousPattern?.patternType == ShiftType.work;
                 setState(() {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
-                  final dateKey = DateTime(selectedDay.year, selectedDay.month, selectedDay.day);
-                  _vacationMap[dateKey] = 1.0;
-                  _vacationStatsVersion++;
+                  _vacationMap[selectedDate] = 1.0;
                   // N78：期間指定の有休と同じく、その日のシフトも「有休」にする
-                  _shiftMap[dateKey] = ShiftData(date: dateKey, pattern: pattern);
+                  _shiftMap[selectedDate] = ShiftData(date: selectedDate, pattern: pattern);
                 });
                 if (previousPattern != null && previousPattern.id != pattern.id) {
                   debugPrint('🔁 N78: ${selectedDate.month}/${selectedDate.day} の ${previousPattern.patternName} を${pattern.patternName}に置き換え');
@@ -729,14 +748,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     content: Text(
                       vacationPlacedMessage(
                         pattern.patternName,
-                        pending: _liveDraft().entries.containsKey(selectedDate),
+                        pending: _isDayPending(selectedDate),
                         replacedWork: replacedWork,
                       ),
                     ),
                     duration: const Duration(seconds: 3),
                   ),
                 );
-                print('[ShiftManagementScreen] ✅ 有休を登録: ${selectedDay.month}月${selectedDay.day}日');
+                print('[ShiftManagementScreen] 📝 有休を入れた（未確定）: ${selectedDay.month}月${selectedDay.day}日');
                 return;
               }
 
@@ -750,23 +769,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 return;
               }
 
-              // N77：有休（1.0）の日なら有休を消す
-              final bool removedVacation;
-              try {
-                removedVacation = await _removeFullVacationIfOverwritten(selectedDate, pattern);
-              } catch (e) {
-                // N93：有休を消せなかったので、有休も _shiftMap もそのまま（その日は元のまま）
-                debugPrint('Error removing vacation: $e');
-                if (!mounted) return;
-                _showTapError('❌ 有休の削除に失敗しました: $e');
-                return;
-              }
-              if (!mounted) return;
-
               setState(() {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
-                if (removedVacation) _vacationStatsVersion++;
+                // N77：有休（1.0）の日なら有休を消す（N140 3/4：未確定。確定のときに DB から消える）
+                _removeFullVacationIfOverwritten(selectedDate, pattern);
                 _shiftMap[selectedDate] = ShiftData(
                   date: selectedDay,
                   pattern: pattern,
@@ -779,10 +786,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    shiftPlacedMessage(
-                      pattern.patternName,
-                      pending: _liveDraft().entries.containsKey(selectedDate),
-                    ),
+                    shiftPlacedMessage(pattern.patternName, pending: _isDayPending(selectedDate)),
                   ),
                   duration: const Duration(seconds: 2),
                 ),
@@ -914,7 +918,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             horizontal: 16.0,
             vertical: 12.0,
           ),
-          child: VacationStatsWidget(key: ValueKey(_vacationStatsVersion), userId: 'test_user'),
+          child: VacationStatsWidget(
+            key: ValueKey(_vacationStatsVersion),
+            userId: 'test_user',
+            pendingText: vacationPendingStatsText(vacationDraft),  // N140 3/4
+          ),
         ),
 
         
@@ -929,7 +937,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(shiftListHeader(_shiftMap.length, draft), style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 12)),
+                Text(shiftListHeader(_shiftMap.length, draft, vacationDraft), style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 12)),
                 const SizedBox(height: 6.0),
                 ..._shiftMap.entries.map((entry) {
                   final patternColor = entry.value.pattern?.color ?? Colors.grey;
@@ -965,6 +973,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     ),
                   );
                 }).toList(),
+                // N140 3/4：有休・半休だけが未確定の日（× は出さない。取り消しは「未確定を破棄」か長押し）
+                ...vacationOnlyLines.map((line) => Padding(
+                      padding: const EdgeInsets.only(top: 4.0, left: 24.0),
+                      child: Text(
+                        '$line 📝未確定',
+                        style: AppTextStyles.bodyTextStyle.copyWith(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                    )),
               ],
             ),
           ),
@@ -1077,8 +1093,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         : cell;
   }
 
-  Widget _buildRangeInputMethod(ShiftDraft draft) {
-    final canProceed = canProceedToConfirm(totalDays: _shiftMap.length, pendingDays: draft.length);  // N140 2/4
+  Widget _buildRangeInputMethod(int pendingDays) {
+    final canProceed = canProceedToConfirm(totalDays: _shiftMap.length, pendingDays: pendingDays);  // N140 2/4・3/4
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1161,8 +1177,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            // N93：処理中は押せない
-            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null && !_isApplyingRange
+            onPressed: _rangeStartDate != null && _rangeEndDate != null && _selectedPattern != null
                 ? _applyRangeShift
                 : null,
             style: ElevatedButton.styleFrom(
@@ -1250,10 +1265,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  Future<void> _applyRangeShift() async {
-      if (_isApplyingRange) return;
+  void _applyRangeShift() {
       if (_rangeStartDate == null || _rangeEndDate == null || _selectedPattern == null) return;
       if (!_ensureLoaded()) return;  // N118
+      if (!_ensureVacationBaseLoaded()) return;  // N140 3/4
       // N102：開始日 > 終了日なら止める（ピッカーでも選べないが念のため。日付だけで比べる）
       if (DateUtils.dateOnly(_rangeStartDate!).isAfter(DateUtils.dateOnly(_rangeEndDate!))) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -1265,28 +1280,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         );
         return;
       }
-      // N93：await のあいだにパターン・日付の選択が変わっても、押したときの値で続ける
-      final pattern = _selectedPattern!;
-      final rangeStart = _rangeStartDate!;
-      final rangeEnd = _rangeEndDate!;
-
-      setState(() => _isApplyingRange = true);
-      try {
-        await _applyRangeDays(pattern, rangeStart, rangeEnd);
-      } finally {
-        if (mounted) setState(() => _isApplyingRange = false);
-      }
+      _applyRangeDays(_selectedPattern!, _rangeStartDate!, _rangeEndDate!);
     }
 
-  /// N93：期間の日を 1 日ずつ登録する
-  /// その日の DB への書き込みが済んでから _shiftMap・_vacationMap を書き換え、失敗した日で止める
-  /// それまでの日は残す（N68 で同じ日は上書きなので、同じ期間を登録し直せば続きが入る）
-  Future<void> _applyRangeDays(
-      ShiftPatternModel pattern, DateTime rangeStart, DateTime rangeEnd) async {
-    final draftStore = widget.draftStore;  // N140：途中で State が消えても預けられるように
+  /// 期間の日を 1 日ずつ入れる
+  /// N140 3/4：シフトも有休・半休も DB には書かず、未確定にする（確定のときに書く）
+  /// DB に書かないので途中で失敗することはなく、State が途中で消えることもない（N93 の途中失敗の処理はなくした）
+  void _applyRangeDays(ShiftPatternModel pattern, DateTime rangeStart, DateTime rangeEnd) {
     DateTime current = rangeStart;
-    DateTime? lastSucceeded;
-    var vacationChanged = false;  // 有休・半休の行を 1 日でも書き換えたら true
     // N100：有休で置き換えた今日以降の出勤の日数（保存で出勤前アラームが取り消されるので案内する）
     // 半休はシフトと共存させるので置き換えず、数えない
     final isFullVacation = pattern.patternType == ShiftType.vacation;
@@ -1294,7 +1295,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     var replacedWorkDays = 0;
-    try {
+    // setState の中で書き換える（終わったら件数もバッジへ伝わる）
+    setState(() {
       while (!current.isAfter(rangeEnd)) {
         final normalized = DateTime(current.year, current.month, current.day);
         final replacesWork = isFullVacation &&
@@ -1302,74 +1304,23 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
             _shiftMap[normalized]?.pattern?.patternType == ShiftType.work;
 
         if (isFullVacation) {
-          await _vacationRepository.recordVacationUsage(
-            'test_user',
-            normalized,
-            1.0,
-            'カレンダーから登録（有休）',
-          );
-          vacationChanged = true;
           _shiftMap[normalized] = ShiftData(date: normalized, pattern: pattern);
           _vacationMap[normalized] = 1.0;  // N69：すぐ 🏖️ が出るように
         } else if (isHalfVacation) {
           // N100（B 案）：半休は出勤・休日などと共存させる（タップの半休と同じ）
-          // 有休パターンの日だけ、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
+          // 有休パターンの日だけ、N99 と同じく有休パターンを外す（シフトなし＋半休にする。pre は確定のときに取り消される）
           if (_shiftMap[normalized]?.pattern?.patternType == ShiftType.vacation) {
-            await _shiftRepository.deleteShift(normalized);
-            _baseShifts?.remove(normalized);  // N140：DB から消したので基準からも外す
             _shiftMap.remove(normalized);
-            await AlarmService.cancelPreAlarm(normalized);
           }
-          await _vacationRepository.recordVacationUsage(
-            'test_user',
-            normalized,
-            0.5,
-            'カレンダーから登録（半休）',
-          );
-          vacationChanged = true;
           _vacationMap[normalized] = 0.5;  // N69：すぐ 🌤️ が出るように
         } else {
-          if (await _removeFullVacationIfOverwritten(normalized, pattern)) {
-            vacationChanged = true;  // N77
-          }
+          _removeFullVacationIfOverwritten(normalized, pattern);  // N77
           _shiftMap[normalized] = ShiftData(date: normalized, pattern: pattern);
         }
 
         if (replacesWork) replacedWorkDays++;
-        lastSucceeded = normalized;
-        _syncDraftCount();  // N140 2/4：ループの途中は setState を呼ばないので、ここで伝える
         current = current.add(const Duration(days: 1));
       }
-    } catch (e) {
-      debugPrint('Error applying range shift: $e');
-      if (!mounted) {
-        draftStore.addLateEdits(_currentDraft());  // N140：State が消えたあとに入れた分も残す
-        return;
-      }
-      setState(() {
-        if (vacationChanged) _vacationStatsVersion++;
-      });
-      final failed = DateTime(current.year, current.month, current.day);
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(rangeApplyFailureMessage(rangeStart, lastSucceeded, failed, e)),
-          backgroundColor: AppColors.warningRed,
-          duration: Duration(seconds: lastSucceeded == null ? 4 : 6),
-        ),
-      );
-      // 念のため、有休・半休の表示を DB に合わせ直す
-      await _loadVacationData();
-      return;
-    }
-    if (!mounted) {
-      draftStore.addLateEdits(_currentDraft());  // N140：State が消えたあとに入れた分も残す
-      return;
-    }
-
-    setState(() {
-      if (vacationChanged) _vacationStatsVersion++;
     });
     final rangeDays = rangeEnd.difference(rangeStart).inDays + 1;
     final messenger = ScaffoldMessenger.of(context);
@@ -1377,7 +1328,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     messenger.showSnackBar(
       SnackBar(
         content: Text(
-          '${isHalfVacation ? '半休 $rangeDays日を登録しました' : rangeAddedMessage(rangeDays)}'
+          '${rangeAddedMessage(rangeDays, label: isHalfVacation ? pattern.patternName : null)}'
           '${replacedWorkDays > 0 ? '\n出勤 $replacedWorkDays日を${pattern.patternName}にしました。「シフトを確定」を押すと、その日の出勤前アラームが取り消されます' : ''}',
         ),
         backgroundColor: AppColors.primaryGradientStart,
@@ -1402,12 +1353,12 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
   /// N77：有休（1.0）の日に普通のシフト・休日を入れたら、その日の有休を消す
   /// 半休（0.5）は消さない（Week 20 の「半休＋シフト共存」）。消したら true を返す
-  Future<bool> _removeFullVacationIfOverwritten(DateTime date, ShiftPatternModel pattern) async {
+  /// N140 3/4：DB からは消さず、未確定にする（確定のときに DB から消える）
+  bool _removeFullVacationIfOverwritten(DateTime date, ShiftPatternModel pattern) {
     final dateKey = DateTime(date.year, date.month, date.day);
     if (_vacationMap[dateKey] != 1.0) return false;
-    await _vacationRepository.deleteVacationUsageByDate('test_user', dateKey);
     _vacationMap.remove(dateKey);
-    debugPrint('🗑️ N77: ${dateKey.month}/${dateKey.day} の有休 1.0 を削除（${pattern.patternName}で上書き）');
+    debugPrint('🗑️ N77: ${dateKey.month}/${dateKey.day} の有休 1.0 を外した（${pattern.patternName}で上書き・未確定）');
     return true;
   }
 
@@ -1432,36 +1383,17 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     });
   }
   
-  /// N95・N96：有休・半休の行はすぐ消し、シフトの DB 行は保存まで残す
-  /// 有休の削除に失敗したら、_shiftMap・_vacationMap は残して失敗を知らせる
-  Future<void> _deleteShiftEntry(DateTime dateKey) async {
-    final shiftData = _shiftMap[dateKey];
-    var vacationDeleted = false;
-
-    try {
-      if (shiftData?.pattern?.patternType == ShiftType.vacation ||
-          shiftData?.pattern?.patternType == ShiftType.halfVacation) {
-        await _vacationRepository.deleteVacationUsageByDate(
-          'test_user',
-          dateKey,
-        );
-        _vacationMap.remove(dateKey);
-        vacationDeleted = true;
-        print('[ShiftManagementScreen] ✅ 有休・半休をキャンセル: ${dateKey.month}月${dateKey.day}日');
-      }
-    } catch (e) {
-      debugPrint('Error deleting shift entry: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ 削除に失敗しました: $e')),
-      );
-      return;
-    }
-    if (!mounted) return;
-
+  /// N95・N96：有休・半休パターンの日は、有休・半休も一緒に消す
+  /// N140 3/4：シフトと同じく DB からは消さず、未確定にする（確定のときに DB から消える）
+  void _deleteShiftEntry(DateTime dateKey) {
+    if (!_ensureVacationBaseLoaded()) return;
+    final patternType = _shiftMap[dateKey]?.pattern?.patternType;
     setState(() {
+      if (patternType == ShiftType.vacation || patternType == ShiftType.halfVacation) {
+        _vacationMap.remove(dateKey);
+        print('[ShiftManagementScreen] 📝 有休・半休を外した（未確定）: ${dateKey.month}月${dateKey.day}日');
+      }
       _shiftMap.remove(dateKey);
-      if (vacationDeleted) _vacationStatsVersion++;
     });
   }
 
@@ -1507,7 +1439,9 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     });
     debugPrint('[ShiftDraft] 読み込み：差分 ${_currentDraft().length} 件'
         '（衝突 ${mergeResult.conflictDates.length}・外した ${mergeResult.removedDates.length}）');
-    final notice = draftMergeNotice(mergeResult);
+    // N140 3/4：有休の読み込みで見つかった衝突もまとめて知らせる（別々に出すと前の SnackBar が消えるため）
+    final notice = draftMergeNotice(mergeResult, vacationConflictDates: _vacationConflictDates);
+    _vacationConflictDates.clear();
     if (notice != null) {
       final messenger = ScaffoldMessenger.of(context);
       messenger.hideCurrentSnackBar();
@@ -1710,6 +1644,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
       if (deleteVacation) {
         await _vacationRepository.deleteVacationUsageByDate(userId, normalizedDate);
+        _baseVacations?.remove(normalizedDate);  // N140 3/4：DB から消したので基準からも外す（その日の未確定も消える）
         _vacationMap.remove(normalizedDate);
         vacationDeleted = true;
       }

@@ -4,6 +4,7 @@ import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/app_settings.dart';  // ← app_settings（アンダースコア）
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/calendar_event.dart';
+import 'package:shiftsleep/repositories/vacation_repository.dart';  // N140 3/4
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -192,9 +193,12 @@ class ShiftRepository {
   /// 確定：shifts を全部消して shiftMap で作り直す（N117）
   /// 1 つのトランザクションで行い、失敗したら確定前の行に戻して例外を投げる
   /// 消す前の行（shift_date と pattern_id）を返す（出勤前アラームの取り消しに使う）
+  /// N140 3/4：有休・半休の差分（vacationChanges）も同じトランザクションで書く（片方だけ書けた状態にしない）
+  /// トランザクションの中では txn だけを使う（_databaseHelper.database を呼ぶと固まるため）
   Future<List<({String shiftDate, String? patternId})>> replaceAllShifts(
-    Map<DateTime, ShiftPatternModel?> shiftMap,
-  ) async {
+    Map<DateTime, ShiftPatternModel?> shiftMap, {
+    List<({DateTime date, double? days})> vacationChanges = const [],
+  }) async {
     try {
       final db = await _databaseHelper.database;
       final rows = shiftRowsForSave(shiftMap, DateTime.now().toIso8601String());
@@ -208,6 +212,7 @@ class ShiftRepository {
           batch.insert('shifts', row, conflictAlgorithm: ConflictAlgorithm.replace);
         }
         await batch.commit(noResult: true);
+        await VacationRepository.applyVacationChanges(txn, _userId, vacationChanges);  // N140 3/4
         return oldRows
             .map((row) => (
                   shiftDate: row['shift_date'] as String,
@@ -216,7 +221,8 @@ class ShiftRepository {
             .toList();
       });
 
-      debugPrint('✅ replaceAllShifts: 古い行 ${oldShifts.length} 件 → 新しい行 ${rows.length} 件');
+      debugPrint('✅ replaceAllShifts: 古い行 ${oldShifts.length} 件 → 新しい行 ${rows.length} 件'
+          '（有休・半休の変更 ${vacationChanges.length} 日）');
       return oldShifts;
     } catch (e) {
       debugPrint('❌ Error replacing shifts: $e');
