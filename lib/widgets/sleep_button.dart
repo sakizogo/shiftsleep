@@ -285,8 +285,13 @@ class _SleepButtonState extends State<SleepButton>
     // ========== Week 7 Phase 3 修正: SleepProvider から睡眠状態を監視 ==========
     return Consumer<SleepProvider>(
       builder: (context, sleepProvider, _) {
+        // N142：復元が終わるまでは、睡眠中かどうかわからないので押せない（GestureDetector を置かない）
+        if (!sleepProvider.isSleepStateRestored) {
+          return _buildRestoring();
+        }
+
         final isSleeping = sleepProvider.isSleepingNow;
-        
+
         return GestureDetector(
           onTapDown: _onTapDown,
           onTapUp: _onTapUp,
@@ -350,5 +355,35 @@ class _SleepButtonState extends State<SleepButton>
       },
     );
     // ========================================================================
+  }
+
+  /// N142：睡眠状態の復元中の表示（ボタンと同じ大きさ。タップしても何も起きない）
+  Widget _buildRestoring() {
+    return Container(
+      width: 120,
+      height: 120,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryGradientStart.withValues(alpha: 0.6),
+            AppColors.primaryGradientEnd.withValues(alpha: 0.6),
+          ],
+        ),
+      ),
+      child: const Center(
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 3,
+            semanticsLabel: '読み込み中',
+          ),
+        ),
+      ),
+    );
   }
 }

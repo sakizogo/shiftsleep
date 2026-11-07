@@ -414,6 +414,7 @@ void main() {
 
   group('「今から寝る」ボタン', () {
     Future<void> tapButton(WidgetTester tester, SleepProvider provider) async {
+      await tester.runAsync(provider.initializeSleepState);  // N142：復元が終わるまでは押せない
       await tester.pumpWidget(
         ChangeNotifierProvider<SleepProvider>.value(
           value: provider,

@@ -29,6 +29,9 @@ class _FakeProvider extends SleepProvider {
   bool get isLoading => loading;
 
   @override
+  bool get isSleepStateRestored => true;  // N142：このファイルは復元のあとの動きを見る
+
+  @override
   Future<void> insertSleepRecord(SleepRecord record, {int? shiftId}) async {
     if (insertError != null) throw insertError!;
     loading = true;

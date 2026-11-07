@@ -61,6 +61,7 @@ class SleepProvider extends ChangeNotifier {
   // ========== Week 8 Phase 4 追加: 睡眠状態の永続化用 ==========
   DateTime? _sleepStartTime;            // 睡眠開始時刻
   int? _currentShiftId;                 // 関連するシフトID
+  bool _isSleepStateRestored = false;   // N142：initializeSleepState が終わったか（失敗でも立てる）
   // ============================================================
 
   // ========================
@@ -75,6 +76,9 @@ class SleepProvider extends ChangeNotifier {
   // ========== Week 8 Phase 4 追加: 睡眠状態復元用の Getter ==========
   DateTime? get sleepStartTime => _sleepStartTime;
   int? get currentShiftId => _currentShiftId;
+
+  /// N142：立つまでは isSleepingNow が決まっていないので、SleepButton を押せない
+  bool get isSleepStateRestored => _isSleepStateRestored;
   // ================================================================
 
   SleepRecord? get latestRecord => _latestRecord;
@@ -565,6 +569,7 @@ class SleepProvider extends ChangeNotifier {
   /// 1. SharedPreferences から睡眠開始時刻を取得
   /// 2. あれば _isSleepingNow = true をセット
   /// 3. ホーム画面に「現在睡眠中」を表示
+  /// N142：例外でも isSleepStateRestored は必ず立てる（SleepButton がずっと押せないままにならない）
   Future<void> initializeSleepState() async {
     try {
       print('[SleepProvider] 🛏️  睡眠状態を復元中...');
@@ -584,11 +589,11 @@ class SleepProvider extends ChangeNotifier {
         print('[SleepProvider] ℹ️  保存された睡眠状態なし');
         _isSleepingNow = false;
       }
-      
-      notifyListeners();
     } catch (e) {
       print('[SleepProvider] ❌ 睡眠状態復元エラー: $e');
       _isSleepingNow = false;
+    } finally {
+      _isSleepStateRestored = true;
       notifyListeners();
     }
   }
