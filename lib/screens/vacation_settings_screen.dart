@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
+import 'package:shiftsleep/services/vacation_load_state.dart';  // N118 3/4 3b
 
 class VacationSettingsScreen extends StatefulWidget {
   final String userId;
@@ -28,7 +29,12 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   VacationSummary? _summary;
   ({DateTime date, int days})? _nextAccrual;  // N63：次の付与日と付与日数（初回付与日が未登録なら null）
   DateTime? _carriedOverBaseDate;  // N80：持ち越しの基準日（対象の付与が有効なあいだだけ。説明に添える）
-  bool _isLoading = true;
+  // N118 3/4 3b：読み込みの状態。loaded 以外（読み込み中・失敗中）は値を変える・保存する操作を押せない
+  VacationSettingsLoadState _loadState = VacationSettingsLoadState.loading;
+  // N118 3/4 3b：再読み込み中（二度押し防止）
+  bool _isReloading = false;
+
+  bool get _canEdit => canEditVacationSettings(_loadState);
 
   @override
   void initState() {
@@ -50,60 +56,129 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   }
 
   // 設定を読み込む
-  Future<void> _loadSettings() async {
-    final settings = await _repository.getVacationSettings(widget.userId);
-    final summary = await _repository.getAccrualSummary(widget.userId);
-    
-    // ========== Week 13追加: 持ち越し有休数を読み込む ==========
-    final carriedOverDays = await _repository.getCarriedOverDays(widget.userId);
-    // ===============================================================================
+  /// N118 3/4 3b：読めたら（行がなかったときも）true。どれか 1 つでも読めなければ、画面全体を ❌ にして false
+  /// （一部だけ読めた値は出さない。保存などのあとの読み直しで失敗したときも ❌ にする）
+  Future<bool> _loadSettings() async {
+    try {
+      final settings = await _repository.getVacationSettings(widget.userId);
+      final summary = await _repository.getAccrualSummary(widget.userId);
 
-    // N80：持ち越しの基準日と、持ち越しの対象の付与が失効しているか
-    final carryOver = await _repository.getCarryOver(widget.userId);
-    final balance = await _repository.getVacationBalance(widget.userId);
-    final carryOverTargets = balance.accruals.where((a) => a.isCarryOverTarget);
-    final carryOverExpired = carryOverTargets.isNotEmpty && carryOverTargets.first.isExpired;
+      // ========== Week 13追加: 持ち越し有休数を読み込む ==========
+      final carriedOverDays = await _repository.getCarriedOverDays(widget.userId);
+      // ===============================================================================
 
-    // ========== Week 16追加: 初回付与日を読み込む ==========
-    final firstAccrualDate = await _repository.getFirstAccrualDate(widget.userId);
-    // ===============================================================================
+      // N80：持ち越しの基準日と、持ち越しの対象の付与が失効しているか
+      final carryOver = await _repository.getCarryOver(widget.userId);
+      final balance = await _repository.getVacationBalance(widget.userId);
+      final carryOverTargets = balance.accruals.where((a) => a.isCarryOverTarget);
+      final carryOverExpired = carryOverTargets.isNotEmpty && carryOverTargets.first.isExpired;
 
-    // N63：次の付与予定（DB の初回付与日から 1 年ごと）
-    final nextAccrual = await _repository.getNextAccrual(widget.userId);
+      // ========== Week 16追加: 初回付与日を読み込む ==========
+      final firstAccrualDate = await _repository.getFirstAccrualDate(widget.userId);
+      // ===============================================================================
 
-    setState(() {
-      _settings = settings;
-      _summary = summary;
-      _nextAccrual = nextAccrual;
-      if (settings != null) {
-        _selectedHiredDate = settings.hiredDate;
-        _annualDaysController.text = settings.annualDays.toString();
-        
-        // ========== Week 13追加: 持ち越し有休数を入力欄に反映 ==========
+      // N63：次の付与予定（DB の初回付与日から 1 年ごと）
+      final nextAccrual = await _repository.getNextAccrual(widget.userId);
+
+      // N118 3/4 3b（P8）：vacation_settings の行がなくても、持ち越し・初回付与日は欄に入れる
+      final form = vacationFormValues(
+        settings: settings,
+        carriedOverDays: carriedOverDays,
+        carryOver: carryOver,
+        hasCarryOverTarget: carryOverTargets.isNotEmpty,
+        carryOverExpired: carryOverExpired,
+        firstAccrualDate: firstAccrualDate,
+      );
+
+      if (!mounted) return false;
+      setState(() {
+        _settings = settings;
+        _summary = summary;
+        _nextAccrual = nextAccrual;
+        final hiredDate = form.hiredDate;
+        final annualDaysText = form.annualDaysText;
+        if (hiredDate != null) _selectedHiredDate = hiredDate;
+        if (annualDaysText != null) _annualDaysController.text = annualDaysText;
         // N80：対象の付与が失効していたら空で表示する（画面を開いただけでは DB に書かない）
-        _carriedOverBaseDate =
-            carryOver != null && carryOverTargets.isNotEmpty && !carryOverExpired
-                ? carryOver.baseDate
-                : null;
-        if (carriedOverDays > 0 && !carryOverExpired) {
-          _carriedOverDaysController.text = carriedOverDays.toStringAsFixed(0);
-        } else {
-          _carriedOverDaysController.text = '';  // 持ち越しがなければ空
-        }
-        // ===============================================================================
-        
-        // ========== Week 16追加: 初回付与日を入力欄に反映 ==========
-        if (firstAccrualDate != null) {
-          _firstAccrualDateController.text = DateFormat('yyyy年M月d日').format(firstAccrualDate);
-        }
-        // ===============================================================================
+        _carriedOverBaseDate = form.carriedOverBaseDate;
+        _carriedOverDaysController.text = form.carriedOverText;
+        final firstAccrualDateText = form.firstAccrualDateText;
+        if (firstAccrualDateText != null) _firstAccrualDateController.text = firstAccrualDateText;
+        _loadState = VacationSettingsLoadState.loaded;
+      });
+      return true;
+    } catch (e) {
+      debugPrint('❌ N118 3/4 3b: 有給設定の読み込みに失敗: $e');
+      if (mounted) {
+        setState(() => _loadState = VacationSettingsLoadState.failed);
       }
-      _isLoading = false;
-    });
+      return false;
+    }
+  }
+
+  /// N118 3/4 3b：［再読み込み］。成功したら通常の画面に戻る。結果は SnackBar でも知らせる（2c と同じ）
+  Future<void> _reloadSettings() async {
+    if (!canReloadVacationSettings(reloading: _isReloading)) return;
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    setState(() => _isReloading = true);
+    final bool succeeded;
+    try {
+      succeeded = await _loadSettings();
+    } finally {
+      if (mounted) setState(() => _isReloading = false);
+    }
+    if (!mounted) return;
+    final message = vacationSettingsReloadMessage(succeeded: succeeded);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.color,
+        duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+      ),
+    );
+  }
+
+  /// N118 3/4 3b：読み込めなかったときの画面（AppBar の戻るボタンはそのまま使える）
+  Widget _buildLoadFailedView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              vacationSettingsLoadFailedTitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              vacationSettingsLoadFailedBody,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: canReloadVacationSettings(reloading: _isReloading) ? _reloadSettings : null,
+              icon: _isReloading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(_isReloading ? '読み込み中…' : '再読み込み'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 入社日をピッカーで選択
   Future<void> _selectHiredDate() async {
+    if (!_canEdit) return;  // N118 3/4 3b
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedHiredDate ?? DateTime.now(),
@@ -111,6 +186,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
       lastDate: DateTime.now(),
     );
 
+    if (!mounted) return;  // N118 3/4 3b
     if (pickedDate != null) {
       setState(() {
         _selectedHiredDate = pickedDate;
@@ -120,6 +196,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
 
   // 🌟 付与スケジュールを自動計算して DB に保存
 Future<void> _generateAccrualSchedule() async {
+  if (!_canEdit) return;  // N118 3/4 3b
   if (_selectedHiredDate == null) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('⚠️ 入社日を選択してください')),
@@ -190,6 +267,7 @@ Future<void> _generateAccrualSchedule() async {
       ),
     );
 
+    if (!mounted) return;  // N118 3/4 3b
     if (confirmed != true) return;
 
     // autoGenerateAccruals() を呼び出して DB に保存
@@ -235,6 +313,7 @@ Future<void> _generateAccrualSchedule() async {
 }
   // 設定を保存
   Future<void> _saveVacationSettings() async {
+    if (!_canEdit) return;  // N118 3/4 3b：読み込めていないときは保存しない
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
       return;
     }
@@ -312,7 +391,19 @@ Future<void> _generateAccrualSchedule() async {
 
   // 付与日数を自動計算で更新
   Future<void> _recalculateAnnualDays() async {
-    await _repository.recalculateAnnualDays(widget.userId);
+    if (!_canEdit) return;  // N118 3/4 3b
+    // N118 3/4 3b（P11）：失敗したら知らせて、画面を DB に合わせる
+    try {
+      await _repository.recalculateAnnualDays(widget.userId);
+    } catch (e) {
+      debugPrint('❌ N118 3/4 3b: 付与日数の自動計算に失敗: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ 付与日数の自動計算に失敗しました: $e')),
+      );
+      _loadSettings();
+      return;
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('✅ 付与日数を自動計算しました')),
@@ -323,10 +414,17 @@ Future<void> _generateAccrualSchedule() async {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_loadState == VacationSettingsLoadState.loading) {
       return Scaffold(
         appBar: AppBar(title: const Text('有給設定')),
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    // N118 3/4 3b：読み込めなかったら画面全体を ❌ と［再読み込み］にする（フォームもボタンも出さない）
+    if (_loadState == VacationSettingsLoadState.failed) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('有給設定')),
+        body: _buildLoadFailedView(),
       );
     }
 
@@ -634,6 +732,7 @@ Future<void> _generateAccrualSchedule() async {
                     const SizedBox(height: 4),
                     ElevatedButton.icon(
                       onPressed: () async {
+                        if (!_canEdit) return;  // N118 3/4 3b
                         // N79：入社日より前は選べないように。入社日がなければ 1980 年から
                         final firstDate = _selectedHiredDate ?? DateTime(1980);
                         final lastDate = DateTime.now().add(const Duration(days: 365));
@@ -658,7 +757,8 @@ Future<void> _generateAccrualSchedule() async {
                           firstDate: firstDate,
                           lastDate: lastDate,
                         );
-                        
+
+                        if (!mounted) return;  // N118 3/4 3b
                         if (pickedDate != null) {
                           setState(() {
                             _firstAccrualDateController.text = DateFormat('yyyy年M月d日').format(pickedDate);
