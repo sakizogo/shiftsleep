@@ -85,7 +85,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
             carryOver != null && carryOverTargets.isNotEmpty && !carryOverExpired
                 ? carryOver.baseDate
                 : null;
-        if (carriedOverDays != null && carriedOverDays > 0 && !carryOverExpired) {
+        if (carriedOverDays > 0 && !carryOverExpired) {
           _carriedOverDaysController.text = carriedOverDays.toStringAsFixed(0);
         } else {
           _carriedOverDaysController.text = '';  // 持ち越しがなければ空

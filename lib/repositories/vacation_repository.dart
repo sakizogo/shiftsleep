@@ -416,7 +416,8 @@ class VacationRepository {
   /// 
   /// 2024年度分の有休が2025年度に持ち越されている場合の日数を返す
   /// 持ち越し有休数を app_settings から取得
-  Future<double?> getCarriedOverDays(String userId) async {
+  /// N118 3/4：行がなければ 0.0。読めなかったときは例外を上げる（「持ち越しなし」と分ける）
+  Future<double> getCarriedOverDays(String userId) async {
     try {
       final db = await _dbHelper.database;
       
@@ -433,16 +434,18 @@ class VacationRepository {
         return 0.0;
       }
       
-      final carriedOverDays = results.first['carried_over_days'] as int? ?? 0;
+      // N118 3/4：getCarryOver と同じく num で読む（REAL の値でも型の例外にしない）
+      final carriedOverDays = (results.first['carried_over_days'] as num?)?.toDouble() ?? 0.0;
       print('✅ getCarriedOverDays: $carriedOverDays日 取得成功 (userId=$userId)');
-      return carriedOverDays.toDouble();
+      return carriedOverDays;
     } catch (e) {
       print('❌ Error getting carried over days: $e');
-      return null;
+      rethrow;  // N118 3/4：「読めなかった」を「持ち越しなし」と分ける
     }
   }
 
   /// 持ち越し日数と基準日を読む（N80）。日数が 0 以下か、基準日がなければ null
+  /// N118 3/4：読めなかったときは例外を上げる（null は「持ち越しなし」だけ）
   Future<CarryOver?> getCarryOver(String userId) async {
     try {
       final db = await _dbHelper.database;
@@ -461,7 +464,7 @@ class VacationRepository {
       return CarryOver(baseDate: DateTime.parse(baseDateStr), days: days);
     } catch (e) {
       debugPrint('❌ Error getting carry over: $e');
-      return null;
+      rethrow;  // N118 3/4：「読めなかった」を「持ち越しなし」と分ける
     }
   }
 
@@ -628,6 +631,7 @@ class VacationRepository {
   }
 
   /// 初回付与日を読み込み
+  /// N118 3/4：未登録なら null。読めなかったときは例外を上げる（「未登録」と分ける）
   Future<DateTime?> getFirstAccrualDate(String userId) async {
     try {
       final db = await _dbHelper.database;
@@ -650,7 +654,7 @@ class VacationRepository {
       return firstAccrualDate;
     } catch (e) {
       print('❌ Error getting first accrual date: $e');
-      return null;
+      rethrow;  // N118 3/4：「読めなかった」を「未登録」と分ける
     }
   }
 
@@ -832,6 +836,7 @@ class VacationRepository {
   /// 
   /// 返り値：来年度の付与日までに消滅する「1つの付与分」のデータ
   /// null の場合は消滅予定なし
+  /// N118 3/4：読めなかったときは例外を上げる（「消滅予定なし」と分ける）
   Future<Map<String, dynamic>?> getNextExpiringAccrual(String userId) async {
     try {
       final balance = await getVacationBalance(userId);
@@ -851,7 +856,7 @@ class VacationRepository {
       return nextExpiring;
     } catch (e) {
       print('❌ Error getting next expiring accrual: $e');
-      return null;
+      rethrow;  // N118 3/4：「読めなかった」を「消滅予定なし」と分ける
     }
   }
 
