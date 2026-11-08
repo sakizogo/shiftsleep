@@ -63,6 +63,10 @@ class AppColors {
   // N140 2/4：未確定のシフト（オレンジは失敗・警告に使っているので青にする。1 型色覚でも見分けやすい）
   static const Color draftBannerBg = Color(0xFFE3F2FD);     // バナーの背景（薄い青）
   static const Color draftAccent = Color(0xFF0072B2);       // バナーの枠・バッジの背景（Wong 2011: Blue）
+
+  // N118 2/4 2c：設定を読み込めなかったときのバナー（色だけに頼らず ⚠️ と文字も出す。文字は textPrimary）
+  static const Color settingsLoadFailedBg = Color(0xFFFFF9E6);      // バナーの背景（薄い黄色）
+  static const Color settingsLoadFailedAccent = Color(0xFFE69F00);  // バナーの左の線（Wong 2011: Orange）
   
   /// 有給消滝予定：黄色警告系（赤を避ける）
   static const Color expiryWarningBg = Color(0xFFFFF9E6);      // 薄い黄色（背景）

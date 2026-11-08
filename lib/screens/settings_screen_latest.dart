@@ -16,6 +16,7 @@ import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
+import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/wake_alarm_choice.dart';  // N19
 import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N19
@@ -45,6 +46,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // N123：ON の登録し直し・OFF の取り消しの処理中はスイッチを押せない
   // N124：アラーム音の保存（登録し直し）とも共通の「アラーム処理中」フラグ。立っている間はスイッチと保存ボタンの両方を押せない
   bool _isAlarmBusy = false;
+  // N118 2/4 2c：設定を読み込めたか（行がなかったときも true）。false のあいだ（読み込み中・失敗中）は
+  //    画面の値を変える・保存する操作を押せない（既定値で DB を上書きしないため）
+  bool _settingsLoaded = false;
+  // N118 2/4 2c：読み込みに失敗した（バナーと［再読み込み］を出す。読み込み中は出さない）
+  bool _settingsLoadFailed = false;
+  // N118 2/4 2c：再読み込み中（二度押し防止）
+  bool _isReloadingSettings = false;
   bool _isLoading = false;
   String? _vacationAccrualDate;
   // ========== Week 25+ 新規追加：毎日設定チェックボックス ==========
@@ -85,34 +93,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// DB から設定を読み込む
-  Future<void> _loadSettings() async {
+  /// N118 2/4 2c：読めたら（行がなかったときも）true。読めなければ _settingsLoadFailed を立てて false
+  Future<bool> _loadSettings() async {
     try {
       final settings = await _shiftRepository.getAppSettings('test_user');
       // N26：RevenueCat が configure されていないときは、DB の値によらず無料版として表示する
       final isPremium = (settings?.isPremiumUser ?? false) &&
           await _premiumService.isRevenueCatConfigured();
 
-      if (settings != null && mounted) {
+      // N118 2/4 2c：起床時刻を読めない値も「読み込めなかった」に含めるため、setState の前に変換する
+      TimeOfDay? wakeUpTime;
+      if (settings != null) {
         print('✅ 設定を読み込み: 起床時刻=${settings.wakeUpTime}, アラーム時間=${settings.alarmTimeBeforeShift}分前, 音=${settings.selectedAlarmSound}, promoVisible=${settings.advicePromoVisible}, isPremium=${settings.isPremiumUser}');
 
         // ✨ ここを追加：wakeUpTime を "07:00" 形式から TimeOfDay に変換
         final timeParts = settings.wakeUpTime.split(':');
         final hour = int.parse(timeParts[0]);
         final minute = int.parse(timeParts[1]);
+        wakeUpTime = TimeOfDay(hour: hour, minute: minute);
+      }
 
-        setState(() {
+      if (!mounted) return false;
+      setState(() {
+        if (settings != null) {
           _currentSettings = settings;  // ← 追加：現在の設定を保存
-          _wakeUpTime = TimeOfDay(hour: hour, minute: minute);
+          _wakeUpTime = wakeUpTime!;
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
           _isPremiumUser = isPremium;
           // isAlarmEnabled は削除
-        });
-      }
+        }
+        // N118 2/4 2c：行がなければ既定値のまま（今と同じ）。どちらも読み込めたので操作を押せるようにする
+        _settingsLoaded = true;
+        _settingsLoadFailed = false;
+      });
+      return true;
     } catch (e) {
       print('⚠️ 設定読み込みエラー: $e');
+      // N118 2/4 2c：既定値を表示したまま保存しないよう、操作を押せなくしてバナーを出す
+      if (mounted) {
+        setState(() {
+          _settingsLoaded = false;
+          _settingsLoadFailed = true;
+        });
+      }
+      return false;
     }
+  }
+
+  /// N118 2/4 2c：［再読み込み］。成功したらバナーが消える。結果は SnackBar でも知らせる
+  Future<void> _reloadSettings() async {
+    if (!canReloadSettings(reloading: _isReloadingSettings)) return;
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    setState(() => _isReloadingSettings = true);
+    final bool succeeded;
+    try {
+      succeeded = await _loadSettings();
+    } finally {
+      if (mounted) setState(() => _isReloadingSettings = false);
+    }
+    final message = settingsReloadMessage(succeeded: succeeded);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.color,
+        duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+      ),
+    );
+  }
+
+  /// N118 2/4 2c：設定を読み込めなかったときのバナー（画面の上に固定）
+  Widget _buildLoadFailedBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: const BoxDecoration(
+        color: AppColors.settingsLoadFailedBg,
+        border: Border(left: BorderSide(color: AppColors.settingsLoadFailedAccent, width: 4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            settingsLoadFailedTitle,
+            style: AppTextStyles.bodyTextStyle.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4.0),
+          Text(
+            settingsLoadFailedBody,
+            style: AppTextStyles.bodyTextStyle.copyWith(
+              fontSize: 12,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: canReloadSettings(reloading: _isReloadingSettings) ? _reloadSettings : null,
+              icon: _isReloadingSettings
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(_isReloadingSettings ? '読み込み中…' : '再読み込み'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// ✅ N10/N11: 毎日使用フラグと、今夜の手動起床が有効かを読み込む
@@ -171,7 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final saved = await _saveAlarmEnabledSetting(value);  // 保存
         print('[Settings] アラーム有効: $value');
         if (!value) {
-          await _cancelAllAlarmsForOff();
+          await _cancelAllAlarmsForOff(messenger);
         } else if (!saved) {
           // N123：ON を保存できなかったら登録し直さず、スイッチを OFF に戻す
           if (mounted) setState(() => _isAlarmEnabled = false);
@@ -236,7 +332,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // ✅ H4: アラームOFF時に、登録済みの main / pre をすべてキャンセル
     //    対象：今日・明日 ＋ DB に存在する今日〜CalendarRange の終わりのシフト日（Set で重複排除）
     //    N123：範囲の終わりを確定の登録（CalendarRange.lastDate）にそろえる
-    Future<void> _cancelAllAlarmsForOff() async {
+    //    N118 2/4 2c：知らせは呼び出し元が await 前に取った messenger で出す（N133 と同じ。画面が閉じられても飛ばさない）
+    Future<void> _cancelAllAlarmsForOff(ScaffoldMessengerState messenger) async {
       try {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
@@ -266,8 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await AlarmService.cancelPreAlarm(date);
         }
         print('🔕 [Settings] アラームOFF: ${targetDates.length}日分の main / pre をキャンセルしました');
-        if (shiftsReadFailed && mounted) {
-          final messenger = ScaffoldMessenger.of(context);
+        if (shiftsReadFailed) {
           messenger.hideCurrentSnackBar();
           messenger.showSnackBar(
             const SnackBar(
@@ -286,7 +382,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     //    保存の直前に DB を読み直し、音だけを変える（画面を開いたときの分数・起床時刻などで上書きしない）
     //    処理中はスイッチと保存ボタンを押せない（_isAlarmBusy）
     Future<void> _saveAlarmSound() async {
-      if (_isAlarmBusy) return;
+      // N118 2/4 2c：設定を読み込めるまでは保存しない（画面の既定の音で DB を上書きしない）
+      if (!canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy)) return;
       final messenger = ScaffoldMessenger.of(context);  // await 前に取得
       setState(() => _isAlarmBusy = true);
       try {
@@ -357,6 +454,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // N118 2/4 2c：読み込めるまで（読み込み中・失敗中）とアラームの処理中は、値を変える・保存する操作を押せない
+    final canEdit = canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy);
     return Scaffold(
         backgroundColor: AppColors.backgroundLight,
         appBar: AppBar(
@@ -376,7 +475,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ),
-        body: SingleChildScrollView(
+        // N118 2/4 2c：読み込めなかったときはバナーを上に固定（スクロールしても消えない）
+        body: Column(
+          children: [
+            if (_settingsLoadFailed) _buildLoadFailedBanner(),
+            Expanded(
+              child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(
               vertical: AppDimensions.sectionPaddingVertical,
@@ -561,13 +665,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                             ],
                           ),
+                          // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない
                           Switch(
                             value: _advicePromoVisible,
-                            onChanged: (value) {
-                              setState(() {
-                                _advicePromoVisible = value;
-                              });
-                            },
+                            onChanged: canEdit
+                                ? (value) {
+                                    setState(() {
+                                      _advicePromoVisible = value;
+                                    });
+                                  }
+                                : null,
                             activeThumbColor: AppColors.primaryGradientStart,
                           ),
                         ],
@@ -638,8 +745,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               
                               // 変更ボタン
                               // N125：アラームの処理中は押せない
+                              // N118 2/4 2c：設定を読み込めるまでも押せない
                               ElevatedButton(
-                                onPressed: _isAlarmBusy ? null : () => _selectWakeUpTime(context),
+                                onPressed: canEdit ? () => _selectWakeUpTime(context) : null,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primaryGradientStart,
                                   shape: RoundedRectangleBorder(
@@ -692,7 +800,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           value: _useDailyWakeUpSetting,
-                          onChanged: (bool? value) async {
+                          // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない（表示中の既定の時刻を毎日の時刻にしない）
+                          onChanged: !canEdit ? null : (bool? value) async {
                             if (value != null) {
                               setState(() {
                                 _useDailyWakeUpSetting = value;
@@ -771,7 +880,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             },
                           ),
                         ],
-                        onChanged: (value) {
+                        // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない
+                        onChanged: !canEdit ? null : (value) {
                           if (value != null) {
                             setState(() {
                               _alarmTimeBeforeShift = value;
@@ -825,7 +935,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           DropdownMenuItem(value: 'gentle', child: Text('やさしい音')),
                           DropdownMenuItem(value: 'harsh', child: Text('強めの音')),
                         ],
-                        onChanged: (value) {
+                        // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない
+                        onChanged: !canEdit ? null : (value) {
                           setState(() {
                             _selectedAlarmSound = value!;
                           });
@@ -835,10 +946,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                       // ✅ アラーム音保存ボタン（単独）
                       // N124：アラームの処理中（ON/OFF・音の保存）は押せない
+                      // N118 2/4 2c：設定を読み込めるまでも押せない
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _isAlarmBusy ? null : _saveAlarmSound,
+                          onPressed: canEdit ? _saveAlarmSound : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primaryGradientStart,
                             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1079,10 +1191,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // 保存ボタン
                 // ========================
                 // N125：アラームの処理中は押せない
+                // N118 2/4 2c：設定を読み込めるまでも押せない
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isAlarmBusy ? null : _saveSettings,
+                    onPressed: canEdit ? _saveSettings : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primaryGradientStart,
                       padding: EdgeInsets.symmetric(
@@ -1109,6 +1222,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+              ),
+            ),
+          ],
         ),
       );
   }
@@ -1233,7 +1349,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _selectWakeUpTime(BuildContext context) async {
     // N125：処理中は何もしない（ManualWakeService.save だけ先に動かないように）
-    if (_isAlarmBusy) return;
+    // N118 2/4 2c：設定を読み込めるまでも何もしない（画面の既定の分数で DB を上書きしない）
+    if (!canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy)) return;
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _wakeUpTime,
@@ -1317,7 +1434,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // N125：処理中はスイッチ・音の保存・設定の保存・起床時刻の変更を押せない（_isAlarmBusy）
   // N19：messenger・sleepProvider は await の前に取ったもの（ボタンから呼ぶときは省略でき、ここで取る）
   Future<void> _saveSettings({ScaffoldMessengerState? messenger, SleepProvider? sleepProvider}) async {
-    if (_isAlarmBusy) return;
+    // N118 2/4 2c：設定を読み込めるまでは保存しない（画面の既定値で DB を上書きしない）
+    if (!canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy)) return;
     final resolvedMessenger = messenger ?? ScaffoldMessenger.of(context);
     final resolvedProvider = sleepProvider ?? context.read<SleepProvider>();
     if (mounted) setState(() => _isAlarmBusy = true);
