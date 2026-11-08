@@ -229,16 +229,14 @@ class _SleepButtonState extends State<SleepButton>
   /// ⏰ の案内はここで出す。戻り値は「💤 睡眠中」のあとに出す ⚠️ の文言（なければ null）
   Future<String?> _scheduleWakeAlarm(DateTime now, ScaffoldMessengerState messenger) async {
     // N118：設定はここで 1 回だけ読む（行がない・読めない → 既定値で進める）
+    // N118 2b：読めなかったときの ⚠️ は wakeAlarmMessages が出す（登録できたとき・none で出勤がまだ先のときだけ）
     final read = await _readWakeAlarmSettings(now);
-    final settings = read.settings;
-    final settingsWarning = read.failed
-        ? '⚠️ 設定を読めなかったため、既定値（出勤 ${settings.alarmTimeBeforeShift} 分前）でアラームを登録しました'
-        : null;
 
     final result = await WakeAlarmRegistrationService.register(
       now: now,
-      settings: settings,
+      settings: read.settings,
       vibrateOnMain: true,
+      settingsReadFailed: read.failed,
     );
     final messages = wakeAlarmMessages(result);
     final warnings = messages.where((message) => message.color != null).map((message) => message.text);
@@ -255,12 +253,7 @@ class _SleepButtonState extends State<SleepButton>
       }
     }
 
-    final warningTexts = [
-      // 手動起床を登録できなかったときは、「既定値で登録しました」の ⚠️ は出さない
-      if (settingsWarning != null && result.mainError == null) settingsWarning,
-      ...warnings,
-    ];
-    return warningTexts.isEmpty ? null : warningTexts.join('\n');
+    return warnings.isEmpty ? null : warnings.join('\n');
   }
 
   /// N118：起床アラームに使う設定を読む

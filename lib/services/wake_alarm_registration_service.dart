@@ -23,10 +23,12 @@ class WakeAlarmRegistrationService {
   /// - pre だけのときは、pre を登録できてから古い main を取り消す（失敗しても 0 本にしないため）
   /// - 登録の失敗は結果で返す。手動起床の読み込みの例外だけは呼び出し元に投げる
   /// vibrateOnMain：main を登録できたら 1 秒バイブ（「今から寝る」だけ）
+  /// settingsReadFailed：settings は読めなかったときの既定値（N118 2b：手動起床があれば必ず main も登録する）
   static Future<WakeAlarmRegistrationResult> register({
     required DateTime now,
     required AppSettings settings,
     required bool vibrateOnMain,
+    bool settingsReadFailed = false,
   }) async {
     final manualWakeAt = await ManualWakeService.getActive();
 
@@ -37,13 +39,18 @@ class WakeAlarmRegistrationService {
         plan: WakeAlarmPlan.none,
         manualWakeAt: manualWakeAt,
         alarmDisabled: true,
+        settingsReadFailed: settingsReadFailed,
       );
     }
 
     final minutesBefore = settings.alarmTimeBeforeShift;
     final read = await _readTodayPattern(now, minutesBefore);
     final preAlarmAt = todayPreAlarmAt(now: now, minutesBefore: minutesBefore, pattern: read.pattern);
-    final plan = planWakeAlarms(manualWakeAt: manualWakeAt, shiftPreAlarmAt: preAlarmAt);
+    final plan = planWakeAlarms(
+      manualWakeAt: manualWakeAt,
+      shiftPreAlarmAt: preAlarmAt,
+      keepMain: settingsReadFailed,
+    );
     debugPrint('⏰ [WakeAlarmRegistration] $plan（手動: $manualWakeAt、出勤前: $preAlarmAt）');
 
     String? mainError;
@@ -97,27 +104,35 @@ class WakeAlarmRegistrationService {
       mainError: mainError,
       preError: preError,
       shiftsReadFailed: read.failed,
+      settingsReadFailed: settingsReadFailed,
+      patternMissing: read.missing,
+      todayWorkStartAt: todayWorkStartAt(now: now, pattern: read.pattern),
     );
   }
 
   /// 今日のシフトのパターンを読む。シフトなし・休日 → pattern が null
   /// 読めなかったら failed（呼び出し元で「シフトなし」として進め、知らせる）
+  /// N118 2b：行はあるのにパターンが見つからない（削除済み）→ missing（pre なしで進め、知らせる）
   /// 出勤前アラームが無効（0）なら、シフトは読まない
-  static Future<({ShiftPatternModel? pattern, bool failed})> _readTodayPattern(
+  static Future<({ShiftPatternModel? pattern, bool failed, bool missing})> _readTodayPattern(
       DateTime now, int minutesBefore) async {
-    if (minutesBefore <= 0) return (pattern: null, failed: false);
+    if (minutesBefore <= 0) return (pattern: null, failed: false, missing: false);
     try {
       final today = DateTime(now.year, now.month, now.day);
       final rows = await _shiftRepository.getShiftsForDateRange(today, today);
-      if (rows.isEmpty) return (pattern: null, failed: false);
+      if (rows.isEmpty) return (pattern: null, failed: false, missing: false);
 
       final patternId = rows.first['pattern_id'] as String;
-      if (patternId == 'default_dayoff') return (pattern: null, failed: false);
+      if (patternId == 'default_dayoff') return (pattern: null, failed: false, missing: false);
 
-      return (pattern: await _shiftRepository.getPatternById(patternId), failed: false);
+      final pattern = await _shiftRepository.getPatternById(patternId);
+      if (pattern == null) {
+        debugPrint('⚠️ [WakeAlarmRegistration] 今日のシフトのパターンが見つかりません（削除済み）: $patternId');
+      }
+      return (pattern: pattern, failed: false, missing: pattern == null);
     } catch (e) {
       debugPrint('❌ [WakeAlarmRegistration] 今日のシフトを読めませんでした: $e');
-      return (pattern: null, failed: true);
+      return (pattern: null, failed: true, missing: false);
     }
   }
 

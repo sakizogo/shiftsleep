@@ -21,6 +21,7 @@ class _FakeShiftRepository extends ShiftRepository {
   List<Map<String, dynamic>> rows = [];
   ShiftPatternModel? pattern;
   bool failRead = false;
+  bool failPattern = false;  // N118 2b：getPatternById だけ例外にする
   int readCount = 0;
 
   @override
@@ -31,7 +32,10 @@ class _FakeShiftRepository extends ShiftRepository {
   }
 
   @override
-  Future<ShiftPatternModel?> getPatternById(String patternId) async => pattern;
+  Future<ShiftPatternModel?> getPatternById(String patternId) async {
+    if (failPattern) throw Exception('pattern read failed');
+    return pattern;
+  }
 }
 
 void main() {
@@ -81,11 +85,26 @@ void main() {
     });
   }
 
-  Future<WakeAlarmRegistrationResult> register({int minutes = 30}) {
+  Future<WakeAlarmRegistrationResult> register({int minutes = 30, bool settingsReadFailed = false}) {
     return WakeAlarmRegistrationService.register(
       now: now,
       settings: settings(minutes: minutes),
       vibrateOnMain: false,
+      settingsReadFailed: settingsReadFailed,
+    );
+  }
+
+  /// 今日（テストの now の日）に 9:15 始まりの出勤シフトを入れる（pre の 8:45 は過ぎている。now は 9:00）
+  void earlyShift() {
+    repository.rows = [
+      {'shift_date': 'x', 'pattern_id': 'p'},
+    ];
+    repository.pattern = ShiftPatternModel(
+      id: 'p',
+      patternName: '早番',
+      patternType: ShiftType.work,
+      startTime: const TimeOfDay(hour: 9, minute: 15),
+      endTime: const TimeOfDay(hour: 17, minute: 0),
     );
   }
 
@@ -207,7 +226,9 @@ void main() {
         {'shift_date': 'x', 'pattern_id': 'default_dayoff'},
       ];
 
-      expect((await register()).plan, WakeAlarmPlan.mainOnly);
+      final result = await register();
+      expect(result.plan, WakeAlarmPlan.mainOnly);
+      expect(result.patternMissing, isFalse);  // N118 2b：既定の休日は「削除済み」ではない
     });
 
     test('アラーム OFF → 何もせず、手動起床は結果に入れる', () async {
@@ -304,6 +325,119 @@ void main() {
         wakeAlarmMessages(result).single.text,
         '⏰ 設定した起床時刻 16:00 は出社予定時刻（15:00）より遅いため、出勤前アラーム（30分前）の 14:30 に鳴ります',
       );
+    });
+
+    // N118 2b
+    test('パターンを読めない（例外）→ シフトを読めなかったとして手動起床で進める', () async {
+      manualAt(12, 0);
+      workShift();
+      repository.failPattern = true;
+
+      final result = await register();
+
+      expect(result.plan, WakeAlarmPlan.mainOnly);
+      expect(result.shiftsReadFailed, isTrue);
+      expect(result.patternMissing, isFalse);
+      expect(scheduledIds, [mainId]);
+    });
+  });
+
+  // N118 2b：今日のシフトの行はあるのに、パターンが見つからない（削除済み）
+  group('パターンが削除されている', () {
+    test('手動あり → main だけ登録して知らせる', () async {
+      manualAt(12, 0);
+      repository.rows = [
+        {'shift_date': 'x', 'pattern_id': 'gone'},
+      ];
+
+      final result = await register();
+
+      expect(result.plan, WakeAlarmPlan.mainOnly);
+      expect(result.patternMissing, isTrue);
+      expect(result.shiftsReadFailed, isFalse);
+      expect(scheduledIds, [mainId]);
+      expect(
+        wakeAlarmMessages(result).single.text,
+        '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません。起床アラームは登録済みです',
+      );
+    });
+
+    test('手動なし → 何も登録せず知らせる', () async {
+      repository.rows = [
+        {'shift_date': 'x', 'pattern_id': 'gone'},
+      ];
+
+      final result = await register();
+
+      expect(result.plan, WakeAlarmPlan.none);
+      expect(result.patternMissing, isTrue);
+      expect(scheduledIds, isEmpty);
+      expect(
+        wakeAlarmMessages(result).single.text,
+        '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません',
+      );
+    });
+  });
+
+  // N118 2b：設定を読めず、既定値で判定したとき
+  group('設定を読めなかった', () {
+    test('手動が pre より遅くても、main と pre の 2 本を登録する', () async {
+      manualAt(16, 0);
+      workShift();
+
+      final result = await register(settingsReadFailed: true);
+
+      expect(result.plan, WakeAlarmPlan.mainAndPre);
+      expect(result.settingsReadFailed, isTrue);
+      expect(armedIds, {mainId, preId});  // 古い main の取り消し（preOnly のとき）はしない
+      expect(wakeAlarmMessages(result).first.text, '⚠️ 設定を読めなかったため、既定値（出勤 30 分前・デフォルト音）で登録しました');
+    });
+
+    test('読めたときは今までどおり pre だけ', () async {
+      manualAt(16, 0);
+      workShift();
+
+      final result = await register();
+
+      expect(result.plan, WakeAlarmPlan.preOnly);
+      expect(result.settingsReadFailed, isFalse);
+    });
+
+    test('手動なし・pre が過ぎた出勤日 → 何も登録せず、出勤時刻を返して知らせる', () async {
+      earlyShift();
+
+      final result = await register(settingsReadFailed: true);
+
+      expect(result.plan, WakeAlarmPlan.none);
+      expect(result.todayWorkStartAt, DateTime(day.year, day.month, day.day, 9, 15));
+      expect(scheduledIds, isEmpty);
+      expect(
+        wakeAlarmMessages(result).single.text,
+        '⚠️ 設定を読めなかったため、既定値（出勤 30 分前）で確かめましたが、今日の出勤（9:15）の 30 分前はもう過ぎています。アラームは登録されていません',
+      );
+    });
+
+    test('手動なし・シフトなし → 何も出さない', () async {
+      final result = await register(settingsReadFailed: true);
+
+      expect(result.plan, WakeAlarmPlan.none);
+      expect(result.todayWorkStartAt, isNull);
+      expect(wakeAlarmMessages(result), isEmpty);
+    });
+
+    test('アラーム OFF → 何もせず、何も出さない', () async {
+      SharedPreferences.setMockInitialValues({
+        'is_alarm_enabled': false,
+        'shiftsleep_manual_wake_at': DateTime(day.year, day.month, day.day, 16, 0).toIso8601String(),
+      });
+      workShift();
+
+      final result = await register(settingsReadFailed: true);
+
+      expect(result.alarmDisabled, isTrue);
+      expect(result.settingsReadFailed, isTrue);
+      expect(scheduledIds, isEmpty);
+      expect(wakeAlarmMessages(result), isEmpty);
     });
   });
 

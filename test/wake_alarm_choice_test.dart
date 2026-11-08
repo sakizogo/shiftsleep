@@ -98,6 +98,52 @@ void main() {
         WakeAlarmPlan.preOnly,
       );
     });
+
+    // N118 2b：設定を読めなかったときは、手動起床があれば必ず main も登録する
+    test('keepMain：pre のほうが早い・同じ時刻でも 2 本', () {
+      expect(
+        planWakeAlarms(manualWakeAt: DateTime(2026, 11, 5, 16, 0), shiftPreAlarmAt: pre, keepMain: true),
+        WakeAlarmPlan.mainAndPre,
+      );
+      expect(planWakeAlarms(manualWakeAt: pre, shiftPreAlarmAt: pre, keepMain: true), WakeAlarmPlan.mainAndPre);
+    });
+
+    test('keepMain：手動のほうが早い → 2 本（変わらない）', () {
+      expect(planWakeAlarms(manualWakeAt: manual, shiftPreAlarmAt: pre, keepMain: true), WakeAlarmPlan.mainAndPre);
+    });
+
+    test('keepMain：手動なし・pre なしは変わらない', () {
+      expect(planWakeAlarms(manualWakeAt: null, shiftPreAlarmAt: pre, keepMain: true), WakeAlarmPlan.preOnly);
+      expect(planWakeAlarms(manualWakeAt: null, shiftPreAlarmAt: null, keepMain: true), WakeAlarmPlan.none);
+      expect(planWakeAlarms(manualWakeAt: manual, shiftPreAlarmAt: null, keepMain: true), WakeAlarmPlan.mainOnly);
+    });
+  });
+
+  group('todayWorkStartAt', () {
+    DateTime? at(ShiftPatternModel? pattern, {DateTime? time}) =>
+        todayWorkStartAt(now: time ?? now, pattern: pattern);
+
+    test('出勤で出勤時刻が先なら、今日の出勤時刻', () {
+      expect(at(_pattern()), DateTime(2026, 11, 5, 15, 0));
+    });
+
+    test('pre が過ぎていても、出勤時刻が先なら出勤時刻', () {
+      expect(at(_pattern(), time: DateTime(2026, 11, 5, 14, 50)), DateTime(2026, 11, 5, 15, 0));
+    });
+
+    test('出勤時刻ちょうど・過ぎていれば null', () {
+      expect(at(_pattern(), time: DateTime(2026, 11, 5, 15, 0)), isNull);
+      expect(at(_pattern(), time: DateTime(2026, 11, 5, 15, 1)), isNull);
+    });
+
+    test('出勤以外・削除済み・出勤時刻なし・シフトなしは null', () {
+      for (final type in [ShiftType.dayOff, ShiftType.vacation, ShiftType.halfVacation]) {
+        expect(at(_pattern(type: type)), isNull, reason: '$type');
+      }
+      expect(at(ShiftPatternModel.deleted('x')), isNull);
+      expect(at(ShiftPatternModel(id: 'p', patternName: '3番', patternType: ShiftType.work)), isNull);
+      expect(at(null), isNull);
+    });
   });
 
   group('wakeAlarmMessages', () {
@@ -110,6 +156,9 @@ void main() {
       String? preError,
       bool shiftsReadFailed = false,
       bool alarmDisabled = false,
+      bool settingsReadFailed = false,
+      bool patternMissing = false,
+      DateTime? workStartAt,
       DateTime? time,
     }) {
       return wakeAlarmMessages(WakeAlarmRegistrationResult(
@@ -122,8 +171,13 @@ void main() {
         preError: preError,
         shiftsReadFailed: shiftsReadFailed,
         alarmDisabled: alarmDisabled,
+        settingsReadFailed: settingsReadFailed,
+        patternMissing: patternMissing,
+        todayWorkStartAt: workStartAt,
       ));
     }
+
+    const fallback = '⚠️ 設定を読めなかったため、既定値（出勤 30 分前・デフォルト音）で登録しました';
 
     test('pre だけ', () {
       final result = messages(WakeAlarmPlan.preOnly, preAt: pre);
@@ -228,6 +282,115 @@ void main() {
     test('シフトを読めず main も失敗 → 「登録済み」とは出さない', () {
       final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, shiftsReadFailed: true, mainError: '⚠️ 失敗');
       expect(result.single.text, '⚠️ 失敗');
+    });
+
+    // N118 2b：設定を読めなかったとき
+    group('設定を読めなかった', () {
+      test('main だけ登録できた → 既定値で登録しました', () {
+        final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, settingsReadFailed: true);
+        expect(result.single.text, fallback);
+        expect(result.single.color, Colors.orange);
+      });
+
+      test('2 本登録できた → 既定値の ⚠️ のあとに ⏰', () {
+        final result = messages(WakeAlarmPlan.mainAndPre, manualAt: manual, preAt: pre, settingsReadFailed: true);
+        expect(result.map((m) => m.text), [fallback, '⏰ 起床アラーム 12:05 と出勤前アラーム 14:30 に鳴ります']);
+        expect(result.map((m) => m.color), [Colors.orange, null]);
+      });
+
+      test('pre だけ登録できた → 既定値の ⚠️ のあとに ⏰', () {
+        final result = messages(WakeAlarmPlan.preOnly, preAt: pre, settingsReadFailed: true);
+        expect(result.map((m) => m.text), [fallback, '⏰ 出勤前アラーム 14:30 に鳴ります']);
+      });
+
+      test('2 本で片方だけ失敗 → 既定値の ⚠️ と、もう片方は登録済み', () {
+        final result = messages(WakeAlarmPlan.mainAndPre, manualAt: manual, preAt: pre, preError: 'x', settingsReadFailed: true);
+        expect(result.map((m) => m.text), [fallback, '⚠️ 出勤前アラームを登録できませんでした。起床アラーム 12:05 は登録済みです']);
+      });
+
+      test('pre だけで失敗 → 「既定値で登録しました」は出さない', () {
+        final result = messages(WakeAlarmPlan.preOnly, preAt: pre, preError: '⚠️ 失敗', settingsReadFailed: true);
+        expect(result.single.text, '⚠️ 失敗');
+      });
+
+      test('main だけで失敗 → 「既定値で登録しました」は出さない', () {
+        final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, mainError: '⚠️ 失敗', settingsReadFailed: true);
+        expect(result.single.text, '⚠️ 失敗');
+      });
+
+      test('2 本とも失敗 → 「既定値で登録しました」は出さない', () {
+        final result = messages(
+          WakeAlarmPlan.mainAndPre,
+          manualAt: manual,
+          preAt: pre,
+          mainError: 'x',
+          preError: 'y',
+          settingsReadFailed: true,
+        );
+        expect(result.map((m) => m.text), ['x', 'y']);
+      });
+
+      test('none で今日の出勤がまだ先 → pre の時刻は過ぎていると知らせる', () {
+        final result = messages(
+          WakeAlarmPlan.none,
+          settingsReadFailed: true,
+          workStartAt: DateTime(2026, 11, 5, 9, 15),
+        );
+        expect(
+          result.single.text,
+          '⚠️ 設定を読めなかったため、既定値（出勤 30 分前）で確かめましたが、今日の出勤（9:15）の 30 分前はもう過ぎています。アラームは登録されていません',
+        );
+        expect(result.single.color, Colors.orange);
+      });
+
+      test('none で今日の出勤がない → 何も出さない', () {
+        expect(messages(WakeAlarmPlan.none, settingsReadFailed: true), isEmpty);
+      });
+
+      test('アラーム OFF → 何も出さない', () {
+        expect(
+          messages(
+            WakeAlarmPlan.none,
+            manualAt: manual,
+            alarmDisabled: true,
+            settingsReadFailed: true,
+            workStartAt: DateTime(2026, 11, 5, 9, 15),
+          ),
+          isEmpty,
+        );
+      });
+
+      test('シフトも読めなかった（手動なし）→ シフトの ⚠️ だけ', () {
+        final result = messages(WakeAlarmPlan.none, shiftsReadFailed: true, settingsReadFailed: true);
+        expect(result.single.text, '⚠️ シフトを読めなかったため、出勤前アラームを登録できませんでした');
+      });
+    });
+
+    // N118 2b：今日のシフトのパターンが削除されているとき
+    group('パターンが削除されている', () {
+      test('main あり → 起床アラームは登録済み', () {
+        final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, patternMissing: true);
+        expect(result.single.text, '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません。起床アラームは登録済みです');
+        expect(result.single.color, Colors.orange);
+      });
+
+      test('main なし', () {
+        final result = messages(WakeAlarmPlan.none, patternMissing: true);
+        expect(result.single.text, '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません');
+      });
+
+      test('main も失敗 → main の ⚠️ だけ', () {
+        final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, mainError: '⚠️ 失敗', patternMissing: true);
+        expect(result.single.text, '⚠️ 失敗');
+      });
+
+      test('設定も読めなかった → 既定値の ⚠️ が先', () {
+        final result = messages(WakeAlarmPlan.mainOnly, manualAt: manual, patternMissing: true, settingsReadFailed: true);
+        expect(result.map((m) => m.text), [
+          fallback,
+          '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません。起床アラームは登録済みです',
+        ]);
+      });
     });
   });
 }

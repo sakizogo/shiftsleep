@@ -3,6 +3,7 @@
 // 手動起床のほうが早ければ、保険として出勤前アラーム（pre）も登録する（2 本）
 // pre のほうが早い（同時刻を含む）ときは pre だけ
 // シフトを読めなかったときは「pre なし」として渡す（手動起床で鳴らす）
+// N118 2b：設定を読めなかったときは既定値で判定し、手動起床があれば必ず main も登録する
 // DB・アラームには依存しない
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
@@ -36,16 +37,31 @@ DateTime? todayPreAlarmAt({
   return alarmAt.isAfter(now) ? alarmAt : null;
 }
 
+/// N118 2b：今日の出勤時刻（まだ先のときだけ）
+/// 出勤（work）以外・出勤時刻なし・シフトなし（pattern が null）・出勤時刻ちょうど／過ぎている → null
+/// pre の時刻が過ぎているかどうかは見ない
+DateTime? todayWorkStartAt({
+  required DateTime now,
+  required ShiftPatternModel? pattern,
+}) {
+  final startTime = pattern?.startTime;
+  if (pattern == null || startTime == null || pattern.patternType != ShiftType.work) return null;
+  final startAt = DateTime(now.year, now.month, now.day, startTime.hour, startTime.minute);
+  return startAt.isAfter(now) ? startAt : null;
+}
+
 /// 手動起床と今日の pre から、登録するアラームを決める（shiftPreAlarmAt はまだ先の pre だけを渡す）
+/// keepMain：手動起床が pre より遅くても main を残す（N118 2b：設定を読めず既定値で判定したとき）
 WakeAlarmPlan planWakeAlarms({
   required DateTime? manualWakeAt,
   required DateTime? shiftPreAlarmAt,
+  bool keepMain = false,
 }) {
   if (manualWakeAt == null) {
     return shiftPreAlarmAt == null ? WakeAlarmPlan.none : WakeAlarmPlan.preOnly;
   }
   if (shiftPreAlarmAt == null) return WakeAlarmPlan.mainOnly;
-  return manualWakeAt.isBefore(shiftPreAlarmAt) ? WakeAlarmPlan.mainAndPre : WakeAlarmPlan.preOnly;
+  return keepMain || manualWakeAt.isBefore(shiftPreAlarmAt) ? WakeAlarmPlan.mainAndPre : WakeAlarmPlan.preOnly;
 }
 
 /// 登録の結果
@@ -60,6 +76,9 @@ class WakeAlarmRegistrationResult {
     this.preError,
     this.shiftsReadFailed = false,
     this.alarmDisabled = false,
+    this.settingsReadFailed = false,
+    this.patternMissing = false,
+    this.todayWorkStartAt,
   });
 
   final DateTime now;
@@ -71,13 +90,47 @@ class WakeAlarmRegistrationResult {
   final String? preError;  // pre を登録できなかったときの文言
   final bool shiftsReadFailed;  // 今日のシフト・パターンを読めなかった
   final bool alarmDisabled;  // アラームが OFF なので何もしなかった
+  final bool settingsReadFailed;  // N118 2b：設定を読めず、既定値で判定した
+  final bool patternMissing;  // N118 2b：今日のシフトの行はあるのに、パターンが見つからない（削除済み）
+  final DateTime? todayWorkStartAt;  // N118 2b：今日の出勤時刻（まだ先のときだけ）
 }
 
 /// 登録の結果から出す SnackBar（color が null なら ⏰ の案内、オレンジなら ⚠️）
 /// 失敗があるときは ⚠️ だけを出し、「鳴ります」は出さない
+/// N118 2b：設定を読めなかったときの ⚠️ は先頭に出す
 List<({String text, Color? color})> wakeAlarmMessages(WakeAlarmRegistrationResult result) {
   if (result.alarmDisabled) return const [];
 
+  final settingsWarning = _settingsFallbackWarning(result);
+  return [
+    if (settingsWarning != null) (text: settingsWarning, color: Colors.orange),
+    ..._coreMessages(result),
+  ];
+}
+
+/// N118 2b：設定を読めなかったときの ⚠️（出さないなら null）
+/// - 1 本でも登録できた → 既定値で登録した
+/// - 1 本も登録しない（none）で今日の出勤がまだ先 → 既定値の pre はもう過ぎている
+/// - それ以外（登録の失敗・シフトなし）→ 出さない
+String? _settingsFallbackWarning(WakeAlarmRegistrationResult result) {
+  if (!result.settingsReadFailed) return null;
+  final minutes = result.minutesBefore;
+  final plan = result.plan;
+  final registered = (plan.includesMain && result.mainError == null) ||
+      (plan.includesPre && result.preError == null);
+  if (registered) {
+    return '⚠️ 設定を読めなかったため、既定値（出勤 $minutes 分前・デフォルト音）で登録しました';
+  }
+  final startAt = result.todayWorkStartAt;
+  if (plan == WakeAlarmPlan.none && startAt != null) {
+    final start = '${startAt.hour}:${startAt.minute.toString().padLeft(2, '0')}';
+    return '⚠️ 設定を読めなかったため、既定値（出勤 $minutes 分前）で確かめましたが、'
+        '今日の出勤（$start）の $minutes 分前はもう過ぎています。アラームは登録されていません';
+  }
+  return null;
+}
+
+List<({String text, Color? color})> _coreMessages(WakeAlarmRegistrationResult result) {
   ({String text, Color? color}) warning(String text) => (text: text, color: Colors.orange);
   ({String text, Color? color}) info(String text) => (text: text, color: null);
   String hm(DateTime t) => '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
@@ -106,6 +159,15 @@ List<({String text, Color? color})> wakeAlarmMessages(WakeAlarmRegistrationResul
       warning(result.plan.includesMain
           ? '⚠️ シフトを読めなかったため、出勤前アラームを登録できませんでした。手動の起床アラームは登録済みです'
           : '⚠️ シフトを読めなかったため、出勤前アラームを登録できませんでした'),
+    ];
+  }
+
+  // N118 2b：削除済みのパターンでは pre を登録しない（N104 と同じ）ことを知らせる
+  if (result.patternMissing) {
+    return [
+      warning(result.plan.includesMain
+          ? '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません。起床アラームは登録済みです'
+          : '⚠️ 今日のシフトのパターンが削除されているため、出勤前アラームは登録しません'),
     ];
   }
 

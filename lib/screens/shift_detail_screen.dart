@@ -620,7 +620,8 @@ const SizedBox(height: AppDimensions.paddingLarge),
     }
 
     // ✅ ShiftPre: 出勤前アラームの設定値を1回だけ取得（行がなければ既定の30分）
-    // N118：読めなかったら確定ごとやめる（シフト・アラームには触らず、詳細確認画面に残る）
+    // N118：読めなかったら確定ごとやめる（シフト・アラームには触らず、未確定は ShiftDraftStore に残る）
+    // N118 2b：タブを移っていても、先に取った messenger で知らせる
     // N124：音も同じ設定から読む（行がなければ 'default'）
     final int alarmTimeBeforeShift;
     final String selectedAlarmSound;
@@ -630,11 +631,10 @@ const SizedBox(height: AppDimensions.paddingLarge),
       selectedAlarmSound = alarmSettings?.selectedAlarmSound ?? 'default';
     } catch (e) {
       debugPrint('Error loading settings before saving shifts: $e');
-      if (!mounted) return;
       messenger.hideCurrentSnackBar();
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('❌ 設定を読み込めなかったため、確定しませんでした。もう一度お試しください'),
+          content: Text('❌ 設定を読み込めなかったため、確定しませんでした。入れたシフトは未確定のまま残っています。もう一度「シフトを確定」を押してください'),
           backgroundColor: AppColors.warningRed,
           duration: Duration(seconds: 4),
         ),
