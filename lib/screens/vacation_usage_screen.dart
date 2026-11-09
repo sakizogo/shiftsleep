@@ -5,6 +5,7 @@ import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/vacation_load_state.dart';  // N118 3/4 3c
 
 class VacationUsageScreen extends StatefulWidget {
   final String userId;
@@ -26,7 +27,12 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   DateTime? _selectedUsageDate;
   double? _selectedDaysUsed;  // ========== Week 14 追加：選択された使用日数（1.0 or 0.5） ==========
   bool _showAddForm = false;
-  bool _isLoading = true;
+  // N118 3/4 3c：読み込みの状態。loaded 以外（読み込み中・失敗中）は追加・削除・使用日の選択を押せない
+  VacationLoadState _loadState = VacationLoadState.loading;
+  // N118 3/4 3c：再読み込み中（二度押し防止）
+  bool _isReloading = false;
+
+  bool get _canEdit => canAddVacationUsage(_loadState);
 
   double _totalRemainingDays = 0.0;
   VacationSummary? _summary;
@@ -47,7 +53,9 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   }
 
   // データを読み込む
-  Future<void> _loadData() async {
+  /// N118 3/4 3c：読めたら true。どれか 1 つでも読めなければ、画面全体を ❌ にして false
+  /// （一部だけ読めた値は出さない。記録・削除のあとの読み直しで失敗したときも ❌ にする）
+  Future<bool> _loadData() async {
     try {
       final remaining = await _repository.calculateRemainingDays(widget.userId);
       final summary = await _repository.getAccrualSummary(widget.userId);
@@ -59,22 +67,86 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
         fiscalYear,
       );
 
+      if (!mounted) return false;
       setState(() {
         _totalRemainingDays = remaining;
         _summary = summary;
         _usageList = usageList;
-        _isLoading = false;
+        _loadState = VacationLoadState.loaded;
       });
+      return true;
     } catch (e) {
-      print('Error loading vacation data: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('❌ N118 3/4 3c: 有給使用記録の読み込みに失敗: $e');
+      if (mounted) {
+        setState(() => _loadState = VacationLoadState.failed);
+      }
+      return false;
     }
+  }
+
+  /// N118 3/4 3c：［再読み込み］。成功したら通常の画面に戻る。結果は SnackBar でも知らせる（3b と同じ）
+  Future<void> _reloadData() async {
+    if (!canReloadVacationSettings(reloading: _isReloading)) return;
+    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+    setState(() => _isReloading = true);
+    final bool succeeded;
+    try {
+      succeeded = await _loadData();
+    } finally {
+      if (mounted) setState(() => _isReloading = false);
+    }
+    if (!mounted) return;
+    final message = vacationUsageReloadMessage(succeeded: succeeded);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.color,
+        duration: Duration(seconds: message.color == Colors.orange ? 6 : 2),
+      ),
+    );
+  }
+
+  /// N118 3/4 3c：読み込めなかったときの画面（AppBar の戻るボタンはそのまま使える）
+  Widget _buildLoadFailedView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              vacationUsageLoadFailedTitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              vacationUsageLoadFailedBody,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: canReloadVacationSettings(reloading: _isReloading) ? _reloadData : null,
+              icon: _isReloading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+              label: Text(_isReloading ? '読み込み中…' : '再読み込み'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 使用日をピッカーで選択
   Future<void> _selectUsageDate() async {
+    if (!_canEdit) return;  // N118 3/4 3c
     final pickedDate = await showDatePicker(
       context: context,
       initialDate: _selectedUsageDate ?? DateTime.now(),
@@ -82,6 +154,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       lastDate: DateTime.now(),
     );
 
+    if (!mounted) return;  // N118 3/4 3c
     if (pickedDate != null) {
       setState(() {
         _selectedUsageDate = pickedDate;
@@ -91,6 +164,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
 
   // 有給使用を記録
   Future<void> _recordVacationUsage() async {
+    if (!_canEdit) return;  // N118 3/4 3c
     if (_selectedUsageDate == null) {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,6 +185,8 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     final usageDate = _selectedUsageDate!;
     final day = DateTime(usageDate.year, usageDate.month, usageDate.day);
     final daysUsed = _selectedDaysUsed!;  // ボタンで選択した 1.0 or 0.5 を使う
+    // N118 3/4 3c：失敗の ❌ は画面を閉じたあとでも出す（await 前に取得）
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       // N101：有休パターンの日に半休を入れたら、N99 と同じく有休パターンを外す（シフトなし＋半休にする）
@@ -127,11 +203,11 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       );
     } catch (e) {
       debugPrint('Error recording vacation usage: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(content: Text('❌ 有給使用の記録に失敗しました: $e')),
       );
+      if (!mounted) return;
       // シフトだけ消えて行が入らなかった場合もあるので、画面を DB に合わせる
       _loadData();
       return;
@@ -164,6 +240,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
 
   // 使用履歴を削除
   Future<void> _deleteVacationUsage(VacationUsage usage) async {
+    if (!_canEdit) return;  // N118 3/4 3c
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -183,6 +260,9 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;  // N118 3/4 3c
+    // N118 3/4 3c：失敗の ❌ は画面を閉じたあとでも出す（await 前に取得）
+    final messenger = ScaffoldMessenger.of(context);
 
     // 年・月・日の数字をそのまま使う（Z つきの行も toLocal() は通さない）
     final day = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day);
@@ -199,11 +279,11 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
       await _repository.deleteVacationUsage(usage.id);
     } catch (e) {
       debugPrint('Error deleting vacation usage: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
         SnackBar(content: Text('❌ 削除に失敗しました: $e')),
       );
+      if (!mounted) return;
       // シフトだけ消えて行が残った場合もあるので、画面を DB に合わせる
       _loadData();
       return;
@@ -218,10 +298,18 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_loadState == VacationLoadState.loading) {
       return Scaffold(
         appBar: AppBar(title: const Text('有給使用記録')),
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    // N118 3/4 3c（D6）：読み込めなかったら画面全体を ❌ と［再読み込み］にする
+    // 統計・一覧（削除ボタン）・［使用記録を追加］は出さない。追加フォームの入力は消さずに残す
+    if (_loadState == VacationLoadState.failed) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('有給使用記録')),
+        body: _buildLoadFailedView(),
       );
     }
 

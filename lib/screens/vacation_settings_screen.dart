@@ -30,7 +30,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   ({DateTime date, int days})? _nextAccrual;  // N63：次の付与日と付与日数（初回付与日が未登録なら null）
   DateTime? _carriedOverBaseDate;  // N80：持ち越しの基準日（対象の付与が有効なあいだだけ。説明に添える）
   // N118 3/4 3b：読み込みの状態。loaded 以外（読み込み中・失敗中）は値を変える・保存する操作を押せない
-  VacationSettingsLoadState _loadState = VacationSettingsLoadState.loading;
+  VacationLoadState _loadState = VacationLoadState.loading;
   // N118 3/4 3b：再読み込み中（二度押し防止）
   bool _isReloading = false;
 
@@ -104,13 +104,13 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
         _carriedOverDaysController.text = form.carriedOverText;
         final firstAccrualDateText = form.firstAccrualDateText;
         if (firstAccrualDateText != null) _firstAccrualDateController.text = firstAccrualDateText;
-        _loadState = VacationSettingsLoadState.loaded;
+        _loadState = VacationLoadState.loaded;
       });
       return true;
     } catch (e) {
       debugPrint('❌ N118 3/4 3b: 有給設定の読み込みに失敗: $e');
       if (mounted) {
-        setState(() => _loadState = VacationSettingsLoadState.failed);
+        setState(() => _loadState = VacationLoadState.failed);
       }
       return false;
     }
@@ -414,14 +414,14 @@ Future<void> _generateAccrualSchedule() async {
 
   @override
   Widget build(BuildContext context) {
-    if (_loadState == VacationSettingsLoadState.loading) {
+    if (_loadState == VacationLoadState.loading) {
       return Scaffold(
         appBar: AppBar(title: const Text('有給設定')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     // N118 3/4 3b：読み込めなかったら画面全体を ❌ と［再読み込み］にする（フォームもボタンも出さない）
-    if (_loadState == VacationSettingsLoadState.failed) {
+    if (_loadState == VacationLoadState.failed) {
       return Scaffold(
         appBar: AppBar(title: const Text('有給設定')),
         body: _buildLoadFailedView(),

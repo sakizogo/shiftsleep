@@ -19,13 +19,13 @@ final _carryOver = CarryOver(baseDate: DateTime(2025, 10, 1), days: 5);
 void main() {
   group('canEditVacationSettings', () {
     test('読み込み中は押せない', () {
-      expect(canEditVacationSettings(VacationSettingsLoadState.loading), isFalse);
+      expect(canEditVacationSettings(VacationLoadState.loading), isFalse);
     });
     test('失敗中は押せない', () {
-      expect(canEditVacationSettings(VacationSettingsLoadState.failed), isFalse);
+      expect(canEditVacationSettings(VacationLoadState.failed), isFalse);
     });
     test('読み込めていれば押せる', () {
-      expect(canEditVacationSettings(VacationSettingsLoadState.loaded), isTrue);
+      expect(canEditVacationSettings(VacationLoadState.loaded), isTrue);
     });
   });
 
@@ -148,5 +148,68 @@ void main() {
       );
       expect(form.firstAccrualDateText, isNull);
     });
+  });
+
+  // ========== N118 3/4 3c：有給使用画面 ==========
+
+  group('canAddVacationUsage', () {
+    test('読み込み中は追加・削除できない', () {
+      expect(canAddVacationUsage(VacationLoadState.loading), isFalse);
+    });
+    test('失敗中は追加・削除できない', () {
+      expect(canAddVacationUsage(VacationLoadState.failed), isFalse);
+    });
+    test('読み込めていれば追加・削除できる', () {
+      expect(canAddVacationUsage(VacationLoadState.loaded), isTrue);
+    });
+  });
+
+  group('vacationUsageReloadMessage', () {
+    test('成功は ✅ で既定の色', () {
+      final message = vacationUsageReloadMessage(succeeded: true);
+      expect(message.text, startsWith('✅'));
+      expect(message.color, isNull);
+    });
+    test('失敗は ⚠️ でオレンジ', () {
+      final message = vacationUsageReloadMessage(succeeded: false);
+      expect(message.text, startsWith('⚠️'));
+      expect(message.color, Colors.orange);
+    });
+  });
+
+  test('有給使用画面の失敗の文言は ❌ で始まり、追加できないことと［再読み込み］を伝える', () {
+    expect(vacationUsageLoadFailedTitle, startsWith('❌'));
+    expect(vacationUsageLoadFailedBody, contains('追加'));
+    expect(vacationUsageLoadFailedBody, contains('再読み込み'));
+  });
+
+  // ========== N118 3/4 3d：有給の統計カード ==========
+
+  group('vacationStatsDaysText', () {
+    test('読めなかった（null）は「—」', () {
+      expect(vacationStatsDaysText(null), '—');
+    });
+    test('0 日は「0.0日」（失敗と分ける）', () {
+      expect(vacationStatsDaysText(0), '0.0日');
+    });
+    test('半日は小数 1 桁', () {
+      expect(vacationStatsDaysText(1.5), '1.5日');
+    });
+  });
+
+  group('showVacationStatsDetails', () {
+    test('読み込み中は内訳・消滅予定を出さない', () {
+      expect(showVacationStatsDetails(VacationLoadState.loading), isFalse);
+    });
+    test('失敗中は内訳・消滅予定を出さない（D4）', () {
+      expect(showVacationStatsDetails(VacationLoadState.failed), isFalse);
+    });
+    test('読み込めていれば出す', () {
+      expect(showVacationStatsDetails(VacationLoadState.loaded), isTrue);
+    });
+  });
+
+  test('統計カードの失敗の文言は ❌ で始まる', () {
+    expect(vacationStatsLoadFailedText, startsWith('❌'));
   });
 }

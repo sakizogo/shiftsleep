@@ -173,7 +173,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   /// N118：［再読み込み］。処理中は押せない
   Future<void> _reloadAll() async {
     if (_isReloading) return;
-    setState(() => _isReloading = true);
+    // N118 3/4 3d（D5）：有休の統計カードも作り直して読み直す
+    setState(() {
+      _isReloading = true;
+      _vacationStatsVersion++;
+    });
     try {
       await _initializeAllData();
     } finally {
