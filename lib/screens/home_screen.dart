@@ -637,14 +637,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           // N128：設定タブでアラームを ON/OFF したあと、タブを切り替えたときにバナーを確かめ直す
           _refreshAlarmPermissionBanner();
 
-          // ========== Week 3 Day 6-2 修正: タブ切り替え時に loadShifts() を呼び出し ==========
+          // ========== Week 3 Day 6-2 修正: タブ切り替え時にパターンを読み直す ==========
           if (index == 1) {
-            // パターンをリロード
+            // パターンをリロード（詳細確認へ渡す _patterns）
             _loadPatterns();
-            // シフト管理画面から DB にシフトを再ロード
-            Future.delayed(const Duration(milliseconds: 100), () {
-              _shiftManagementKey.currentState?.loadShifts();
-            });
+            // N118 4/4：シフトはここでは読まない。タブを開くとシフト管理の State が作り直され、initState で
+            // 有休・パターン・シフト・イベントをまとめて読み、失敗を 1 つの SnackBar で知らせる。ここで 100ms 後に
+            // loadShifts() を呼ぶと、その SnackBar をシフトだけの ❌ で上書きしてしまうため外した
+            // （シフト管理タブを表示したまま同じタブを押したときは読み直さない）
           }
           // ============================================================================
         },

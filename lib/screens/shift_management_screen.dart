@@ -152,16 +152,21 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   
   Future<void> _initializeAllData() async {
     try {
+      // N118 4/4：失敗した部分を集め、最後に 1 つだけ知らせる（1 つずつ出すと、あとの SnackBar が前の SnackBar を消すため）
+      final failed = <ShiftLoadPart>{};
       // ========== 🆕 修正：_loadVacationData を最初に実行 ==========
       print('[ShiftManagementScreen] 🔄 Step 1️⃣ 有休データを読み込み中...');
-      await _loadVacationData();
+      if (await _loadVacationData() != null) failed.add(ShiftLoadPart.vacation);
       print('[ShiftManagementScreen] ✅ Step 1️⃣ 有休データ読み込み完了');
       
       // その後、他のデータを読み込む
       print('[ShiftManagementScreen] 🔄 Step 2️⃣ パターン・シフト・イベントを読み込み中...');
-      await _loadPatterns();
-      await loadShifts();
-      await loadCalendarEvents();
+      if (await _loadPatterns() != null) failed.add(ShiftLoadPart.patterns);
+      final shifts = await _loadShiftsQuiet();
+      if (shifts.error != null) failed.add(ShiftLoadPart.shifts);
+      // イベントは登録・保存を止めないので _loadFailures には入れず、知らせにだけ入れる（D8）
+      final eventsFailed = await _loadCalendarEventsQuiet() != null;
+      _showLoadBatchNotice(failed, eventsFailed: eventsFailed, mergeNotice: shifts.notice);
       print('[ShiftManagementScreen] ✅ Step 2️⃣ 読み込み完了');
       
       print('[ShiftManagementScreen] ✅ 全ての初期化が完了');
@@ -245,8 +250,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   Future<void> reloadAfterConfirm() async {
     if (!mounted) return;
     setState(() => _vacationStatsVersion++);
-    await _loadVacationData();
-    await loadShifts();
+    await _reloadVacationAndShifts();
+  }
+
+  /// N118 4/4：有休とシフトを読み直し、失敗と衝突の知らせを 1 つにまとめて出す（確定後・破棄後）
+  Future<void> _reloadVacationAndShifts() async {
+    final failed = <ShiftLoadPart>{};
+    if (await _loadVacationData() != null) failed.add(ShiftLoadPart.vacation);
+    final shifts = await _loadShiftsQuiet();
+    if (shifts.error != null) failed.add(ShiftLoadPart.shifts);
+    _showLoadBatchNotice(failed, mergeNotice: shifts.notice);
   }
 
   /// N140 2/4：未確定を破棄する（確定済みのシフト・有休は DB にあるので変わらない）
@@ -290,8 +303,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
-    await _loadVacationData();
-    await loadShifts();
+    await _reloadVacationAndShifts();  // N118 4/4
   }
 
   /// N140 2/4：未確定があることを知らせるバナー（青系。📝 と文章・日数で意味が分かるようにする）
@@ -330,11 +342,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
-  /// N118：読み込みに失敗した部分を覚えて知らせる（その部分の表示は消さずに残す）
-  void _onLoadFailed(ShiftLoadPart part, Object e) {
+  /// N118：読み込みに失敗した部分を覚える（その部分の表示は消さずに残す）
+  /// N118 4/4：知らせは呼び出し元が出す（まとめて読むときは 1 つにまとめるため）
+  void _markLoadFailed(ShiftLoadPart part) {
     if (!mounted) return;
     setState(() => _loadFailures.add(part));
-    _showTapError(loadFailureMessage(part, e));
   }
 
   /// N118：読み込みに失敗しているあいだは止める。止めたら false
@@ -355,7 +367,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
 
     /// N118：失敗したら _vacationMap は消さずに残す（setState の前で止まる）
     /// N140 3/4：読めたら DB の日数に未確定の差分を重ねる（失敗したら差分・基準も変えない）
-    Future<void> _loadVacationData() async {
+    /// N118 4/4：知らせは出さず、失敗したらエラーを返す（読めたら null）
+    Future<Object?> _loadVacationData() async {
       final loaded = <DateTime, double>{};
       try {
         // N67：カレンダーの範囲全体を読む（来年の 🏖️ も出るように）
@@ -384,10 +397,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
         }
       } catch (e) {
         debugPrint('[ShiftManagementScreen] ❌ Error loading vacation data: $e');
-        _onLoadFailed(ShiftLoadPart.vacation, e);
-        return;
+        _markLoadFailed(ShiftLoadPart.vacation);
+        return e;
       }
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _loadFailures.remove(ShiftLoadPart.vacation);
         // この State で初めて読めたときだけ、預けてある差分を受け取る
@@ -402,19 +415,21 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       debugPrint('[ShiftDraft] 有休の読み込み：差分 ${_liveVacationDraft().length} 件'
           '（衝突 ${_vacationConflictDates.length}）');
       print('[ShiftManagementScreen] ✅ VacationMap loaded: ${_vacationMap.length} records');
+      return null;
     }
 
   /// N118：失敗したらパターン一覧は消さずに残す（setState の前で止まる）
-  Future<void> _loadPatterns() async {
+  /// N118 4/4：知らせは出さず、失敗したらエラーを返す（読めたら null）
+  Future<Object?> _loadPatterns() async {
     final List<ShiftPatternModel> dbPatterns;
     try {
       dbPatterns = await _shiftRepository.getAllPatterns();
     } catch (e) {
       debugPrint('[ShiftManagementScreen] ❌ Error loading patterns: $e');
-      _onLoadFailed(ShiftLoadPart.patterns, e);
-      return;
+      _markLoadFailed(ShiftLoadPart.patterns);
+      return e;
     }
-    if (!mounted) return;
+    if (!mounted) return null;
     setState(() {
       _loadFailures.remove(ShiftLoadPart.patterns);
       _patternsLoaded = true;
@@ -433,6 +448,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       }
     });
     print('[ShiftManagementScreen] Loaded ${_patterns.length} patterns');
+    return null;
   }
 
   @override
@@ -1361,6 +1377,25 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );
   }
 
+  /// N118 4/4：まとめて読んだあとの知らせを 1 つだけ出す（失敗があれば赤、衝突の知らせだけならオレンジ）
+  void _showLoadBatchNotice(
+    Set<ShiftLoadPart> failed, {
+    bool eventsFailed = false,
+    String? mergeNotice,
+  }) {
+    final notice = loadBatchNotice(failed, eventsFailed: eventsFailed, mergeNotice: mergeNotice);
+    if (notice == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(notice.text),
+        backgroundColor: notice.isError ? AppColors.warningRed : Colors.orange,
+        duration: Duration(seconds: notice.seconds),
+      ),
+    );
+  }
+
   /// N77：有休（1.0）の日に普通のシフト・休日を入れたら、その日の有休を消す
   /// 半休（0.5）は消さない（Week 20 の「半休＋シフト共存」）。消したら true を返す
   /// N140 3/4：DB からは消さず、未確定にする（確定のときに DB から消える）
@@ -1373,7 +1408,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   }
 
   /// N118：失敗したらイベントは消さずに残し、知らせるだけ（登録・保存は止めない）
+  /// N118 4/4：単独で読むとき（イベント追加から戻る）。まとめて読むときは _loadCalendarEventsQuiet
   Future<void> loadCalendarEvents() async {
+    final error = await _loadCalendarEventsQuiet();
+    if (error == null || !mounted) return;
+    _showTapError('❌ イベントの読み込みに失敗しました: $error');
+  }
+
+  /// N118 4/4：読むだけで知らせない。失敗したらエラーを返す（読めたら null）
+  Future<Object?> _loadCalendarEventsQuiet() async {
     final List<CalendarEvent> events;
     try {
       // N67：カレンダーの範囲全体を読む（来年のイベントも出るように）
@@ -1382,15 +1425,14 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       events = await _shiftRepository.getCalendarEventsForDateRange(startDate, endDate);
     } catch (e) {
       debugPrint('[ShiftManagementScreen] ❌ Error loading calendar events: $e');
-      if (!mounted) return;
-      _showTapError('❌ イベントの読み込みに失敗しました: $e');
-      return;
+      return e;
     }
-    if (!mounted) return;
+    if (!mounted) return null;
     setState(() {
       _calendarEvents.clear();
       _calendarEvents.addAll(events);
     });
+    return null;
   }
   
   /// N95・N96：有休・半休パターンの日は、有休・半休も一緒に消す
@@ -1410,7 +1452,31 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
   /// N118：失敗したら _shiftMap は消さずに残す（空のまま確定してほかの日が消えないように）
   /// 一度読めたあとの再読み込み（再開・タブ切り替え・確定後）が失敗したときも、表示は残す
   /// N140：読めたら DB の内容に未確定の差分を重ねる（失敗したら差分・基準も変えない）
+  /// N118 4/4：単独で読むとき（アプリの復帰・確定後など）。まとめて読むときは _loadShiftsQuiet
   Future<void> loadShifts() async {
+    final result = await _loadShiftsQuiet();
+    if (!mounted) return;
+    final error = result.error;
+    if (error != null) {
+      _showTapError(loadFailureMessage(ShiftLoadPart.shifts, error));
+      return;
+    }
+    final notice = result.notice;
+    if (notice != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(notice),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  /// N118 4/4：読むだけで知らせない。失敗したらエラー、読めたら衝突の知らせ（なければ null）を返す
+  Future<({Object? error, String? notice})> _loadShiftsQuiet() async {
     final Map<DateTime, ShiftPatternModel> loaded;
     try {
       // N67・N72：カレンダーの範囲全体を読む（読んでいない日のシフトが保存で消えないように）
@@ -1421,10 +1487,10 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       loaded = shiftMapFromRows(shiftRecords, _patterns, _defaultDayOffPattern);
     } catch (e) {
       debugPrint('[ShiftManagementScreen] ❌ Error loading shifts: $e');
-      _onLoadFailed(ShiftLoadPart.shifts, e);
-      return;
+      _markLoadFailed(ShiftLoadPart.shifts);
+      return (error: e, notice: null);
     }
-    if (!mounted) return;
+    if (!mounted) return (error: null, notice: null);
     late final ShiftDraftMergeResult mergeResult;
     setState(() {
       _loadFailures.remove(ShiftLoadPart.shifts);
@@ -1452,21 +1518,11 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     // N140 3/4：有休の読み込みで見つかった衝突もまとめて知らせる（別々に出すと前の SnackBar が消えるため）
     final notice = draftMergeNotice(mergeResult, vacationConflictDates: _vacationConflictDates);
     _vacationConflictDates.clear();
-    if (notice != null) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(notice),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    }
     print("DEBUG: _shiftMap loaded with ${_shiftMap.length} entries");
     _shiftMap.forEach((key, value) {
       print("  ${key.toString()}: ${value.pattern?.patternName}");
     });
+    return (error: null, notice: notice);
   }
 
   String _getEventEmoji(String eventType) {
