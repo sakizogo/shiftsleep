@@ -87,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _initializeCurrentSettings();  // ← 追加
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
-    _loadDailyWakeUpSetting();  // ✅ N11: 毎日使用フラグと今夜の手動起床の有無を反映
+    // N154：毎日使用フラグと今夜の手動起床の有無は _loadSettings の中で読む（読めなければバナー）
     _loadAlarmEnabledSetting();  // ✅ H4: 保存済みの ON/OFF をスイッチに反映
     // ============================================================
   }
@@ -100,6 +100,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // N26：RevenueCat が configure されていないときは、DB の値によらず無料版として表示する
       final isPremium = (settings?.isPremiumUser ?? false) &&
           await _premiumService.isRevenueCatConfigured();
+      // N154：毎日使用フラグと今夜の手動起床の有無も同じ try で読む（読めなければ既定の表示のまま押せなくする）
+      final isDaily = await ManualWakeService.isDaily();
+      final hasTonight = (await ManualWakeService.getActive()) != null;
 
       // N118 2/4 2c：起床時刻を読めない値も「読み込めなかった」に含めるため、setState の前に変換する
       TimeOfDay? wakeUpTime;
@@ -124,6 +127,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _isPremiumUser = isPremium;
           // isAlarmEnabled は削除
         }
+        _useDailyWakeUpSetting = isDaily;  // N154
+        _hasManualWakeTonight = hasTonight;  // N154
         // N118 2/4 2c：行がなければ既定値のまま（今と同じ）。どちらも読み込めたので操作を押せるようにする
         _settingsLoaded = true;
         _settingsLoadFailed = false;
@@ -212,14 +217,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// ✅ N10/N11: 毎日使用フラグと、今夜の手動起床が有効かを読み込む
-  Future<void> _loadDailyWakeUpSetting() async {
-    final isDaily = await ManualWakeService.isDaily();
-    final hasTonight = (await ManualWakeService.getActive()) != null;
-    if (!mounted) return;
+  /// N154：「毎日」チェックのあとの読み直し用（最初の読み込みと［再読み込み］は _loadSettings）。
+  ///    読めたら true。読めなければ表示は変えずに false（知らせは呼び出し元）
+  Future<bool> _loadDailyWakeUpSetting() async {
+    final bool isDaily;
+    final bool hasTonight;
+    try {
+      isDaily = await ManualWakeService.isDaily();
+      hasTonight = (await ManualWakeService.getActive()) != null;
+    } catch (e) {
+      debugPrint('❌ N154: 毎日使用フラグ・今夜の手動起床を読み直せませんでした: $e');
+      return false;
+    }
+    if (!mounted) return true;
     setState(() {
       _useDailyWakeUpSetting = isDaily;
       _hasManualWakeTonight = hasTonight;
     });
+    return true;
   }
 
     // ========== 🆕 新規追加：SharedPreferences から アラーム有効フラグを読み込み ==========
@@ -815,12 +830,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               } else {
                                 await ManualWakeService.setDaily(false);
                               }
-                              await _loadDailyWakeUpSetting();
+                              final reloaded = await _loadDailyWakeUpSetting();
 
                               print('[SettingsScreen] 📌 毎日設定チェックボックス: ${value ? "✅ ON" : "❌ OFF"}');
 
                               // ユーザーに通知
-                              if (mounted) {
+                              // N154：読み直せなかったときは成功の知らせの代わりに ⚠️（バナーは出さない）
+                              if (!reloaded) {
+                                messenger.hideCurrentSnackBar();
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('⚠️ 毎日の設定は保存しましたが、表示を読み直せませんでした。画面を開き直してください'),
+                                    backgroundColor: Colors.orange,
+                                    duration: Duration(seconds: 6),
+                                  ),
+                                );
+                              } else if (mounted) {
                                 messenger.showSnackBar(
                                   SnackBar(
                                     content: Text(value
