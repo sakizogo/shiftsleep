@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:shiftsleep/database/database_helper.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/services/vacation_allocation.dart';
+import 'package:shiftsleep/services/in_flight.dart';  // N160
 
 class VacationRepository {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -740,16 +741,13 @@ class VacationRepository {
   }
 
   /// 処理中の自動生成（userId ごと）。もう一度呼ばれたら同じ Future を返して 1 回にまとめる（N62）
+  /// N160：まとめる処理は runOnce（終わったら結果・失敗が呼び出し元に届く）
   static final Map<String, Future<int>> _autoGenerateInFlight = {};
 
   /// DB の入社日（vacation_settings.hired_date）と初回付与日（app_settings.first_accrual_date）から
   /// 今日までの付与を自動生成する（N62）。どちらかがなければ何もしない。作った件数を返す
   Future<int> autoGenerateAccrualsFromSettings(String userId) {
-    return _autoGenerateInFlight.putIfAbsent(
-      userId,
-      () => _autoGenerateAccrualsFromSettings(userId)
-          .whenComplete(() => _autoGenerateInFlight.remove(userId)),
-    );
+    return runOnce(_autoGenerateInFlight, userId, () => _autoGenerateAccrualsFromSettings(userId));
   }
 
   Future<int> _autoGenerateAccrualsFromSettings(String userId) async {
