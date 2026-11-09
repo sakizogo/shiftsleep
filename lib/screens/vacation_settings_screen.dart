@@ -284,7 +284,7 @@ Future<void> _generateAccrualSchedule() async {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('❌ 付与の自動生成に失敗しました: $e\nもう一度押すと残りを作ります'),
+          content: Text('❌ 付与の自動生成に失敗しました: $e\nもう一度押すと作ります'),
           duration: const Duration(seconds: 4),
         ),
       );

@@ -108,7 +108,17 @@ class VacationRepository {
     String? notes,
   }) async {
     final db = await _dbHelper.database;
+    await _insertAccrual(db, userId, accrualDate, daysGranted, notes: notes);
+  }
 
+  /// N156：付与を 1 行入れる。渡された executor（db か txn）だけを使う
+  static Future<void> _insertAccrual(
+    DatabaseExecutor db,
+    String userId,
+    DateTime accrualDate,
+    double daysGranted, {
+    String? notes,
+  }) async {
     final accrual = VacationAccrual.create(
       userId: userId,
       accrualDate: accrualDate,
@@ -128,6 +138,11 @@ class VacationRepository {
   /// ユーザーの有給付与履歴を全て取得
   Future<List<VacationAccrual>> getVacationAccrualsByUser(String userId) async {
     final db = await _dbHelper.database;
+    return _queryAccrualsByUser(db, userId);
+  }
+
+  /// N156：付与履歴を読む。渡された executor（db か txn）だけを使う
+  static Future<List<VacationAccrual>> _queryAccrualsByUser(DatabaseExecutor db, String userId) async {
     final result = await db.query(
       'vacation_accruals',
       where: 'user_id = ?',
@@ -784,48 +799,59 @@ class VacationRepository {
     try {
       print('🔄 autoGenerateAccruals() 開始: userId=$userId');
 
-      // 既存の付与履歴を確認
-      final existingAccruals = await getVacationAccrualsByUser(userId);
-      print('📊 既存の付与履歴: ${existingAccruals.length}件');
+      // N156：既存の読み取り〜足りない付与の insert を 1 つのトランザクションにする
+      // （同時に 2 回呼ばれても、2 回目は 1 回目が入れた行を読んでからスキップする）
+      // 中では txn だけを使う（db や db を使うメソッドを呼ぶと sqflite が固まるため）
+      final db = await _dbHelper.database;
+      createdCount = await db.transaction((txn) async {
+        var createdInTxn = 0;
 
-      // 今日までに来た付与日を、古い順に処理する（N61）
-      for (final accrual in accrualsUntilToday(firstAccrualDate)) {
-        final accrualDate = accrual.date;
+        // 既存の付与履歴を確認
+        final existingAccruals = await _queryAccrualsByUser(txn, userId);
+        print('📊 既存の付与履歴: ${existingAccruals.length}件');
 
-        // この年の付与日数（N62・N63：初回からの回数で法定の表を引く）
-        final daysGranted = accrual.days;
+        // 今日までに来た付与日を、古い順に処理する（N61）
+        for (final accrual in accrualsUntilToday(firstAccrualDate)) {
+          final accrualDate = accrual.date;
 
-        // 失効日（最後に使える日）。DB に入る値も VacationAccrual.create で同じ計算（N60）
-        final expiryDate = VacationAccrual.calculateExpiryDate(accrualDate);
+          // この年の付与日数（N62・N63：初回からの回数で法定の表を引く）
+          final daysGranted = accrual.days;
 
-        // 既に同じ日付の付与があるかチェック
-        final isDuplicate = existingAccruals.any((accrual) {
-          return accrual.accrualDate.year == accrualDate.year &&
-                 accrual.accrualDate.month == accrualDate.month &&
-                 accrual.accrualDate.day == accrualDate.day;
-        });
+          // 失効日（最後に使える日）。DB に入る値も VacationAccrual.create で同じ計算（N60）
+          final expiryDate = VacationAccrual.calculateExpiryDate(accrualDate);
 
-        if (isDuplicate) {
-          print('✅ スキップ（既に登録済み）：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 $daysGranted日');
-          continue;
+          // 既に同じ日付の付与があるかチェック
+          final isDuplicate = existingAccruals.any((accrual) {
+            return accrual.accrualDate.year == accrualDate.year &&
+                   accrual.accrualDate.month == accrualDate.month &&
+                   accrual.accrualDate.day == accrualDate.day;
+          });
+
+          if (isDuplicate) {
+            print('✅ スキップ（既に登録済み）：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 $daysGranted日');
+            continue;
+          }
+
+          // 付与を記録
+          await _insertAccrual(
+            txn,
+            userId,
+            accrualDate,
+            daysGranted.toDouble(),
+            notes: '自動生成：${accrualDate.year}年度付与',
+          );
+          createdInTxn++;
+
+          print('✅ 付与を自動生成：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 → ${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日 ($daysGranted日)');
         }
-
-        // 付与を記録
-        await recordVacationAccrual(
-          userId,
-          accrualDate,
-          daysGranted.toDouble(),
-          notes: '自動生成：${accrualDate.year}年度付与',
-        );
-        createdCount++;
-
-        print('✅ 付与を自動生成：${accrualDate.year}年${accrualDate.month}月${accrualDate.day}日 → ${expiryDate.year}年${expiryDate.month}月${expiryDate.day}日 ($daysGranted日)');
-      }
+        return createdInTxn;
+      });
 
       print('✅ autoGenerateAccruals() 完了');
     } catch (e) {
       print('❌ Error auto-generating accruals: $e');
-      // N91：失敗を呼んだ側に伝える（途中まで作った分は残る。同じ日付はスキップするので再実行で埋まる）
+      // N91：失敗を呼んだ側に伝える
+      // N156：トランザクションなので、途中で失敗するとこの回に入れた付与はすべて取り消される。再実行で全部作る
       rethrow;
     }
     return createdCount;
