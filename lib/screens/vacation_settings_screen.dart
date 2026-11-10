@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/vacation_load_state.dart';  // N118 3/4 3b
+import 'package:shiftsleep/services/accrual_sync_messages.dart';  // N165 2b
 
 class VacationSettingsScreen extends StatefulWidget {
   final String userId;
@@ -33,6 +34,8 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
   VacationLoadState _loadState = VacationLoadState.loading;
   // N118 3/4 3b：再読み込み中（二度押し防止）
   bool _isReloading = false;
+  // N165 2b：保存中（DB を読んでいる間・確認ダイアログ・保存。二重押し防止）
+  bool _isSaving = false;
 
   bool get _canEdit => canEditVacationSettings(_loadState);
 
@@ -314,6 +317,7 @@ Future<void> _generateAccrualSchedule() async {
   // 設定を保存
   Future<void> _saveVacationSettings() async {
     if (!_canEdit) return;  // N118 3/4 3b：読み込めていないときは保存しない
+    if (_isSaving) return;  // N165 2b：二重押し防止
     if (_formKey.currentState != null && !_formKey.currentState!.validate()) {
       return;
     }
@@ -360,33 +364,172 @@ Future<void> _generateAccrualSchedule() async {
     }
 
     // N82：どれかが失敗したら成功を出さない。失敗したときは入力をそのまま残す
-    // N84：持ち越しの基準日は DB の初回付与日から決まるので、初回付与日を先に保存する
-    try {
-      await _repository.saveVacationSettings(
-        widget.userId,
-        hiredDate,
-        annualDays,
-      );
-      if (firstAccrualDate != null) {
-        await _repository.saveFirstAccrualDate(widget.userId, firstAccrualDate);
-      }
-      await _repository.saveCarriedOverDays(widget.userId, carriedOverDays);
-    } catch (e) {
-      debugPrint('❌ N82: 有給設定の保存に失敗: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ 有給設定の保存に失敗しました: $e')),
-        );
-      }
-      return;
+    // N165 2b：まとめて 1 つの transaction で保存する（失敗したら何も保存しない）
+    // 初回付与日が変わったら（保存済みが null のときも）、付与を合わせ直す。消す・足す・知らせることがあれば先に確認する
+    // SnackBar は最初の await の前に取った messenger で出す（画面を閉じていても失敗を知らせる。N118 3/4 3c と同じ）
+    final messenger = ScaffoldMessenger.of(context);
+    void showMessage(String text) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 4)));
     }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('✅ 有給設定を保存しました')),
-      );
-      _loadSettings();
+    setState(() => _isSaving = true);
+    try {
+      var changed = false;
+      if (firstAccrualDate != null) {
+        final DateTime? saved;
+        try {
+          saved = await _repository.getFirstAccrualDate(widget.userId);
+        } catch (e) {
+          debugPrint('❌ N165: 保存済みの初回付与日を読めないため、保存しません: $e');
+          showMessage('❌ 有給設定を保存できませんでした（保存済みの初回付与日を読めませんでした）: $e');
+          return;
+        }
+        if (!mounted) return;
+        changed = isFirstAccrualDateChanged(saved: saved, input: firstAccrualDate);
+        debugPrint('🔍 N165: 初回付与日 ${saved == null ? '未設定' : accrualDateText(saved)} → ${accrualDateText(firstAccrualDate)}（${changed ? '変わった' : '変わっていない'}）');
+
+        if (changed) {
+          final ({AccrualSyncPlan plan, AccrualSyncImpact impact}) preview;
+          try {
+            preview = await _repository.previewFirstAccrualDateChange(
+              widget.userId,
+              firstAccrualDate,
+              carriedOverDays,
+            );
+          } catch (e) {
+            debugPrint('❌ N165: 付与の確認に失敗したため、保存しません: $e');
+            showMessage('❌ 有給設定を保存できませんでした（付与の確認に失敗しました）: $e');
+            return;
+          }
+          if (!mounted) return;
+
+          if (accrualSyncNeedsConfirmation(
+            plan: preview.plan,
+            impact: preview.impact,
+            firstAccrualDate: firstAccrualDate,
+            carriedOverDays: carriedOverDays,
+          )) {
+            final confirmed = await _confirmAccrualSync(
+              saved: saved,
+              input: firstAccrualDate,
+              plan: preview.plan,
+              impact: preview.impact,
+              carriedOverDays: carriedOverDays,
+            );
+            if (!mounted) return;
+            if (confirmed != true) {
+              debugPrint('ℹ️ N165: 合わせ直しの確認でキャンセル。何も保存しません');
+              showMessage(vacationSettingsNotSavedMessage);
+              return;
+            }
+          } else {
+            debugPrint('ℹ️ N165: 消す・足す付与も知らせることもないので、確認なしで保存します');
+          }
+        }
+      }
+
+      final ({int deletedCount, int addedCount})? synced;
+      try {
+        synced = await _repository.saveVacationSettingsAll(
+          widget.userId,
+          hiredDate: hiredDate,
+          annualDays: annualDays,
+          firstAccrualDate: firstAccrualDate,
+          carriedOverDays: carriedOverDays,
+          syncAccruals: changed,
+        );
+      } catch (e) {
+        debugPrint('❌ N82: 有給設定の保存に失敗: $e');
+        showMessage('❌ 有給設定の保存に失敗しました（何も保存していません）: $e');
+        return;
+      }
+
+      showMessage(vacationSettingsSavedMessage(synced));
+      if (mounted) _loadSettings();
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  /// N165 2b：付与の合わせ直しの確認。［保存して付与を合わせ直す］なら true
+  /// 色だけに頼らず、🗑️・➕・⚠️ と文字で区別する。一覧が長いときはスクロールする
+  Future<bool?> _confirmAccrualSync({
+    required DateTime? saved,
+    required DateTime input,
+    required AccrualSyncPlan plan,
+    required AccrualSyncImpact impact,
+    required int carriedOverDays,
+  }) {
+    final warnings = accrualSyncWarningLines(
+      impact: impact,
+      firstAccrualDate: input,
+      carriedOverDays: carriedOverDays,
+    );
+    const headingStyle = TextStyle(fontWeight: FontWeight.bold);
+    const itemStyle = TextStyle(fontSize: 13);
+
+    Widget item(String text) => Padding(
+          padding: const EdgeInsets.only(left: 8, bottom: 4),
+          child: Text(text, style: itemStyle),
+        );
+
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(accrualSyncDialogTitle),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(firstAccrualDateChangeText(saved: saved, input: input)),
+                const SizedBox(height: 12),
+                if (plan.toDelete.isEmpty)
+                  const Text('🗑️ 消す付与はありません', style: headingStyle)
+                else ...[
+                  Text('🗑️ 消す付与（${plan.toDelete.length} 件）', style: headingStyle),
+                  const SizedBox(height: 4),
+                  for (final a in plan.toDelete)
+                    item('・${accrualDateText(a.accrualDate)}　${accrualDaysText(a.daysGranted)}'),
+                ],
+                const SizedBox(height: 8),
+                if (plan.toAdd.isEmpty)
+                  const Text('➕ 足す付与はありません', style: headingStyle)
+                else ...[
+                  Text('➕ 足す付与（${plan.toAdd.length} 件）', style: headingStyle),
+                  const SizedBox(height: 4),
+                  for (final a in plan.toAdd)
+                    item('・${accrualDateText(a.date)}　${accrualDaysText(a.days.toDouble())}'),
+                ],
+                if (warnings.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  for (final w in warnings)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(w, style: headingStyle),
+                    ),
+                ],
+                const SizedBox(height: 12),
+                const Text(accrualSyncUsageNote, style: itemStyle),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(accrualSyncCancelLabel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(accrualSyncConfirmLabel),
+          ),
+        ],
+      ),
+    );
   }
 
   // 付与日数を自動計算で更新
@@ -792,13 +935,13 @@ Future<void> _generateAccrualSchedule() async {
 
             // 🔘 ボタンセクション
             ElevatedButton(
-              onPressed: _saveVacationSettings,
+              onPressed: _isSaving ? null : _saveVacationSettings,  // N165 2b：保存中は押せない
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 48),
                 backgroundColor: Colors.blue,
               ),
-              child: const Text(
-                '💾 設定を保存',
+              child: Text(
+                _isSaving ? '⏳ 保存中…' : '💾 設定を保存',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
