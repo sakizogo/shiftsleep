@@ -1,3 +1,5 @@
+import 'dart:async';  // N165：FutureOr
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shiftsleep/database/database_helper.dart';
@@ -9,6 +11,18 @@ import 'package:shiftsleep/services/in_flight.dart';  // N160
 typedef AccrualSyncPlan = ({
   List<VacationAccrual> toDelete,
   List<({DateTime date, int days})> toAdd,
+});
+
+/// N165：合わせ直したときの影響（確認ダイアログで知らせる）
+/// - carryOverTargetLost：持ち越しの対象の付与が、今はあって有効なのに、合わせ直すとなくなる（持ち越しの入力が 0 なら false）
+/// - unallocatedBefore / unallocatedAfter：どの付与にも入らない使用の日数（合わせ直す前・後）
+/// - usagesBeforeFirstCount / usagesBeforeFirstDays：新しい初回付与日より前の使用の件数・日数
+typedef AccrualSyncImpact = ({
+  bool carryOverTargetLost,
+  double unallocatedBefore,
+  double unallocatedAfter,
+  int usagesBeforeFirstCount,
+  double usagesBeforeFirstDays,
 });
 
 class VacationRepository {
@@ -36,6 +50,16 @@ class VacationRepository {
     int annualDays,
   ) async {
     final db = await _dbHelper.database;
+    await _saveVacationSettingsIn(db, userId, hiredDate, annualDays);
+  }
+
+  /// N165：saveVacationSettings の中身。渡された executor（db か txn）だけを使う
+  static Future<void> _saveVacationSettingsIn(
+    DatabaseExecutor db,
+    String userId,
+    DateTime hiredDate,
+    int annualDays,
+  ) async {
     final now = DateTime.now();
 
     final settings = VacationSettings(
@@ -490,19 +514,64 @@ class VacationRepository {
     }
   }
 
-  /// 今日の時点の直近の付与日（初回付与日から 1 年ごと）。初回付与日がないか、まだ付与が来ていなければ null（N80）
-  Future<DateTime?> _latestAccrualDateUntilToday(String userId) async {
-    final firstAccrualDate = await getFirstAccrualDate(userId);
+  /// today の時点の直近の付与日（初回付与日から 1 年ごと）。初回付与日がないか、まだ付与が来ていなければ null（N80）
+  /// N165：DB を使わない形にした（today を渡せる）
+  static DateTime? latestAccrualDateUntil(DateTime? firstAccrualDate, DateTime today) {
     if (firstAccrualDate == null) return null;
-    final accruals = accrualsUntilToday(firstAccrualDate);
+    final accruals = accrualsUntil(firstAccrualDate, today);
     return accruals.isEmpty ? null : accruals.last.date;
   }
 
-  /// 持ち越しを保存するときの基準日を決める（N80）
-  /// - 日数が 0 なら null
+  /// 保存済みの基準日をそのまま使えるなら、その基準日。使えなければ null（N80。N165 で DB を使わない形に切り出し）
+  /// 日数が 0 より大きく DB の値と同じで、DB の基準日があり、accruals の中で対象の付与
+  /// （基準日より前でいちばん新しい付与）が today の時点で有効なとき
+  static DateTime? keptCarriedOverBaseDate({
+    required int carriedOverDays,
+    required int storedDays,
+    required DateTime? storedBaseDate,
+    required List<VacationAccrual> accruals,
+    required DateTime today,
+  }) {
+    if (carriedOverDays <= 0) return null;
+    if (storedDays != carriedOverDays || storedBaseDate == null) return null;
+    final balance = allocateUsage(
+      accruals: accruals,
+      usages: const [],
+      today: today,
+      carryOver: CarryOver(baseDate: storedBaseDate, days: storedDays.toDouble()),
+    );
+    final targetIsValid = balance.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
+    return targetIsValid ? storedBaseDate : null;
+  }
+
+  /// 持ち越しを保存するときの基準日を決める（N80。N165 で DB を使わない形に切り出し）
+  /// - 日数が 0 以下なら null
   /// - 日数が DB の値と同じで、対象の付与（基準日より前でいちばん新しい付与）がまだ有効なら、基準日を変えない
-  /// - それ以外（日数が変わった・基準日が空・対象の付与が失効した）は、その時点の直近の付与日
-  Future<DateTime?> _carriedOverBaseDateToSave(
+  /// - それ以外（日数が変わった・基準日が空・対象の付与が失効した）は、初回付与日から計算した today までで最後の付与日
+  /// _carriedOverBaseDateToSave と同じ判定（あちらは必要なときだけ DB を読み、ログを出す）
+  static DateTime? decideCarriedOverBaseDate({
+    required int carriedOverDays,
+    required int storedDays,
+    required DateTime? storedBaseDate,
+    required List<VacationAccrual> accruals,
+    required DateTime? firstAccrualDate,
+    required DateTime today,
+  }) {
+    if (carriedOverDays <= 0) return null;
+    final kept = keptCarriedOverBaseDate(
+      carriedOverDays: carriedOverDays,
+      storedDays: storedDays,
+      storedBaseDate: storedBaseDate,
+      accruals: accruals,
+      today: today,
+    );
+    return kept ?? latestAccrualDateUntil(firstAccrualDate, today);
+  }
+
+  /// 持ち越しを保存するときの基準日を決める（N80。判定は decideCarriedOverBaseDate と同じ）
+  /// N165：渡された executor（db か txn）だけを使う。付与の行・初回付与日は必要なときだけ読む
+  static Future<DateTime?> _carriedOverBaseDateToSave(
+    DatabaseExecutor db,
     String userId,
     int carriedOverDays,
     Map<String, Object?>? stored,
@@ -512,21 +581,23 @@ class VacationRepository {
     final storedDays = (stored?['carried_over_days'] as num?)?.toInt() ?? 0;
     final storedBaseDateStr = stored?['carried_over_base_date'] as String?;
     if (storedDays == carriedOverDays && storedBaseDateStr != null) {
-      final storedBaseDate = DateTime.parse(storedBaseDateStr);
-      final balance = allocateUsage(
-        accruals: await getVacationAccrualsByUser(userId),
-        usages: const [],
+      final kept = keptCarriedOverBaseDate(
+        carriedOverDays: carriedOverDays,
+        storedDays: storedDays,
+        storedBaseDate: DateTime.parse(storedBaseDateStr),
+        accruals: await _queryAccrualsByUser(db, userId),
         today: DateTime.now(),
-        carryOver: CarryOver(baseDate: storedBaseDate, days: storedDays.toDouble()),
       );
-      final targetIsValid = balance.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
-      if (targetIsValid) {
+      if (kept != null) {
         debugPrint('ℹ️ N80: 持ち越しの日数が同じで対象の付与も有効なので、基準日は ${storedBaseDateStr.split('T')[0]} のまま');
-        return storedBaseDate;
+        return kept;
       }
     }
 
-    final latestAccrualDate = await _latestAccrualDateUntilToday(userId);
+    final latestAccrualDate = latestAccrualDateUntil(
+      await _queryFirstAccrualDate(db, userId),
+      DateTime.now(),
+    );
     if (latestAccrualDate == null) {
       debugPrint('⚠️ N80: 直近の付与日がわからないため、持ち越しの基準日は空のまま');
     } else {
@@ -540,57 +611,66 @@ class VacationRepository {
   Future<void> saveCarriedOverDays(String userId, int carriedOverDays) async {
     try {
       final db = await _dbHelper.database;
-      
-      // app_settings のレコード存在確認
-      final results = await db.query(
-        'app_settings',
-        where: 'user_id = ?',
-        whereArgs: [userId],
-      );
-
-      // N80：持ち越しの基準日
-      final baseDate = await _carriedOverBaseDateToSave(
-        userId,
-        carriedOverDays,
-        results.isEmpty ? null : results.first,
-      );
-
-      if (results.isEmpty) {
-        // レコードがない場合は INSERT（デフォルト値を含める）
-        await db.insert(
-          'app_settings',
-          {
-            'user_id': userId,
-            'alarm_time_before_shift': 30,  // デフォルト値
-            'wake_up_time': '07:00',  // デフォルト値
-            'selected_alarm_sound': 'default',  // デフォルト値
-            'advice_promo_visible': 1,  // デフォルト値
-            'is_premium_user': 0,  // デフォルト値
-            'carried_over_days': carriedOverDays,
-            'carried_over_base_date': baseDate?.toIso8601String(),
-            'created_at': DateTime.now().toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-        print('✅ app_settings を新規作成（持ち越し有休: $carriedOverDays日）');
-      } else {
-        // レコードがある場合は UPDATE
-        await db.update(
-          'app_settings',
-          {
-            'carried_over_days': carriedOverDays,
-            'carried_over_base_date': baseDate?.toIso8601String(),
-            'updated_at': DateTime.now().toIso8601String(),
-          },
-          where: 'user_id = ?',
-          whereArgs: [userId],
-        );
-        print('✅ 持ち越し有休数を更新: $carriedOverDays日');
-      }
+      await _saveCarriedOverDaysIn(db, userId, carriedOverDays);
     } catch (e) {
       print('❌ Error saving carried over days: $e');
       rethrow;  // N82：画面で失敗を知らせる
+    }
+  }
+
+  /// N165：saveCarriedOverDays の中身。渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
+  static Future<void> _saveCarriedOverDaysIn(
+    DatabaseExecutor db,
+    String userId,
+    int carriedOverDays,
+  ) async {
+    // app_settings のレコード存在確認
+    final results = await db.query(
+      'app_settings',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+
+    // N80：持ち越しの基準日
+    final baseDate = await _carriedOverBaseDateToSave(
+      db,
+      userId,
+      carriedOverDays,
+      results.isEmpty ? null : results.first,
+    );
+
+    if (results.isEmpty) {
+      // レコードがない場合は INSERT（デフォルト値を含める）
+      await db.insert(
+        'app_settings',
+        {
+          'user_id': userId,
+          'alarm_time_before_shift': 30,  // デフォルト値
+          'wake_up_time': '07:00',  // デフォルト値
+          'selected_alarm_sound': 'default',  // デフォルト値
+          'advice_promo_visible': 1,  // デフォルト値
+          'is_premium_user': 0,  // デフォルト値
+          'carried_over_days': carriedOverDays,
+          'carried_over_base_date': baseDate?.toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      print('✅ app_settings を新規作成（持ち越し有休: $carriedOverDays日）');
+    } else {
+      // レコードがある場合は UPDATE
+      await db.update(
+        'app_settings',
+        {
+          'carried_over_days': carriedOverDays,
+          'carried_over_base_date': baseDate?.toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      print('✅ 持ち越し有休数を更新: $carriedOverDays日');
     }
   }
 
@@ -605,59 +685,73 @@ class VacationRepository {
   Future<void> saveFirstAccrualDate(String userId, DateTime firstAccrualDate) async {
     try {
       final db = await _dbHelper.database;
-      final now = DateTime.now();
-      
-      // app_settings のレコード存在確認
-      final results = await db.query(
-        'app_settings',
-        where: 'user_id = ?',
-        whereArgs: [userId],
-      );
-      
-      if (results.isEmpty) {
-        // レコードがない場合は INSERT（デフォルト値を含める）
-        await db.insert(
-          'app_settings',
-          {
-            'user_id': userId,
-            'alarm_time_before_shift': 30,
-            'wake_up_time': '07:00',
-            'selected_alarm_sound': 'default',
-            'advice_promo_visible': 1,
-            'is_premium_user': 0,
-            'carried_over_days': 0,
-            'first_accrual_date': firstAccrualDate.toIso8601String(),
-            'created_at': now.toIso8601String(),
-            'updated_at': now.toIso8601String(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-        print('✅ 初回付与日を新規作成: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
-      } else {
-        // レコードがある場合は UPDATE
-        await db.update(
-          'app_settings',
-          {
-            'first_accrual_date': firstAccrualDate.toIso8601String(),
-            'updated_at': now.toIso8601String(),
-          },
-          where: 'user_id = ?',
-          whereArgs: [userId],
-        );
-        print('✅ 初回付与日を更新: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
-      }
+      await _saveFirstAccrualDateIn(db, userId, firstAccrualDate);
     } catch (e) {
       print('❌ Error saving first accrual date: $e');
       rethrow;  // N82：画面で失敗を知らせる
     }
   }
 
+  /// N165：saveFirstAccrualDate の中身。渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
+  static Future<void> _saveFirstAccrualDateIn(
+    DatabaseExecutor db,
+    String userId,
+    DateTime firstAccrualDate,
+  ) async {
+    final now = DateTime.now();
+
+    // app_settings のレコード存在確認
+    final results = await db.query(
+      'app_settings',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+
+    if (results.isEmpty) {
+      // レコードがない場合は INSERT（デフォルト値を含める）
+      await db.insert(
+        'app_settings',
+        {
+          'user_id': userId,
+          'alarm_time_before_shift': 30,
+          'wake_up_time': '07:00',
+          'selected_alarm_sound': 'default',
+          'advice_promo_visible': 1,
+          'is_premium_user': 0,
+          'carried_over_days': 0,
+          'first_accrual_date': firstAccrualDate.toIso8601String(),
+          'created_at': now.toIso8601String(),
+          'updated_at': now.toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      print('✅ 初回付与日を新規作成: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
+    } else {
+      // レコードがある場合は UPDATE
+      await db.update(
+        'app_settings',
+        {
+          'first_accrual_date': firstAccrualDate.toIso8601String(),
+          'updated_at': now.toIso8601String(),
+        },
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      print('✅ 初回付与日を更新: ${firstAccrualDate.year}年${firstAccrualDate.month}月${firstAccrualDate.day}日');
+    }
+  }
+
   /// 初回付与日を読み込み
   /// N118 3/4：未登録なら null。読めなかったときは例外を上げる（「未登録」と分ける）
-  Future<DateTime?> getFirstAccrualDate(String userId) async {
+  Future<DateTime?> getFirstAccrualDate(String userId) {
+    return _queryFirstAccrualDate(_dbHelper.database, userId);
+  }
+
+  /// N165：getFirstAccrualDate の中身。渡された executor（db か txn）だけを使う（ログ・例外の扱いは同じ）
+  /// db は Future でもよい（getFirstAccrualDate では DB を開くところの失敗も同じログにするため）
+  static Future<DateTime?> _queryFirstAccrualDate(FutureOr<DatabaseExecutor> executor, String userId) async {
     try {
-      final db = await _dbHelper.database;
-      
+      final db = await executor;
       final results = await db.query(
         'app_settings',
         columns: ['first_accrual_date'],
@@ -732,7 +826,11 @@ class VacationRepository {
 
   /// 最初の付与日から、今日までに来た付与の一覧（古い順）（N61・N62）
   static List<({DateTime date, int days})> accrualsUntilToday(DateTime firstAccrualDate) {
-    final now = DateTime.now();
+    return accrualsUntil(firstAccrualDate, DateTime.now());
+  }
+
+  /// 最初の付与日から、now の日までに来た付与の一覧（古い順）（N165：accrualsUntilToday の今日を渡せる形）
+  static List<({DateTime date, int days})> accrualsUntil(DateTime firstAccrualDate, DateTime now) {
     final today = DateTime(now.year, now.month, now.day);
     final accruals = <({DateTime date, int days})>[];
     for (int i = 0; i < 100; i++) {  // 万一のための上限
@@ -965,6 +1063,156 @@ class VacationRepository {
   /// ログ用の 'YYYY-MM-DD'（N165）
   static String _dateText(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  /// 合わせ直したときの影響を計算する（N165。DB は使わない）
+  /// - 合わせ直したあとの付与：existing から plan.toDelete を除き、plan.toAdd を足したもの
+  /// - 合わせ直したあとの持ち越しの基準日：decideCarriedOverBaseDate（保存と同じ判定）
+  /// - 合わせ直す前の持ち越し：DB の日数と基準日（getCarryOver と同じく、日数が 0 以下か基準日がなければなし）
+  static AccrualSyncImpact evaluateAccrualSync({
+    required List<VacationAccrual> existing,
+    required AccrualSyncPlan plan,
+    required List<VacationUsage> usages,
+    required int carriedOverDays,
+    required int storedDays,
+    required DateTime? storedBaseDate,
+    required DateTime firstAccrualDate,
+    required DateTime today,
+  }) {
+    final after = [
+      ...existing.where((a) => !plan.toDelete.contains(a)),
+      for (final s in plan.toAdd)
+        VacationAccrual.create(
+          userId: existing.isEmpty ? '' : existing.first.userId,
+          accrualDate: s.date,
+          daysGranted: s.days.toDouble(),
+          notes: autoAccrualNotes(s.date),
+        ),
+    ];
+
+    final carryOverBefore = storedDays > 0 && storedBaseDate != null
+        ? CarryOver(baseDate: storedBaseDate, days: storedDays.toDouble())
+        : null;
+    final baseDateAfter = decideCarriedOverBaseDate(
+      carriedOverDays: carriedOverDays,
+      storedDays: storedDays,
+      storedBaseDate: storedBaseDate,
+      accruals: after,
+      firstAccrualDate: firstAccrualDate,
+      today: today,
+    );
+    final carryOverAfter = carriedOverDays > 0 && baseDateAfter != null
+        ? CarryOver(baseDate: baseDateAfter, days: carriedOverDays.toDouble())
+        : null;
+
+    final balanceBefore = allocateUsage(
+      accruals: existing,
+      usages: usages,
+      today: today,
+      carryOver: carryOverBefore,
+    );
+    final balanceAfter = allocateUsage(
+      accruals: after,
+      usages: usages,
+      today: today,
+      carryOver: carryOverAfter,
+    );
+    bool hasValidTarget(VacationBalance b) =>
+        b.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
+
+    final first = DateTime(firstAccrualDate.year, firstAccrualDate.month, firstAccrualDate.day);
+    final usagesBeforeFirst = usages.where((u) =>
+        DateTime(u.usageDate.year, u.usageDate.month, u.usageDate.day).isBefore(first));
+
+    return (
+      carryOverTargetLost: carriedOverDays > 0 &&
+          hasValidTarget(balanceBefore) &&
+          !hasValidTarget(balanceAfter),
+      unallocatedBefore: balanceBefore.unallocatedDays,
+      unallocatedAfter: balanceAfter.unallocatedDays,
+      usagesBeforeFirstCount: usagesBeforeFirst.length,
+      usagesBeforeFirstDays: usagesBeforeFirst.fold(0.0, (sum, u) => sum + u.daysUsed),
+    );
+  }
+
+  /// 確認ダイアログ用：初回付与日を firstAccrualDate に変えて保存したときの計画と影響（N165）
+  /// DB は読むだけ。carriedOverDays は保存しようとしている持ち越しの日数（入力欄の値）
+  Future<({AccrualSyncPlan plan, AccrualSyncImpact impact})> previewFirstAccrualDateChange(
+    String userId,
+    DateTime firstAccrualDate,
+    int carriedOverDays,
+  ) async {
+    final db = await _dbHelper.database;
+    final existing = await _queryAccrualsByUser(db, userId);
+    final plan = planAccrualSync(
+      existing: existing,
+      schedule: accrualsUntilToday(firstAccrualDate),
+    );
+    final usageRows = await db.query(
+      'vacation_usage',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    final settingsRows = await db.query(
+      'app_settings',
+      columns: ['carried_over_days', 'carried_over_base_date'],
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    final stored = settingsRows.isEmpty ? null : settingsRows.first;
+    final storedBaseDateStr = stored?['carried_over_base_date'] as String?;
+
+    final impact = evaluateAccrualSync(
+      existing: existing,
+      plan: plan,
+      usages: usageRows.map((map) => VacationUsage.fromMap(map)).toList(),
+      carriedOverDays: carriedOverDays,
+      storedDays: (stored?['carried_over_days'] as num?)?.toInt() ?? 0,
+      storedBaseDate: storedBaseDateStr == null ? null : DateTime.parse(storedBaseDateStr),
+      firstAccrualDate: firstAccrualDate,
+      today: DateTime.now(),
+    );
+    debugPrint('🔍 N165: 初回付与日の変更の確認 消す ${plan.toDelete.length} 件・足す ${plan.toAdd.length} 件'
+        '・持ち越しの対象がなくなる ${impact.carryOverTargetLost}'
+        '・初回付与日より前の使用 ${impact.usagesBeforeFirstCount} 件（${impact.usagesBeforeFirstDays}日）'
+        '・どの付与にも入らない使用 ${impact.unallocatedBefore}日 → ${impact.unallocatedAfter}日');
+    return (plan: plan, impact: impact);
+  }
+
+  /// 有給設定をまとめて保存する（N165）。1 つの transaction で、中では txn だけを使う
+  /// 順番：入社日・付与日数 → 初回付与日（あれば）→ 付与の合わせ直し（syncAccruals のときだけ）→ 持ち越し
+  /// 持ち越しの基準日は合わせ直したあとの付与の行で決める。どこかで失敗したら何も保存しない
+  /// 合わせ直したら消した件数・足した件数を、合わせ直さなかったら null を返す
+  Future<({int deletedCount, int addedCount})?> saveVacationSettingsAll(
+    String userId, {
+    required DateTime hiredDate,
+    required int annualDays,
+    DateTime? firstAccrualDate,
+    required int carriedOverDays,
+    required bool syncAccruals,
+  }) async {
+    try {
+      final db = await _dbHelper.database;
+      final result = await db.transaction((txn) async {
+        await _saveVacationSettingsIn(txn, userId, hiredDate, annualDays);
+        ({int deletedCount, int addedCount})? synced;
+        if (firstAccrualDate != null) {
+          await _saveFirstAccrualDateIn(txn, userId, firstAccrualDate);
+          if (syncAccruals) {
+            synced = await syncAccrualsWithSchedule(txn, userId, firstAccrualDate);
+          }
+        } else if (syncAccruals) {
+          debugPrint('⚠️ N165: 初回付与日がないため、付与の合わせ直しはしません');
+        }
+        await _saveCarriedOverDaysIn(txn, userId, carriedOverDays);
+        return synced;
+      });
+      debugPrint('✅ N165: 有給設定をまとめて保存しました（合わせ直し: ${result == null ? 'なし' : '消した ${result.deletedCount} 件・足した ${result.addedCount} 件'}）');
+      return result;
+    } catch (e) {
+      debugPrint('❌ N165: 有給設定のまとめた保存に失敗（何も保存していません）: $e');
+      rethrow;
+    }
+  }
     /// ========== Week 16 修正版：来年度付与までに消滅する付与を取得 ==========
   /// 
   /// 返り値：来年度の付与日までに消滅する「1つの付与分」のデータ
