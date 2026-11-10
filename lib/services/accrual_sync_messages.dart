@@ -88,3 +88,43 @@ String vacationSettingsSavedMessage(({int deletedCount, int addedCount})? synced
   if (synced.deletedCount == 0 && synced.addedCount == 0) return '$base（付与は変わりませんでした）';
   return '$base\n🗑️ 付与を ${synced.deletedCount} 件消し、➕ ${synced.addedCount} 件足しました';
 }
+
+// ========== N165 3b：［⚡ 付与スケジュールを自動生成］（保存済みの設定で合わせ直す）==========
+// 失敗の文言には例外の中身を入れない（N118 4/4・N162）。例外は debugPrint のログにだけ出す
+
+/// ダイアログの 1 行目（題・一覧・⚠️・使用の説明は保存と同じ）
+String accrualResyncFirstLine(DateTime savedFirstAccrualDate) =>
+    '保存済みの初回付与日（${accrualDateText(savedFirstAccrualDate)}）の予定に、付与を合わせ直します。';
+
+/// ダイアログの確定ボタン
+const accrualResyncConfirmLabel = '付与を合わせ直す';
+
+/// キャンセルしたときの SnackBar
+const accrualResyncCancelledMessage = 'ℹ️ 付与は変えませんでした';
+
+/// 消す・足す・⚠️ がどれもなく、ダイアログを出さないときの SnackBar
+const accrualResyncNoChangeMessage = 'ℹ️ 付与は予定どおりです（変更なし）';
+
+/// 合わせ直したときの SnackBar（実際の件数。0 件・0 件なら保存と同じく「付与は変わりませんでした」）
+String accrualResyncDoneMessage(({int deletedCount, int addedCount}) synced) {
+  const base = '✅ 付与を合わせ直しました';
+  if (synced.deletedCount == 0 && synced.addedCount == 0) return '$base（付与は変わりませんでした）';
+  return '$base\n🗑️ ${synced.deletedCount} 件消し、➕ ${synced.addedCount} 件足しました';
+}
+
+/// 保存済みの初回付与日がないときの SnackBar
+const accrualResyncNoFirstAccrualDateMessage = '⚠️ 初回付与日を保存してから押してください';
+
+/// 画面に未保存の変更があるときの SnackBar（D2-A：合わせ直さない）
+const accrualResyncUnsavedChangesMessage =
+    '先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）';
+
+/// 確認（DB の読み取り）に失敗したときの SnackBar
+const accrualResyncPreviewFailedMessage = '❌ 付与を確認できませんでした（何も変えていません）';
+
+/// 合わせ直しに失敗したときの SnackBar（transaction なので何も変わっていない）
+const accrualResyncFailedMessage = '❌ 付与の合わせ直しに失敗しました（何も変えていません）';
+
+/// 確認したあとに保存済みの初回付与日が変わっていたときの SnackBar（D5-A）
+const accrualResyncFirstAccrualDateChangedMessage =
+    '❌ 保存済みの初回付与日が変わったため、付与は合わせ直しませんでした。もう一度押してください';

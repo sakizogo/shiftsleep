@@ -172,4 +172,56 @@ void main() {
       expect(accrualDaysText(0.5), '0.5日');
     });
   });
+
+  // N165 3b：［⚡ 付与スケジュールを自動生成］（保存済みの設定で合わせ直す）の文言
+  group('ボタンの文言', () {
+    test('B1. ダイアログの 1 行目：保存済みの初回付与日', () {
+      expect(accrualResyncFirstLine(DateTime(2024, 10, 1)), '保存済みの初回付与日（2024年10月1日）の予定に、付与を合わせ直します。');
+    });
+
+    test('B2. 確定ボタン・キャンセル・変更なし', () {
+      expect(accrualResyncConfirmLabel, '付与を合わせ直す');
+      expect(accrualResyncCancelledMessage, 'ℹ️ 付与は変えませんでした');
+      expect(accrualResyncNoChangeMessage, 'ℹ️ 付与は予定どおりです（変更なし）');
+    });
+
+    test('B3. 成功：件数あり／0 件・0 件（保存と同じく「付与は変わりませんでした」）', () {
+      expect(
+        accrualResyncDoneMessage((deletedCount: 2, addedCount: 1)),
+        '✅ 付与を合わせ直しました\n🗑️ 2 件消し、➕ 1 件足しました',
+      );
+      expect(
+        accrualResyncDoneMessage((deletedCount: 0, addedCount: 3)),
+        '✅ 付与を合わせ直しました\n🗑️ 0 件消し、➕ 3 件足しました',
+      );
+      expect(accrualResyncDoneMessage((deletedCount: 0, addedCount: 0)), '✅ 付与を合わせ直しました（付与は変わりませんでした）');
+    });
+
+    test('B4. 初回付与日なし・未保存あり', () {
+      expect(accrualResyncNoFirstAccrualDateMessage, '⚠️ 初回付与日を保存してから押してください');
+      expect(
+        accrualResyncUnsavedChangesMessage,
+        '先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）',
+      );
+    });
+
+    test('B5. 失敗の文言は ❌ で始まり、例外の中身を入れない（N118 4/4・N162）', () {
+      // 引数を取らない定数なので $e は入れられない。例外の文字列が混ざっていないことも確かめる
+      for (final message in [
+        accrualResyncPreviewFailedMessage,
+        accrualResyncFailedMessage,
+        accrualResyncFirstAccrualDateChangedMessage,
+      ]) {
+        expect(message, startsWith('❌'));
+        expect(message, isNot(contains('Exception')));
+        expect(message, isNot(contains(': ')));
+      }
+      expect(accrualResyncPreviewFailedMessage, '❌ 付与を確認できませんでした（何も変えていません）');
+      expect(accrualResyncFailedMessage, '❌ 付与の合わせ直しに失敗しました（何も変えていません）');
+      expect(
+        accrualResyncFirstAccrualDateChangedMessage,
+        '❌ 保存済みの初回付与日が変わったため、付与は合わせ直しませんでした。もう一度押してください',
+      );
+    });
+  });
 }

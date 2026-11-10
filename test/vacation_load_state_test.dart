@@ -212,4 +212,71 @@ void main() {
   test('統計カードの失敗の文言は ❌ で始まる', () {
     expect(vacationStatsLoadFailedText, startsWith('❌'));
   });
+
+  // N165 3b：未保存の変更があるか（D2-A）
+  group('hasUnsavedVacationChanges', () {
+    final loaded = vacationFormValues(
+      settings: _settings(),
+      carriedOverDays: 5,
+      carryOver: _carryOver,
+      hasCarryOverTarget: true,
+      carryOverExpired: false,
+      firstAccrualDate: DateTime(2024, 10, 1),
+    );
+    ({DateTime? hiredDate, String annualDaysText, String carriedOverText, String firstAccrualDateText}) current({
+      DateTime? hiredDate,
+      String annualDaysText = '11',
+      String carriedOverText = '5',
+      String firstAccrualDateText = '2024年10月1日',
+    }) =>
+        (
+          hiredDate: hiredDate ?? DateTime(2024, 4, 1),
+          annualDaysText: annualDaysText,
+          carriedOverText: carriedOverText,
+          firstAccrualDateText: firstAccrualDateText,
+        );
+
+    test('U1. 変更なし → false', () {
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current()), isFalse);
+    });
+
+    test('U2. 4 つの欄のどれかが変わった → true', () {
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(hiredDate: DateTime(2024, 4, 2))), isTrue);
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(annualDaysText: '12')), isTrue);
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(carriedOverText: '')), isTrue);
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(firstAccrualDateText: '2024年10月2日')), isTrue);
+    });
+
+    test('U3. 入社日の時刻の違い・入力の前後の空白は無視する', () {
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(hiredDate: DateTime(2024, 4, 1, 15, 30))), isFalse);
+      expect(hasUnsavedVacationChanges(loaded: loaded, current: current(annualDaysText: ' 11 ')), isFalse);
+    });
+
+    test('U4. 行がなかった（入社日・付与日数・初回付与日が null）→ 空のままなら false、入れたら true', () {
+      final empty = vacationFormValues(
+        settings: null,
+        carriedOverDays: 0,
+        carryOver: null,
+        hasCarryOverTarget: false,
+        carryOverExpired: false,
+        firstAccrualDate: null,
+      );
+      const untouched = (hiredDate: null, annualDaysText: '', carriedOverText: '', firstAccrualDateText: '');
+      expect(hasUnsavedVacationChanges(loaded: empty, current: untouched), isFalse);
+      expect(
+        hasUnsavedVacationChanges(
+          loaded: empty,
+          current: (hiredDate: DateTime(2024, 4, 1), annualDaysText: '', carriedOverText: '', firstAccrualDateText: ''),
+        ),
+        isTrue,
+      );
+      expect(
+        hasUnsavedVacationChanges(
+          loaded: empty,
+          current: (hiredDate: null, annualDaysText: '', carriedOverText: '', firstAccrualDateText: '2024年10月1日'),
+        ),
+        isTrue,
+      );
+    });
+  });
 }

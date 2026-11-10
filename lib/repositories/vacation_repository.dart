@@ -1076,6 +1076,10 @@ class VacationRepository {
   /// - 合わせ直したあとの付与：existing から plan.toDelete を除き、plan.toAdd を足したもの
   /// - 合わせ直したあとの持ち越しの基準日：decideCarriedOverBaseDate（保存と同じ判定）
   /// - 合わせ直す前の持ち越し：DB の日数と基準日（getCarryOver と同じく、日数が 0 以下か基準日がなければなし）
+  /// N165 3b：［⚡ 付与スケジュールを自動生成］用の引数（どちらも既定値なら 2b の保存と同じ結果）
+  /// - keepStoredCarryOver：true なら、合わせ直したあとも持ち越しは DB の日数と基準日のまま（持ち越しには触らない）
+  ///   carriedOverDays には DB の日数を渡す（carryOverTargetLost の判定に使う）
+  /// - countUsagesBeforeFirst：false なら、初回付与日より前の使用を数えない（初回付与日が変わらないため）
   static AccrualSyncImpact evaluateAccrualSync({
     required List<VacationAccrual> existing,
     required AccrualSyncPlan plan,
@@ -1085,6 +1089,8 @@ class VacationRepository {
     required DateTime? storedBaseDate,
     required DateTime firstAccrualDate,
     required DateTime today,
+    bool keepStoredCarryOver = false,
+    bool countUsagesBeforeFirst = true,
   }) {
     final after = [
       ...existing.where((a) => !plan.toDelete.contains(a)),
@@ -1100,17 +1106,22 @@ class VacationRepository {
     final carryOverBefore = storedDays > 0 && storedBaseDate != null
         ? CarryOver(baseDate: storedBaseDate, days: storedDays.toDouble())
         : null;
-    final baseDateAfter = decideCarriedOverBaseDate(
-      carriedOverDays: carriedOverDays,
-      storedDays: storedDays,
-      storedBaseDate: storedBaseDate,
-      accruals: after,
-      firstAccrualDate: firstAccrualDate,
-      today: today,
-    );
-    final carryOverAfter = carriedOverDays > 0 && baseDateAfter != null
-        ? CarryOver(baseDate: baseDateAfter, days: carriedOverDays.toDouble())
-        : null;
+    final CarryOver? carryOverAfter;
+    if (keepStoredCarryOver) {
+      carryOverAfter = carryOverBefore;
+    } else {
+      final baseDateAfter = decideCarriedOverBaseDate(
+        carriedOverDays: carriedOverDays,
+        storedDays: storedDays,
+        storedBaseDate: storedBaseDate,
+        accruals: after,
+        firstAccrualDate: firstAccrualDate,
+        today: today,
+      );
+      carryOverAfter = carriedOverDays > 0 && baseDateAfter != null
+          ? CarryOver(baseDate: baseDateAfter, days: carriedOverDays.toDouble())
+          : null;
+    }
 
     final balanceBefore = allocateUsage(
       accruals: existing,
@@ -1128,8 +1139,10 @@ class VacationRepository {
         b.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
 
     final first = DateTime(firstAccrualDate.year, firstAccrualDate.month, firstAccrualDate.day);
-    final usagesBeforeFirst = usages.where((u) =>
-        DateTime(u.usageDate.year, u.usageDate.month, u.usageDate.day).isBefore(first));
+    final usagesBeforeFirst = countUsagesBeforeFirst
+        ? usages.where((u) =>
+            DateTime(u.usageDate.year, u.usageDate.month, u.usageDate.day).isBefore(first))
+        : const <VacationUsage>[];
 
     return (
       carryOverTargetLost: carriedOverDays > 0 &&
@@ -1218,6 +1231,106 @@ class VacationRepository {
       return result;
     } catch (e) {
       debugPrint('❌ N165: 有給設定のまとめた保存に失敗（何も保存していません）: $e');
+      rethrow;
+    }
+  }
+
+  /// 確認ダイアログ用：保存済みの初回付与日（DB）の予定に合わせ直したときの計画と影響（N165 3b）
+  /// ［⚡ 付与スケジュールを自動生成］で使う。DB は読むだけ。画面の入力欄の値は使わない
+  /// - 初回付与日が未登録なら null
+  /// - 持ち越しには触らないので、影響は DB の日数・基準日のままで計算する（keepStoredCarryOver）
+  /// - 初回付与日は変わらないので、初回付与日より前の使用は数えない（countUsagesBeforeFirst: false）
+  /// - carriedOverDays は DB の持ち越しの日数（⚠️ の文言に使う）
+  Future<({
+    DateTime firstAccrualDate,
+    int carriedOverDays,
+    AccrualSyncPlan plan,
+    AccrualSyncImpact impact,
+  })?> previewResyncWithSavedSettings(String userId) async {
+    final db = await _dbHelper.database;
+    final firstAccrualDate = await _queryFirstAccrualDate(db, userId);
+    if (firstAccrualDate == null) {
+      debugPrint('ℹ️ N165: 初回付与日が未登録のため、合わせ直しの確認はしません');
+      return null;
+    }
+    final existing = await _queryAccrualsByUser(db, userId);
+    final plan = planAccrualSync(
+      existing: existing,
+      schedule: accrualsUntilToday(firstAccrualDate),
+    );
+    final usageRows = await db.query(
+      'vacation_usage',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    final settingsRows = await db.query(
+      'app_settings',
+      columns: ['carried_over_days', 'carried_over_base_date'],
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    final stored = settingsRows.isEmpty ? null : settingsRows.first;
+    final storedDays = (stored?['carried_over_days'] as num?)?.toInt() ?? 0;
+    final storedBaseDateStr = stored?['carried_over_base_date'] as String?;
+
+    final impact = evaluateAccrualSync(
+      existing: existing,
+      plan: plan,
+      usages: usageRows.map((map) => VacationUsage.fromMap(map)).toList(),
+      carriedOverDays: storedDays,
+      storedDays: storedDays,
+      storedBaseDate: storedBaseDateStr == null ? null : DateTime.parse(storedBaseDateStr),
+      firstAccrualDate: firstAccrualDate,
+      today: DateTime.now(),
+      keepStoredCarryOver: true,
+      countUsagesBeforeFirst: false,
+    );
+    debugPrint('🔍 N165: 保存済みの初回付与日 ${_dateText(firstAccrualDate)} への合わせ直しの確認'
+        ' 消す ${plan.toDelete.length} 件・足す ${plan.toAdd.length} 件'
+        '・持ち越しの対象がなくなる ${impact.carryOverTargetLost}'
+        '・どの付与にも入らない使用 ${impact.unallocatedBefore}日 → ${impact.unallocatedAfter}日');
+    return (
+      firstAccrualDate: firstAccrualDate,
+      carriedOverDays: storedDays,
+      plan: plan,
+      impact: impact,
+    );
+  }
+
+  /// 確認したときの初回付与日（expected）が、合わせ直す直前の DB の初回付与日（current）と同じか（N165 3b。D5）
+  /// 年・月・日で比べる。DB が未登録（null）なら false
+  static bool isSavedFirstAccrualDateUnchanged({
+    required DateTime expected,
+    required DateTime? current,
+  }) =>
+      current != null && _isSameDate(expected, current);
+
+  /// 保存済みの初回付与日（DB）の予定に、自動生成の付与を合わせ直す（N165 3b）
+  /// 1 つの transaction の中で DB の初回付与日を読み直し、確認したときの日付（expectedFirstAccrualDate）と比べる
+  /// - 違えば（未登録になったときも）何もせず、firstAccrualDateChanged: true を返す
+  /// - 同じなら syncAccrualsWithSchedule で消して足し、実際に消した件数・足した件数を返す
+  /// 持ち越し・入社日などの設定は書かない。失敗したら何も変えずに例外を上げる
+  Future<({bool firstAccrualDateChanged, int deletedCount, int addedCount})>
+      resyncAccrualsWithSavedSettings(String userId, DateTime expectedFirstAccrualDate) async {
+    try {
+      final db = await _dbHelper.database;
+      final result = await db.transaction((txn) async {
+        final current = await _queryFirstAccrualDate(txn, userId);
+        if (!isSavedFirstAccrualDateUnchanged(expected: expectedFirstAccrualDate, current: current)) {
+          debugPrint('⚠️ N165: 初回付与日が確認したとき（${_dateText(expectedFirstAccrualDate)}）から'
+              ' ${current == null ? '未登録' : _dateText(current)} に変わったため、合わせ直しません');
+          return (firstAccrualDateChanged: true, deletedCount: 0, addedCount: 0);
+        }
+        final synced = await syncAccrualsWithSchedule(txn, userId, expectedFirstAccrualDate);
+        return (
+          firstAccrualDateChanged: false,
+          deletedCount: synced.deletedCount,
+          addedCount: synced.addedCount,
+        );
+      });
+      return result;
+    } catch (e) {
+      debugPrint('❌ N165: 保存済みの初回付与日への合わせ直しに失敗（何も変えていません）: $e');
       rethrow;
     }
   }

@@ -109,3 +109,35 @@ bool showVacationStatsDetails(VacationLoadState state) => state == VacationLoadS
         firstAccrualDate == null ? null : DateFormat('yyyy年M月d日').format(firstAccrualDate),
   );
 }
+
+/// 有給設定画面に未保存の変更があるか（N165 3b。D2-A：あれば［⚡ 付与スケジュールを自動生成］は合わせ直さない）
+/// loaded は読み込んだときの vacationFormValues の結果、current は今の入力欄の値
+/// - 入社日：年・月・日で比べる（時刻の違いは無視）。読み込み時に null（行がない）で今も null なら同じ
+/// - 付与日数・持ち越し・初回付与日：前後の空白を除いた文字で比べる。読み込み時に null（欄をそのままにした）なら '' とみなす
+bool hasUnsavedVacationChanges({
+  required ({
+    DateTime? hiredDate,
+    String? annualDaysText,
+    String carriedOverText,
+    DateTime? carriedOverBaseDate,
+    String? firstAccrualDateText,
+  }) loaded,
+  required ({
+    DateTime? hiredDate,
+    String annualDaysText,
+    String carriedOverText,
+    String firstAccrualDateText,
+  }) current,
+}) {
+  bool sameDate(DateTime? a, DateTime? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  bool sameText(String? a, String b) => (a ?? '').trim() == b.trim();
+
+  return !sameDate(loaded.hiredDate, current.hiredDate) ||
+      !sameText(loaded.annualDaysText, current.annualDaysText) ||
+      !sameText(loaded.carriedOverText, current.carriedOverText) ||
+      !sameText(loaded.firstAccrualDateText, current.firstAccrualDateText);
+}
