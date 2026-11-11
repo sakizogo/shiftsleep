@@ -514,8 +514,10 @@ class VacationRepository {
   }
 
   /// 保存済みの基準日をそのまま使えるなら、その基準日。使えなければ null（N80。N165 で DB を使わない形に切り出し）
-  /// 日数が 0 より大きく DB の値と同じで、DB の基準日があり、accruals の中で対象の付与
-  /// （基準日より前でいちばん新しい付与）が today の時点で有効なとき
+  /// 日数が 0 より大きく DB の値と同じで、DB の基準日があり、基準日が accruals のどれかの付与日と年月日が合い、
+  /// accruals の中で対象の付与（基準日より前でいちばん新しい付与）が today の時点で有効なとき
+  /// N169：基準日がどの付与日とも合わないとき（初回付与日を変えて付与を合わせ直したあとなど）は保持しない。
+  /// 保持すると、初回付与日を早めたときに今年度の付与が基準日より前に来て、持ち越しの対象にずれるため
   static DateTime? keptCarriedOverBaseDate({
     required int carriedOverDays,
     required int storedDays,
@@ -525,6 +527,7 @@ class VacationRepository {
   }) {
     if (carriedOverDays <= 0) return null;
     if (storedDays != carriedOverDays || storedBaseDate == null) return null;
+    if (!accruals.any((a) => _isSameDate(a.accrualDate, storedBaseDate))) return null;  // N169
     final balance = allocateUsage(
       accruals: accruals,
       usages: const [],
@@ -537,8 +540,9 @@ class VacationRepository {
 
   /// 持ち越しを保存するときの基準日を決める（N80。N165 で DB を使わない形に切り出し）
   /// - 日数が 0 以下なら null
-  /// - 日数が DB の値と同じで、対象の付与（基準日より前でいちばん新しい付与）がまだ有効なら、基準日を変えない
-  /// - それ以外（日数が変わった・基準日が空・対象の付与が失効した）は、初回付与日から計算した today までで最後の付与日
+  /// - 日数が DB の値と同じで、基準日がどれかの付与日と合い、対象の付与（基準日より前でいちばん新しい付与）がまだ有効なら、基準日を変えない
+  /// - それ以外（日数が変わった・基準日が空・基準日がどの付与日とも合わない（N169）・対象の付与が失効した）は、
+  ///   初回付与日から計算した today までで最後の付与日
   /// _carriedOverBaseDateToSave と同じ判定（あちらは必要なときだけ DB を読み、ログを出す）
   static DateTime? decideCarriedOverBaseDate({
     required int carriedOverDays,

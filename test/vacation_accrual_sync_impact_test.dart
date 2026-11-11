@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/accrual_sync_messages.dart';  // N165 3b：accrualSyncNeedsConfirmation
+import 'package:shiftsleep/services/vacation_allocation.dart';  // N169：allocateUsage・CarryOver
 
 // N165 2a：decideCarriedOverBaseDate（持ち越しの基準日の判定）と
 // evaluateAccrualSync（合わせ直したときの影響）のテスト。today はすべて固定する
@@ -415,6 +416,113 @@ void main() {
 
     test('S3. DB が未登録（null）になった → false', () {
       expect(VacationRepository.isSavedFirstAccrualDateUnchanged(expected: DateTime(2024, 10, 1), current: null), isFalse);
+    });
+  });
+
+  group('N169：初回付与日を変えて合わせ直したあと、基準日がどの付与日とも合わなければ決め直す', () {
+    // 初回付与日 2024/10/2 で作られた付与。持ち越し 5 日・基準日 2026/10/2（対象は 2025/10/2 の付与）
+    List<VacationAccrual> existingFrom20241002() => [
+          autoAccrual(2024, 10, 2, 10),
+          autoAccrual(2025, 10, 2, 11),
+          autoAccrual(2026, 10, 2, 12),
+        ];
+    final storedBase = DateTime(2026, 10, 2);
+
+    /// 合わせ直したあとの付与の行（existing から toDelete を除き、toAdd を足す。evaluateAccrualSync と同じ作り方）
+    List<VacationAccrual> afterSync(List<VacationAccrual> existing, DateTime newFirst) {
+      final plan = VacationRepository.planAccrualSync(
+        existing: existing,
+        schedule: VacationRepository.accrualsUntil(newFirst, today),
+      );
+      return [
+        ...existing.where((a) => !plan.toDelete.contains(a)),
+        for (final s in plan.toAdd) autoAccrual(s.date.year, s.date.month, s.date.day, s.days.toDouble()),
+      ];
+    }
+
+    test('N169-0. 前提：合わせ直す前は 2025/10/2 の付与が対象で、残りは 5 + 12 = 17 日', () {
+      final balance = allocateUsage(
+        accruals: existingFrom20241002(),
+        usages: const [],
+        today: today,
+        carryOver: CarryOver(baseDate: storedBase, days: 5),
+      );
+      final target = balance.accruals.singleWhere((a) => a.isCarryOverTarget);
+      expect(target.accrual.accrualDate, DateTime(2025, 10, 2));
+      expect(balance.totalRemaining, 17.0);
+    });
+
+    test('N169-1. 10/2 → 10/1 に合わせ直したあとの基準日は、新しい予定の 2026/10/1', () {
+      final after = afterSync(existingFrom20241002(), DateTime(2024, 10, 1));
+      final base = VacationRepository.decideCarriedOverBaseDate(
+        carriedOverDays: 5,
+        storedDays: 5,
+        storedBaseDate: storedBase,
+        accruals: after,
+        firstAccrualDate: DateTime(2024, 10, 1),
+        today: today,
+      );
+      expect(base, DateTime(2026, 10, 1));
+    });
+
+    test('N169-2. 合わせ直したあと、持ち越しの対象は 2025/10/1 の付与で、残り 17 日・消滅予定は 2025/10/1 の 5 日', () {
+      final after = afterSync(existingFrom20241002(), DateTime(2024, 10, 1));
+      final base = VacationRepository.decideCarriedOverBaseDate(
+        carriedOverDays: 5,
+        storedDays: 5,
+        storedBaseDate: storedBase,
+        accruals: after,
+        firstAccrualDate: DateTime(2024, 10, 1),
+        today: today,
+      )!;
+      final balance = allocateUsage(
+        accruals: after,
+        usages: const [],
+        today: today,
+        carryOver: CarryOver(baseDate: base, days: 5),
+      );
+      final target = balance.accruals.singleWhere((a) => a.isCarryOverTarget);
+      final next = balance.nextExpiring!;
+      expect(
+        (
+          target: target.accrual.accrualDate,
+          totalRemaining: balance.totalRemaining,
+          nextExpiringDate: next.accrual.accrualDate,
+          nextExpiringRemaining: next.remainingDays,
+        ),
+        (
+          target: DateTime(2025, 10, 1),
+          totalRemaining: 17.0,
+          nextExpiringDate: DateTime(2025, 10, 1),
+          nextExpiringRemaining: 5.0,
+        ),
+      );
+    });
+
+    test('N169-3. 対照：10/1 → 10/2 に遅らせる向きでも、対象は前年度の付与', () {
+      final existing = [
+        autoAccrual(2024, 10, 1, 10),
+        autoAccrual(2025, 10, 1, 11),
+        autoAccrual(2026, 10, 1, 12),
+      ];
+      final after = afterSync(existing, DateTime(2024, 10, 2));
+      final base = VacationRepository.decideCarriedOverBaseDate(
+        carriedOverDays: 5,
+        storedDays: 5,
+        storedBaseDate: DateTime(2026, 10, 1),
+        accruals: after,
+        firstAccrualDate: DateTime(2024, 10, 2),
+        today: today,
+      )!;
+      final balance = allocateUsage(
+        accruals: after,
+        usages: const [],
+        today: today,
+        carryOver: CarryOver(baseDate: base, days: 5),
+      );
+      final target = balance.accruals.singleWhere((a) => a.isCarryOverTarget);
+      expect(target.accrual.accrualDate, DateTime(2025, 10, 2));
+      expect(balance.totalRemaining, 17.0);
     });
   });
 
