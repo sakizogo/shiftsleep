@@ -117,7 +117,7 @@ const accrualResyncNoFirstAccrualDateMessage = '⚠️ 初回付与日を保存�
 
 /// 画面に未保存の変更があるときの SnackBar（D2-A：合わせ直さない）
 const accrualResyncUnsavedChangesMessage =
-    '先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）';
+    '⚠️ 先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）';
 
 /// 確認（DB の読み取り）に失敗したときの SnackBar
 const accrualResyncPreviewFailedMessage = '❌ 付与を確認できませんでした（何も変えていません）';

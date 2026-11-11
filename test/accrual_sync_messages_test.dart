@@ -201,7 +201,7 @@ void main() {
       expect(accrualResyncNoFirstAccrualDateMessage, '⚠️ 初回付与日を保存してから押してください');
       expect(
         accrualResyncUnsavedChangesMessage,
-        '先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）',
+        '⚠️ 先に［💾 設定を保存］を押してください（初回付与日を変えた場合は保存で付与も合わせ直します）',
       );
     });
 
