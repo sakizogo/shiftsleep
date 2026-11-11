@@ -43,17 +43,8 @@ class VacationRepository {
     return VacationSettings.fromMap(result.first);
   }
 
-  /// 有給設定を保存（入社日と付与日数を記録）
-  Future<void> saveVacationSettings(
-    String userId,
-    DateTime hiredDate,
-    int annualDays,
-  ) async {
-    final db = await _dbHelper.database;
-    await _saveVacationSettingsIn(db, userId, hiredDate, annualDays);
-  }
-
-  /// N165：saveVacationSettings の中身。渡された executor（db か txn）だけを使う
+  /// 有給設定（入社日と付与日数）を保存する（N165：saveVacationSettingsAll から呼ぶ）
+  /// 渡された executor（db か txn）だけを使う
   static Future<void> _saveVacationSettingsIn(
     DatabaseExecutor db,
     String userId,
@@ -606,19 +597,9 @@ class VacationRepository {
     return latestAccrualDate;
   }
 
-  /// 持ち越し有休数を app_settings に保存
+  /// 持ち越し有休数を app_settings に保存する（N165：saveVacationSettingsAll から呼ぶ）
   /// 重要：app_settings にレコードがない場合は INSERT、ある場合は UPDATE を行う
-  Future<void> saveCarriedOverDays(String userId, int carriedOverDays) async {
-    try {
-      final db = await _dbHelper.database;
-      await _saveCarriedOverDaysIn(db, userId, carriedOverDays);
-    } catch (e) {
-      print('❌ Error saving carried over days: $e');
-      rethrow;  // N82：画面で失敗を知らせる
-    }
-  }
-
-  /// N165：saveCarriedOverDays の中身。渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
+  /// 渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
   static Future<void> _saveCarriedOverDaysIn(
     DatabaseExecutor db,
     String userId,
@@ -676,23 +657,13 @@ class VacationRepository {
 
   // ========== Week 16 追加: 初回付与日管理 ==========
   
-  /// 初回付与日を保存（有給設定画面から）
-  /// 
+  /// 初回付与日を保存する（N165：saveVacationSettingsAll から呼ぶ）
+  ///
   /// 例：初回付与日が2026年10月1日の場合
   /// - 2026年度の付与日：10月1日
   /// - 2027年度の付与日：10月1日（1年後）
   /// - 2028年度の付与日：10月1日（2年後）...
-  Future<void> saveFirstAccrualDate(String userId, DateTime firstAccrualDate) async {
-    try {
-      final db = await _dbHelper.database;
-      await _saveFirstAccrualDateIn(db, userId, firstAccrualDate);
-    } catch (e) {
-      print('❌ Error saving first accrual date: $e');
-      rethrow;  // N82：画面で失敗を知らせる
-    }
-  }
-
-  /// N165：saveFirstAccrualDate の中身。渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
+  /// 渡された executor（db か txn）だけを使う。失敗は呼んだ側に上げる
   static Future<void> _saveFirstAccrualDateIn(
     DatabaseExecutor db,
     String userId,
@@ -844,7 +815,7 @@ class VacationRepository {
   /// 自動生成の付与の notes の先頭（N165。DB v18 のマイグレーションの LIKE と同じ）
   static const String autoAccrualNotesPrefix = '自動生成：';
 
-  /// 自動生成の付与の notes（N165：autoGenerateAccruals と合わせ直しで共通）
+  /// 自動生成の付与の notes（N165：_autoGenerateAccruals と合わせ直しで共通）
   static String autoAccrualNotes(DateTime accrualDate) =>
       '$autoAccrualNotesPrefix${accrualDate.year}年度付与';
 
@@ -914,20 +885,20 @@ class VacationRepository {
   Future<int> _autoGenerateAccrualsFromSettings(String userId) async {
     final settings = await getVacationSettings(userId);
     final firstAccrualDate = await getFirstAccrualDate(userId);
+    // 入社日（vacation_settings の行）がなければ生成しない。入社日の値そのものは使わない（N165）
     if (settings == null || firstAccrualDate == null) {
       debugPrint('🗓️ N62: 入社日または初回付与日が未設定のため、自動生成しません');
       return 0;
     }
-    final createdCount = await autoGenerateAccruals(userId, settings.hiredDate, firstAccrualDate);
+    final createdCount = await _autoGenerateAccruals(userId, firstAccrualDate);
     debugPrint('🗓️ N62: 付与を $createdCount 件自動生成');
     return createdCount;
   }
 
-    /// ========== Week 16 修正版：hire_date と first_accrual_date から各年度の付与を自動生成 ==========
-  /// 
+    /// ========== Week 16 修正版：first_accrual_date から各年度の付与を自動生成 ==========
+  ///
   /// 修正版（1年ごとに付与）：
   /// 例：
-  /// - hireDate: 2026年4月1日
   /// - firstAccrualDate: 2026年10月1日（入社6ヶ月後）
   /// 
   /// 生成されるスケジュール：
@@ -936,14 +907,14 @@ class VacationRepository {
   /// - 2028年10月1日：12日（2年後）
   /// ...
   /// 付与日数は初回からの回数で法定の表を引く（N62・N63 の accrualForYear）。作った件数を返す
-  Future<int> autoGenerateAccruals(
+  /// N165：呼び出し元は _autoGenerateAccrualsFromSettings だけ（runOnce を通す）
+  Future<int> _autoGenerateAccruals(
     String userId,
-    DateTime hireDate,
     DateTime firstAccrualDate,
   ) async {
     var createdCount = 0;
     try {
-      print('🔄 autoGenerateAccruals() 開始: userId=$userId');
+      print('🔄 _autoGenerateAccruals() 開始: userId=$userId');
 
       // N156：既存の読み取り〜足りない付与の insert を 1 つのトランザクションにする
       // （同時に 2 回呼ばれても、2 回目は 1 回目が入れた行を読んでからスキップする）
@@ -991,7 +962,7 @@ class VacationRepository {
         return createdInTxn;
       });
 
-      print('✅ autoGenerateAccruals() 完了');
+      print('✅ _autoGenerateAccruals() 完了');
     } catch (e) {
       print('❌ Error auto-generating accruals: $e');
       // N91：失敗を呼んだ側に伝える
@@ -999,17 +970,6 @@ class VacationRepository {
       rethrow;
     }
     return createdCount;
-  }
-
-  /// 確認ダイアログ用：firstAccrualDate の予定に合わせ直すと、どの行を消してどの付与を足すか（N165）
-  /// DB は読むだけ。初回付与日は引数で受け取る（保存前の新しい日付でも、保存済みの日付でもよい）
-  Future<AccrualSyncPlan> previewAccrualSync(String userId, DateTime firstAccrualDate) async {
-    final plan = planAccrualSync(
-      existing: await getVacationAccrualsByUser(userId),
-      schedule: accrualsUntilToday(firstAccrualDate),
-    );
-    debugPrint('🔍 N165: 合わせ直しの確認 消す ${plan.toDelete.length} 件・足す ${plan.toAdd.length} 件');
-    return plan;
   }
 
   /// firstAccrualDate の予定に合わせて、自動生成の付与を消して足す（N165）

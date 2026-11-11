@@ -4,7 +4,7 @@ import 'package:shiftsleep/repositories/vacation_repository.dart';
 
 /// 保存しようとしている初回付与日が、保存済みの値から変わったか（年・月・日で比べる）
 /// - 入力欄が空（input が null）なら false
-/// - 保存済みが null なら true（［⚡ 付与スケジュールを自動生成］が保存していない日付で付与を作っていることがあるため）
+/// - 保存済みが null なら true（以前の［⚡ 付与スケジュールを自動生成］が保存していない日付で付与を作っていることがあるため）
 /// - それ以外は、年・月・日が違えば true
 bool isFirstAccrualDateChanged({required DateTime? saved, required DateTime? input}) {
   if (input == null) return false;

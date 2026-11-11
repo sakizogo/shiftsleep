@@ -5,7 +5,7 @@ import 'package:shiftsleep/repositories/vacation_repository.dart';
 // N165 1/3：planAccrualSync（自動生成の付与の合わせ直しの計画）のテスト
 // 予定は日付を決め打ちで渡す（3 だけ accrualsUntilToday も使う）
 
-/// 自動生成の付与の行（notes は autoGenerateAccruals と同じ）
+/// 自動生成の付与の行（notes は _autoGenerateAccruals と同じ）
 VacationAccrual autoAccrual(int year, int month, int day, double days) {
   return VacationAccrual.create(
     userId: 'test_user',
