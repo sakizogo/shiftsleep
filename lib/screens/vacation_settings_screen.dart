@@ -394,7 +394,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
           saved = await _repository.getFirstAccrualDate(widget.userId);
         } catch (e) {
           debugPrint('❌ N165: 保存済みの初回付与日を読めないため、保存しません: $e');
-          showMessage('❌ 有給設定を保存できませんでした（保存済みの初回付与日を読めませんでした）: $e');
+          showMessage('❌ 有給設定を保存できませんでした（保存済みの初回付与日を読めませんでした。何も保存していません）');
           return;
         }
         if (!mounted) return;
@@ -411,7 +411,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
             );
           } catch (e) {
             debugPrint('❌ N165: 付与の確認に失敗したため、保存しません: $e');
-            showMessage('❌ 有給設定を保存できませんでした（付与の確認に失敗しました）: $e');
+            showMessage('❌ 有給設定を保存できませんでした（付与の確認に失敗しました。何も保存していません）');
             return;
           }
           if (!mounted) return;
@@ -454,7 +454,7 @@ class _VacationSettingsScreenState extends State<VacationSettingsScreen> {
         );
       } catch (e) {
         debugPrint('❌ N82: 有給設定の保存に失敗: $e');
-        showMessage('❌ 有給設定の保存に失敗しました（何も保存していません）: $e');
+        showMessage('❌ 有給設定の保存に失敗しました（何も保存していません）');
         return;
       }
 
