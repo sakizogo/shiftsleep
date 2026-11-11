@@ -7,6 +7,8 @@ import 'package:shiftsleep/services/accrual_sync_messages.dart';
 
 AccrualSyncImpact impact({
   bool carryOverTargetLost = false,
+  DateTime? carryOverExpiryBefore,  // N171
+  DateTime? carryOverExpiryAfter,  // N171
   double unallocatedBefore = 0.0,
   double unallocatedAfter = 0.0,
   int usagesBeforeFirstCount = 0,
@@ -14,6 +16,8 @@ AccrualSyncImpact impact({
 }) =>
     (
       carryOverTargetLost: carryOverTargetLost,
+      carryOverExpiryBefore: carryOverExpiryBefore,
+      carryOverExpiryAfter: carryOverExpiryAfter,
       unallocatedBefore: unallocatedBefore,
       unallocatedAfter: unallocatedAfter,
       usagesBeforeFirstCount: usagesBeforeFirstCount,
@@ -144,6 +148,112 @@ void main() {
         accrualSyncNeedsConfirmation(
             plan: emptyPlan, impact: impact(carryOverTargetLost: true), firstAccrualDate: first, carriedOverDays: 5),
         isTrue,
+      );
+    });
+  });
+
+  // N171：持ち越しの失効日が早まるときの ⚠️
+  group('持ち越しの失効日が早まる（N171）', () {
+    final expiryBefore = DateTime(2027, 9, 30, 23, 59, 59, 999);
+    final expiryAfter = DateTime(2026, 11, 19, 23, 59, 59, 999);
+
+    test('N171-M1. 失効日が早まる → 文言（前 → 後の失効日と持ち越しの日数）', () {
+      expect(
+        accrualSyncWarningLines(
+          impact: impact(carryOverExpiryBefore: expiryBefore, carryOverExpiryAfter: expiryAfter),
+          firstAccrualDate: first,
+          carriedOverDays: 5,
+        ),
+        ['⚠️ 持ち越し 5 日の失効日が 2027年9月30日 → 2026年11月19日 に早まります。必要なら持ち越しの日数を見直してください'],
+      );
+    });
+
+    test('N171-M2. 失効日が同じ・遅くなる・どちらかが null・持ち越しが 0 → 出さない', () {
+      for (final i in [
+        impact(carryOverExpiryBefore: expiryBefore, carryOverExpiryAfter: expiryBefore),
+        impact(carryOverExpiryBefore: expiryAfter, carryOverExpiryAfter: expiryBefore),
+        impact(carryOverExpiryBefore: null, carryOverExpiryAfter: expiryAfter),
+        impact(carryOverExpiryBefore: expiryBefore, carryOverExpiryAfter: null),
+      ]) {
+        expect(accrualSyncWarningLines(impact: i, firstAccrualDate: first, carriedOverDays: 5), isEmpty);
+      }
+      expect(
+        accrualSyncWarningLines(
+          impact: impact(carryOverExpiryBefore: expiryBefore, carryOverExpiryAfter: expiryAfter),
+          firstAccrualDate: first,
+          carriedOverDays: 0,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('N171-M3. 時刻だけ違って年月日が同じ → 早まっていない', () {
+      expect(
+        isCarryOverExpiryShortened(
+          impact: impact(
+            carryOverExpiryBefore: DateTime(2027, 9, 30, 23, 59, 59, 999),
+            carryOverExpiryAfter: DateTime(2027, 9, 30),
+          ),
+          carriedOverDays: 5,
+        ),
+        isFalse,
+      );
+      expect(
+        isCarryOverExpiryShortened(
+          impact: impact(
+            carryOverExpiryBefore: DateTime(2027, 9, 30),
+            carryOverExpiryAfter: DateTime(2027, 9, 29, 23, 59, 59, 999),
+          ),
+          carriedOverDays: 5,
+        ),
+        isTrue,
+      );
+    });
+
+    test('N171-M4. 対象がなくなる ⚠️ と同時に当てはまっても、持ち越しの行は 1 行だけ（なくなる方）', () {
+      expect(
+        accrualSyncWarningLines(
+          impact: impact(
+            carryOverTargetLost: true,
+            carryOverExpiryBefore: expiryBefore,
+            carryOverExpiryAfter: expiryAfter,
+          ),
+          firstAccrualDate: first,
+          carriedOverDays: 5,
+        ),
+        ['⚠️ 持ち越し 5 日の対象の付与がなくなり、残りに数えられなくなります'],
+      );
+    });
+
+    test('N171-M5. 消す・足す付与がなく、この ⚠️ だけ → ダイアログを出す', () {
+      expect(
+        accrualSyncNeedsConfirmation(
+          plan: emptyPlan,
+          impact: impact(carryOverExpiryBefore: expiryBefore, carryOverExpiryAfter: expiryAfter),
+          firstAccrualDate: first,
+          carriedOverDays: 5,
+        ),
+        isTrue,
+      );
+    });
+
+    test('N171-M6. 並び順：持ち越しの行 → 初回付与日より前の使用の行', () {
+      expect(
+        accrualSyncWarningLines(
+          impact: impact(
+            carryOverExpiryBefore: expiryBefore,
+            carryOverExpiryAfter: expiryAfter,
+            usagesBeforeFirstCount: 1,
+            usagesBeforeFirstDays: 1.0,
+            unallocatedAfter: 1.0,
+          ),
+          firstAccrualDate: first,
+          carriedOverDays: 5,
+        ),
+        [
+          '⚠️ 持ち越し 5 日の失効日が 2027年9月30日 → 2026年11月19日 に早まります。必要なら持ち越しの日数を見直してください',
+          '⚠️ 2025年10月2日より前の有休 1 件（1.0日）が、どの付与にも入らなくなります',
+        ],
       );
     });
   });

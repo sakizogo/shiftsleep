@@ -18,8 +18,12 @@ typedef AccrualSyncPlan = ({
 /// - unallocatedBefore / unallocatedAfter：どの付与にも入らない使用の日数（合わせ直す前・後）
 /// - usagesBeforeFirstCount / usagesBeforeFirstDays：新しい初回付与日より前の使用のうち、合わせ直すと
 ///   どの付与にも入らない日数が増える使用の件数と、増える日数（N170：前から入っていなかった分は数えない）
+/// - carryOverExpiryBefore / carryOverExpiryAfter：有効な持ち越しの対象の付与の失効日（合わせ直す前・後）。
+///   対象がないか失効していれば null（N171：失効日が早まるときの ⚠️ に使う）
 typedef AccrualSyncImpact = ({
   bool carryOverTargetLost,
+  DateTime? carryOverExpiryBefore,
+  DateTime? carryOverExpiryAfter,
   double unallocatedBefore,
   double unallocatedAfter,
   int usagesBeforeFirstCount,
@@ -1103,6 +1107,13 @@ class VacationRepository {
     );
     bool hasValidTarget(VacationBalance b) =>
         b.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
+    // N171：有効な持ち越しの対象の付与の失効日（なければ null）
+    DateTime? validTargetExpiry(VacationBalance b) {
+      for (final a in b.accruals) {
+        if (a.isCarryOverTarget && !a.isExpired) return a.accrual.expiryDate;
+      }
+      return null;
+    }
 
     // N170：新しい初回付与日より前の使用のうち、合わせ直す前より「どの付与にも入らない日数」が増えたものだけ数える
     // （前からどの付与にも入っていなかった分は数えない）。日数は増えた分
@@ -1125,6 +1136,8 @@ class VacationRepository {
       carryOverTargetLost: carriedOverDays > 0 &&
           hasValidTarget(balanceBefore) &&
           !hasValidTarget(balanceAfter),
+      carryOverExpiryBefore: validTargetExpiry(balanceBefore),
+      carryOverExpiryAfter: validTargetExpiry(balanceAfter),
       unallocatedBefore: balanceBefore.unallocatedDays,
       unallocatedAfter: balanceAfter.unallocatedDays,
       usagesBeforeFirstCount: usagesBeforeFirstCount,

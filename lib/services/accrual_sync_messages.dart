@@ -24,8 +24,18 @@ double extraUnallocatedDays(AccrualSyncImpact impact) {
   return extra > 0 ? extra : 0.0;
 }
 
+/// 持ち越しの失効日が早まるか（N171。DB にも画面にも依存しない）
+/// 持ち越しの日数が 0 より大きく、前と後の両方に有効な対象があり、後の失効日が前より早い（年・月・日で比べる）
+bool isCarryOverExpiryShortened({required AccrualSyncImpact impact, required int carriedOverDays}) {
+  final before = impact.carryOverExpiryBefore;
+  final after = impact.carryOverExpiryAfter;
+  if (carriedOverDays <= 0 || before == null || after == null) return false;
+  return DateTime(after.year, after.month, after.day)
+      .isBefore(DateTime(before.year, before.month, before.day));
+}
+
 /// 知らせる ⚠️ の行（なければ空）
-/// - 持ち越しの対象の付与がなくなる
+/// - 持ち越しの対象の付与がなくなる。なくならずに失効日が早まるなら、そのこと（N171。どちらか 1 行だけ）
 /// - 新しい初回付与日より前の使用（件数・日数）。ほかにも入らなくなる分があれば「ほかに◯日」
 /// - 初回付与日より前の使用がなくても、どの付与にも入らない使用が増えるなら、その日数
 List<String> accrualSyncWarningLines({
@@ -36,6 +46,9 @@ List<String> accrualSyncWarningLines({
   final lines = <String>[];
   if (impact.carryOverTargetLost) {
     lines.add('⚠️ 持ち越し $carriedOverDays 日の対象の付与がなくなり、残りに数えられなくなります');
+  } else if (isCarryOverExpiryShortened(impact: impact, carriedOverDays: carriedOverDays)) {
+    lines.add('⚠️ 持ち越し $carriedOverDays 日の失効日が ${accrualDateText(impact.carryOverExpiryBefore!)}'
+        ' → ${accrualDateText(impact.carryOverExpiryAfter!)} に早まります。必要なら持ち越しの日数を見直してください');
   }
   final extra = extraUnallocatedDays(impact);
   if (impact.usagesBeforeFirstCount > 0) {

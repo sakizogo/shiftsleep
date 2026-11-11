@@ -403,6 +403,8 @@ void main() {
         ),
         (
           carryOverTargetLost: true,
+          carryOverExpiryBefore: DateTime(2027, 9, 30, 23, 59, 59, 999),  // N171：前の対象 2025/10/1 の失効日
+          carryOverExpiryAfter: null,  // N171：後は対象がない
           unallocatedBefore: 0.0,
           unallocatedAfter: 1.5,
           usagesBeforeFirstCount: 2,
@@ -635,6 +637,123 @@ void main() {
         (count: impact.usagesBeforeFirstCount, days: impact.usagesBeforeFirstDays),
         (count: 2, days: 1.5),
       );
+    });
+  });
+
+  group('N171：持ち越しの失効日（合わせ直す前・後）と、早まるときの ⚠️', () {
+    /// 23:59:59.999 つきの失効日（VacationAccrual.calculateExpiryDate と同じ形）
+    DateTime expiry(int year, int month, int day) => DateTime(year, month, day, 23, 59, 59, 999);
+
+    List<String> warningsFor(AccrualSyncImpact impact, DateTime newFirst, {int carriedOverDays = 5}) =>
+        accrualSyncWarningLines(impact: impact, firstAccrualDate: newFirst, carriedOverDays: carriedOverDays);
+
+    test('X1. 今日を越えて遅らせる（10/1 → 11/20）→ 持ち越しが 2024/11/20 の付与に替わり、失効日が早まる', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2024, 11, 20),
+        storedBaseDate: DateTime(2026, 10, 1),
+      );
+      expect(impact.carryOverTargetLost, isFalse);
+      expect(impact.carryOverExpiryBefore, expiry(2027, 9, 30));
+      expect(impact.carryOverExpiryAfter, expiry(2026, 11, 19));
+      expect(
+        warningsFor(impact, DateTime(2024, 11, 20)),
+        ['⚠️ 持ち越し 5 日の失効日が 2027年9月30日 → 2026年11月19日 に早まります。必要なら持ち越しの日数を見直してください'],
+      );
+    });
+
+    test('X2. 早める（10/1 → 9/30）→ 失効日が 1 日早まるので出す（A1）', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2024, 9, 30),
+        storedBaseDate: DateTime(2026, 10, 1),
+      );
+      expect(impact.carryOverExpiryBefore, expiry(2027, 9, 30));
+      expect(impact.carryOverExpiryAfter, expiry(2027, 9, 29));
+      expect(
+        warningsFor(impact, DateTime(2024, 9, 30)),
+        ['⚠️ 持ち越し 5 日の失効日が 2027年9月30日 → 2027年9月29日 に早まります。必要なら持ち越しの日数を見直してください'],
+      );
+    });
+
+    test('X3. 遅らせる（10/1 → 10/2）→ 失効日が延びるので出さない', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2024, 10, 2),
+        storedBaseDate: DateTime(2026, 10, 1),
+      );
+      expect(impact.carryOverExpiryBefore, expiry(2027, 9, 30));
+      expect(impact.carryOverExpiryAfter, expiry(2027, 10, 1));
+      expect(warningsFor(impact, DateTime(2024, 10, 2)), isEmpty);
+    });
+
+    test('X4. 対象がなくなる（→ 2026/10/5）→ 後は null。なくなる ⚠️ だけで、早まる ⚠️ は出ない', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2026, 10, 5),
+        storedBaseDate: DateTime(2026, 10, 1),
+      );
+      expect(impact.carryOverTargetLost, isTrue);
+      expect(impact.carryOverExpiryAfter, isNull);
+      expect(
+        warningsFor(impact, DateTime(2026, 10, 5)),
+        ['⚠️ 持ち越し 5 日の対象の付与がなくなり、残りに数えられなくなります'],
+      );
+    });
+
+    test('X5. ［⚡］（keepStoredCarryOver）でも、付与の行が替わって失効日が早まれば出す（B1）', () {
+      // 行は 10/2 で作られ、保存済みの初回付与日は 10/1・基準日 2026/10/1 のまま → 対象 2025/10/2 → 2025/10/1
+      final existing = [
+        autoAccrual(2024, 10, 2, 10),
+        autoAccrual(2025, 10, 2, 11),
+        autoAccrual(2026, 10, 2, 12),
+      ];
+      final plan = VacationRepository.planAccrualSync(
+        existing: existing,
+        schedule: VacationRepository.accrualsUntil(DateTime(2024, 10, 1), today),
+      );
+      final impact = VacationRepository.evaluateAccrualSync(
+        existing: existing,
+        plan: plan,
+        usages: const [],
+        carriedOverDays: 5,
+        storedDays: 5,
+        storedBaseDate: DateTime(2026, 10, 1),
+        firstAccrualDate: DateTime(2024, 10, 1),
+        today: today,
+        keepStoredCarryOver: true,
+        countUsagesBeforeFirst: false,
+      );
+      expect(impact.carryOverExpiryBefore, expiry(2027, 10, 1));
+      expect(impact.carryOverExpiryAfter, expiry(2027, 9, 30));
+      expect(
+        warningsFor(impact, DateTime(2024, 10, 1)),
+        ['⚠️ 持ち越し 5 日の失効日が 2027年10月1日 → 2027年9月30日 に早まります。必要なら持ち越しの日数を見直してください'],
+      );
+    });
+
+    test('X6. 持ち越しが 0 日 → 失効日は null で、出さない', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2024, 11, 20),
+        carriedOverDays: 0,
+        storedDays: 0,
+        storedBaseDate: null,
+      );
+      expect(impact.carryOverExpiryBefore, isNull);
+      expect(impact.carryOverExpiryAfter, isNull);
+      expect(warningsFor(impact, DateTime(2024, 11, 20), carriedOverDays: 0), isEmpty);
+    });
+
+    test('X7. 前の対象がすでに失効している（基準日 2025/10/1 → 対象 2024/10/1）→ 前は null で、出さない', () {
+      final impact = impactFor(
+        existing: existingFrom20241001(),
+        newFirstAccrualDate: DateTime(2024, 9, 30),
+        storedBaseDate: DateTime(2025, 10, 1),
+      );
+      expect(impact.carryOverExpiryBefore, isNull);
+      expect(impact.carryOverExpiryAfter, isNotNull);
+      expect(warningsFor(impact, DateTime(2024, 9, 30)), isEmpty);
     });
   });
 
