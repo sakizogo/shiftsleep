@@ -336,11 +336,24 @@ void main() {
         isFalse,
       );
 
+      // countUsagesBeforeFirst の効き目（N170 のあと）：差分 0 の上の場面では、数えても 0 件になる
+      // （前から入っていない使用は数えないため）。そこで、行は 10/1・保存済みの初回付与日は 10/2 の場面にする
+      // 使用 2024/10/1 は、合わせ直す前は 2024/10/1 の付与に入り、後はどの付与にも入らなくなる
+      final shiftedUsages = [usage(2024, 10, 1)];
+      final notCounted = resyncImpactFor(
+        existing: existingFrom20241001(),
+        savedFirstAccrualDate: DateTime(2024, 10, 2),
+        usages: shiftedUsages,
+        storedBaseDate: DateTime(2026, 10, 1),
+      );
+      expect(notCounted.usagesBeforeFirstCount, 0);
+      expect(notCounted.usagesBeforeFirstDays, 0.0);
+
       // 数える（既定値）なら 1 件・1 日になる
       final counted = resyncImpactFor(
         existing: existingFrom20241001(),
-        savedFirstAccrualDate: DateTime(2024, 10, 1),
-        usages: usages,
+        savedFirstAccrualDate: DateTime(2024, 10, 2),
+        usages: shiftedUsages,
         storedBaseDate: DateTime(2026, 10, 1),
         countUsagesBeforeFirst: true,
       );
@@ -523,6 +536,105 @@ void main() {
       final target = balance.accruals.singleWhere((a) => a.isCarryOverTarget);
       expect(target.accrual.accrualDate, DateTime(2025, 10, 2));
       expect(balance.totalRemaining, 17.0);
+    });
+  });
+
+  group('N170：前からどの付与にも入っていなかった使用は「入らなくなります」と数えない', () {
+    /// 初回付与日 2024/10/1 の付与から newFirst に合わせ直したときの影響（持ち越しなし）
+    AccrualSyncImpact impactWithoutCarryOver(List<VacationUsage> usages, DateTime newFirst) {
+      final existing = existingFrom20241001();
+      final plan = VacationRepository.planAccrualSync(
+        existing: existing,
+        schedule: VacationRepository.accrualsUntil(newFirst, today),
+      );
+      return VacationRepository.evaluateAccrualSync(
+        existing: existing,
+        plan: plan,
+        usages: usages,
+        carriedOverDays: 0,
+        storedDays: 0,
+        storedBaseDate: null,
+        firstAccrualDate: newFirst,
+        today: today,
+      );
+    }
+
+    test('N170-1. 2024/9/15（前から入っていない）と 2024/10/1（新たに入らなくなる）→ 数えるのは 2024/10/1 の 1 件・1.0 日だけ', () {
+      final impact = impactWithoutCarryOver(
+        [usage(2024, 9, 15), usage(2024, 10, 1)],
+        DateTime(2024, 10, 2),
+      );
+      expect(impact.unallocatedBefore, 1.0);  // 前提：2024/9/15 は前から入っていない
+      expect(impact.unallocatedAfter, 2.0);
+      expect(
+        (count: impact.usagesBeforeFirstCount, days: impact.usagesBeforeFirstDays),
+        (count: 1, days: 1.0),
+      );
+      expect(
+        accrualSyncWarningLines(impact: impact, firstAccrualDate: DateTime(2024, 10, 2), carriedOverDays: 0),
+        ['⚠️ 2024年10月2日より前の有休 1 件（1.0日）が、どの付与にも入らなくなります'],
+      );
+    });
+
+    test('N170-2. 前から入っていない 2024/9/15 だけ → ⚠️ は出ない', () {
+      final impact = impactWithoutCarryOver([usage(2024, 9, 15)], DateTime(2024, 10, 2));
+      expect(impact.unallocatedBefore, 1.0);
+      expect(impact.unallocatedAfter, 1.0);
+      expect(
+        accrualSyncWarningLines(impact: impact, firstAccrualDate: DateTime(2024, 10, 2), carriedOverDays: 0),
+        isEmpty,
+      );
+    });
+
+    test('N170-3. 日付の順に並んでいない usages でも、unallocatedDaysByUsage は渡した順（同じ日付は渡した順に割り当て）', () {
+      // 付与 1 日だけ・同じ日付の使用 0.5 日（A）と 1.0 日（B）：渡した順に引くので、後ろの使用が足りなくなる
+      final small = [autoAccrual(2026, 10, 1, 1)];
+      final a = usage(2026, 10, 20, 0.5);
+      final b = usage(2026, 10, 20, 1.0);
+      expect(
+        allocateUsage(accruals: small, usages: [a, b], today: today).unallocatedDaysByUsage,
+        [0.0, 0.5],
+      );
+      expect(
+        allocateUsage(accruals: small, usages: [b, a], today: today).unallocatedDaysByUsage,
+        [0.0, 0.5],
+      );
+      // 同じ日付の前に、日付の新しい使用を置いても（並べ替えられても）結果は渡した順
+      expect(
+        allocateUsage(accruals: small, usages: [usage(2026, 11, 1), b, a], today: today)
+            .unallocatedDaysByUsage,
+        [1.0, 0.0, 0.5],
+      );
+
+      // evaluateAccrualSync：日付の順でない usages（同じ日付 2024/10/1 が 2 つ）
+      // 2026/10/20 は前も後も入る。2024/9/15 は前から入らない。2024/10/1 の 2 つは新たに入らなくなる
+      final usages = [
+        usage(2026, 10, 20),
+        usage(2024, 10, 1, 0.5),
+        usage(2024, 9, 15),
+        usage(2024, 10, 1, 1.0),
+      ];
+      final plan = VacationRepository.planAccrualSync(
+        existing: existingFrom20241001(),
+        schedule: VacationRepository.accrualsUntil(DateTime(2024, 10, 2), today),
+      );
+      final after = [
+        ...existingFrom20241001().where((x) => !plan.toDelete.any((d) => d.accrualDate == x.accrualDate)),
+        for (final s in plan.toAdd) autoAccrual(s.date.year, s.date.month, s.date.day, s.days.toDouble()),
+      ];
+      expect(
+        allocateUsage(accruals: existingFrom20241001(), usages: usages, today: today).unallocatedDaysByUsage,
+        [0.0, 0.0, 1.0, 0.0],
+      );
+      expect(
+        allocateUsage(accruals: after, usages: usages, today: today).unallocatedDaysByUsage,
+        [0.0, 0.5, 1.0, 1.0],
+      );
+      final impact = impactWithoutCarryOver(usages, DateTime(2024, 10, 2));
+      expect(
+        (count: impact.usagesBeforeFirstCount, days: impact.usagesBeforeFirstDays),
+        (count: 2, days: 1.5),
+      );
     });
   });
 

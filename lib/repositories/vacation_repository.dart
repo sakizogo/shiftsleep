@@ -16,7 +16,8 @@ typedef AccrualSyncPlan = ({
 /// N165：合わせ直したときの影響（確認ダイアログで知らせる）
 /// - carryOverTargetLost：持ち越しの対象の付与が、今はあって有効なのに、合わせ直すとなくなる（持ち越しの入力が 0 なら false）
 /// - unallocatedBefore / unallocatedAfter：どの付与にも入らない使用の日数（合わせ直す前・後）
-/// - usagesBeforeFirstCount / usagesBeforeFirstDays：新しい初回付与日より前の使用の件数・日数
+/// - usagesBeforeFirstCount / usagesBeforeFirstDays：新しい初回付与日より前の使用のうち、合わせ直すと
+///   どの付与にも入らない日数が増える使用の件数と、増える日数（N170：前から入っていなかった分は数えない）
 typedef AccrualSyncImpact = ({
   bool carryOverTargetLost,
   double unallocatedBefore,
@@ -1044,6 +1045,7 @@ class VacationRepository {
   /// - keepStoredCarryOver：true なら、合わせ直したあとも持ち越しは DB の日数と基準日のまま（持ち越しには触らない）
   ///   carriedOverDays には DB の日数を渡す（carryOverTargetLost の判定に使う）
   /// - countUsagesBeforeFirst：false なら、初回付与日より前の使用を数えない（初回付与日が変わらないため）
+  /// N170：初回付与日より前の使用は、合わせ直す前より「どの付与にも入らない日数」が増えた使用だけを、増えた日数で数える
   static AccrualSyncImpact evaluateAccrualSync({
     required List<VacationAccrual> existing,
     required AccrualSyncPlan plan,
@@ -1102,11 +1104,22 @@ class VacationRepository {
     bool hasValidTarget(VacationBalance b) =>
         b.accruals.any((a) => a.isCarryOverTarget && !a.isExpired);
 
+    // N170：新しい初回付与日より前の使用のうち、合わせ直す前より「どの付与にも入らない日数」が増えたものだけ数える
+    // （前からどの付与にも入っていなかった分は数えない）。日数は増えた分
     final first = DateTime(firstAccrualDate.year, firstAccrualDate.month, firstAccrualDate.day);
-    final usagesBeforeFirst = countUsagesBeforeFirst
-        ? usages.where((u) =>
-            DateTime(u.usageDate.year, u.usageDate.month, u.usageDate.day).isBefore(first))
-        : const <VacationUsage>[];
+    var usagesBeforeFirstCount = 0;
+    var usagesBeforeFirstDays = 0.0;
+    if (countUsagesBeforeFirst) {
+      for (int i = 0; i < usages.length; i++) {
+        final u = usages[i];
+        if (!DateTime(u.usageDate.year, u.usageDate.month, u.usageDate.day).isBefore(first)) continue;
+        final increase =
+            balanceAfter.unallocatedDaysByUsage[i] - balanceBefore.unallocatedDaysByUsage[i];
+        if (increase <= 0) continue;
+        usagesBeforeFirstCount++;
+        usagesBeforeFirstDays += increase;
+      }
+    }
 
     return (
       carryOverTargetLost: carriedOverDays > 0 &&
@@ -1114,8 +1127,8 @@ class VacationRepository {
           !hasValidTarget(balanceAfter),
       unallocatedBefore: balanceBefore.unallocatedDays,
       unallocatedAfter: balanceAfter.unallocatedDays,
-      usagesBeforeFirstCount: usagesBeforeFirst.length,
-      usagesBeforeFirstDays: usagesBeforeFirst.fold(0.0, (sum, u) => sum + u.daysUsed),
+      usagesBeforeFirstCount: usagesBeforeFirstCount,
+      usagesBeforeFirstDays: usagesBeforeFirstDays,
     );
   }
 

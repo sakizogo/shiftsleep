@@ -41,10 +41,14 @@ class AccrualBalance {
 class VacationBalance {
   final List<AccrualBalance> accruals;  // 付与日の古い順（失効済みも含む）
   final double unallocatedDays;         // 付与が足りず割り当てられなかった使用（ログ用、画面には出さない）
+  /// 使用ごとの、どの付与にも入らなかった日数（N170）。allocateUsage に渡した usages と同じ順・同じ数
+  /// 合計は unallocatedDays と同じ
+  final List<double> unallocatedDaysByUsage;
 
   const VacationBalance({
     required this.accruals,
     required this.unallocatedDays,
+    this.unallocatedDaysByUsage = const [],
   });
 
   /// 失効していない付与
@@ -86,6 +90,7 @@ DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 /// - 持ち越しの対象（付与日が基準日より前の付与のうち、いちばん新しいもの）は持ち越し日数から始め、
 ///   基準日より前の使用はその付与から引かない（持ち越しの数にすでに入っているため）
 /// - どの付与からも引けなかった分は unallocatedDays に足すだけ（残りはマイナスにしない）
+///   使用ごとの分は unallocatedDaysByUsage（usages と同じ順。N170）
 /// - 未来の使用（予定の有休）も引く
 VacationBalance allocateUsage({
   required List<VacationAccrual> accruals,
@@ -117,10 +122,16 @@ VacationBalance allocateUsage({
   final usedDays = List<double>.filled(sortedAccruals.length, 0.0);
   var unallocatedDays = 0.0;
 
-  final sortedUsages = [...usages]
-    ..sort((a, b) => _dateOnly(a.usageDate).compareTo(_dateOnly(b.usageDate)));
+  // N170：使用ごとの結果を usages の順で返すため、並べ替えは添字で行う（同じ日付なら渡された順）
+  final sortedUsageIndexes = List<int>.generate(usages.length, (i) => i)
+    ..sort((a, b) {
+      final byDate = _dateOnly(usages[a].usageDate).compareTo(_dateOnly(usages[b].usageDate));
+      return byDate != 0 ? byDate : a.compareTo(b);
+    });
+  final unallocatedDaysByUsage = List<double>.filled(usages.length, 0.0);
 
-  for (final usage in sortedUsages) {
+  for (final usageIndex in sortedUsageIndexes) {
+    final usage = usages[usageIndex];
     final day = _dateOnly(usage.usageDate);
     var need = usage.daysUsed;
 
@@ -138,7 +149,10 @@ VacationBalance allocateUsage({
       need -= take;
     }
 
-    if (need > 0) unallocatedDays += need;
+    if (need > 0) {
+      unallocatedDays += need;
+      unallocatedDaysByUsage[usageIndex] = need;
+    }
   }
 
   return VacationBalance(
@@ -153,5 +167,6 @@ VacationBalance allocateUsage({
         ),
     ],
     unallocatedDays: unallocatedDays,
+    unallocatedDaysByUsage: unallocatedDaysByUsage,
   );
 }
