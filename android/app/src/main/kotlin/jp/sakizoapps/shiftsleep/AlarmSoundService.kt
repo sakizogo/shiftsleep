@@ -128,6 +128,10 @@ class AlarmSoundService : Service() {
       } else {
         0
       }
+      // N141: 確かめる用（debuggable のときだけ）。F3 を起こす（startForeground を呼ばないまま下の catch へ）
+      if (DebugFailFlag.shouldFail(this, DebugFailFlag.START_FOREGROUND)) {
+        throw IllegalStateException("debug: start_foreground")
+      }
       ServiceCompat.startForeground(this, alarmId.hashCode(), notification, type)
       Log.d(TAG, "✅ 前面通知を表示しました")
       // N34: 前のアラームの通知は、前面サービスの通知から外れたあとで消す
@@ -135,7 +139,11 @@ class AlarmSoundService : Service() {
         NotificationManagerCompat.from(this).cancel(previousAlarmId.hashCode())
       }
     } catch (e: Exception) {
-      Log.e(TAG, "❌ startForeground エラー: ${e.message}")
+      Log.e(TAG, "❌ startForeground エラー（予備の経路で鳴らします）: ${e.message}")
+      // N141: 予備の経路の通知は同じ id で出すので、先に前面の通知を外し、onDestroy でも消さないようにする
+      ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+      currentAlarmId = null
+      AlarmReceiver().startFallback(applicationContext, alarmId, label, body, selectedAlarmSound)
       stopSelf()
       return START_NOT_STICKY
     }
@@ -215,18 +223,47 @@ class AlarmSoundService : Service() {
   }
 
   private fun startPlayback(selectedAlarmSound: String) {
-    try {
-      val resourceName = when (selectedAlarmSound) {
-        "gentle" -> "alarm_gentle"
-        "harsh" -> "alarm_harsh"
-        else -> "alarm_default"
-      }
+    val resourceName = when (selectedAlarmSound) {
+      "gentle" -> "alarm_gentle"
+      "harsh" -> "alarm_harsh"
+      else -> "alarm_default"
+    }
+    // N49: アプリで設定した音量で鳴らす（端末のアラーム音量に掛け算される）
+    val volume = readAlarmVolume(this)
+    val failFlag = DebugFailFlag.read(this)
+
+    // N141: 選んだ音 → alarm_default の順に試す。どちらもだめなら音なし（バイブだけ）で鳴らし続ける
+    // 前面サービス・通知・60 秒の自動停止は、音があってもなくても同じ（stopSelf はしない）
+    mediaPlayer = createPlayer(
+      resourceName, volume,
+      debugFail = failFlag == DebugFailFlag.PREPARE || failFlag == DebugFailFlag.PREPARE_ALL
+    ) ?: createPlayer("alarm_default", volume, debugFail = failFlag == DebugFailFlag.PREPARE_ALL)
+
+    // バイブだけのときも「鳴っている」扱い（音量 0% のときと同じ。ホームの「起きる」の表示に使う）
+    isPlaying = true
+    isSoundPlaying = true
+    startTimeMs = System.currentTimeMillis()
+    handler = Handler(Looper.getMainLooper())
+
+    if (mediaPlayer != null) {
+      Log.d(TAG, "🔊 アラーム音繰り返し再生開始: $selectedAlarmSound（USAGE_ALARM、音量 ${(volume * 100).toInt()}%）")
+    } else {
+      Log.w(TAG, "⚠️ 音源を準備できないため、バイブだけで鳴らします")
+    }
+    playLoop()
+    startAutoStopCheck()
+  }
+
+  // N141: 音源を準備する。失敗したら作りかけの MediaPlayer を片付けて null を返す（N130 の予備の経路と同じ考え方）
+  // debugFail：確かめる用（DebugFailFlag）。prepare の直前で失敗させる
+  private fun createPlayer(resourceName: String, volume: Float, debugFail: Boolean): MediaPlayer? {
+    var player: MediaPlayer? = null
+    return try {
       val resourceId = resources.getIdentifier(resourceName, "raw", packageName)
       val uri = Uri.parse("android.resource://$packageName/$resourceId")
-      // N49: アプリで設定した音量で鳴らす（端末のアラーム音量に掛け算される）
-      val volume = readAlarmVolume(this)
-
-      mediaPlayer = MediaPlayer().apply {
+      // 先に player に入れてから組み立てる（途中で失敗しても catch で release できるように）
+      player = MediaPlayer()
+      player.apply {
         // N29: アラーム音量で鳴らす（メディア音量が 0 でも鳴る）
         setAudioAttributes(
           AudioAttributes.Builder()
@@ -236,20 +273,14 @@ class AlarmSoundService : Service() {
         )
         setDataSource(this@AlarmSoundService, uri)
         setVolume(volume, volume)
+        if (debugFail) throw IllegalStateException("debug: prepare")
         prepare()
       }
-
-      isPlaying = true
-      isSoundPlaying = true
-      startTimeMs = System.currentTimeMillis()
-      handler = Handler(Looper.getMainLooper())
-
-      Log.d(TAG, "🔊 アラーム音繰り返し再生開始: $selectedAlarmSound（USAGE_ALARM、音量 ${(volume * 100).toInt()}%）")
-      playLoop()
-      startAutoStopCheck()
+      player
     } catch (e: Exception) {
-      Log.e(TAG, "❌ アラーム音再生エラー: ${e.message}")
-      stopSelf()
+      Log.e(TAG, "❌ 音源の準備エラー（$resourceName）: ${e.message}")
+      player?.release()
+      null
     }
   }
 
@@ -262,8 +293,10 @@ class AlarmSoundService : Service() {
         mediaPlayer?.start()
         vibrate(100)
         handler?.postDelayed({
-          if (isPlaying && mediaPlayer?.isPlaying == true) {
-            mediaPlayer?.pause()
+          // N141: 音なし（バイブだけ）のときは player がないので、そのまま続ける（音ありで止まったときの扱いは N177）
+          val player = mediaPlayer
+          if (isPlaying && (player == null || player.isPlaying)) {
+            player?.pause()
             handler?.postDelayed({ playLoop() }, SILENCE_DURATION_MS)
           }
         }, PLAY_DURATION_MS)

@@ -63,15 +63,24 @@ class AlarmReceiver : BroadcastReceiver() {
         putExtra("body", body)
         putExtra("selectedAlarmSound", selectedAlarmSound)
       }
+      // N141: 確かめる用（debuggable のときだけ）。F1 を起こして予備の経路に落とす
+      if (DebugFailFlag.shouldFail(context, DebugFailFlag.START_FGS)) {
+        throw IllegalStateException("debug: start_fgs")
+      }
       ContextCompat.startForegroundService(context, serviceIntent)
       Log.d("AlarmReceiver", "✅ AlarmSoundService を起動しました")
     } catch (e: Exception) {
       // 起動できなかったときは、今までどおりこの中で鳴らす
       Log.e("AlarmReceiver", "❌ AlarmSoundService の起動エラー（従来の方法で鳴らします）: ${e.message}")
-      showNotification(context, alarmId, label, body)
-      playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
-      vibrate(context)
+      startFallback(context, alarmId, label, body, selectedAlarmSound)
     }
+  }
+
+  // N141: 予備の経路の入口（サービスの中で startForeground に失敗したときも、ここから鳴らす）
+  internal fun startFallback(context: Context, alarmId: String, label: String, body: String, selectedAlarmSound: String) {
+    showNotification(context, alarmId, label, body)
+    playAlarmSoundContinuous(context, alarmId, selectedAlarmSound)
+    vibrate(context)
   }
 
   private fun showNotification(context: Context, alarmId: String, label: String, body: String) {
