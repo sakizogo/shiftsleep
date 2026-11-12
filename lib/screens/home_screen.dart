@@ -491,6 +491,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _timeUpdateTimer?.cancel();
     // =====================================================================
     _shiftDraftStore.dispose();  // N140 2/4
+    WidgetsBinding.instance.removeObserver(this);  // N132
     super.dispose();
   }
 
