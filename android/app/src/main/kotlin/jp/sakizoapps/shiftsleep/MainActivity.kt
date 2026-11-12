@@ -147,6 +147,8 @@ class MainActivity: FlutterActivity() {
             if (wasPlaying) stopped = false
             Log.e("MainActivity", "❌ 予備の MediaPlayer の停止エラー: ${e.message}")
         }
+        // N134: 予備の経路の WakeLock とバイブも手放す（失敗してもログだけ。戻り値は変えない）
+        AlarmReceiver.releaseFallbackResources(this)
 
         // N6: 音を止めたら、残っているアラーム通知（alarm_channel）もすべて消す
         try {

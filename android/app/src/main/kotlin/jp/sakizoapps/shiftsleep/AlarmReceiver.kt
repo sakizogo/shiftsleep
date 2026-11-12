@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.core.app.NotificationCompat
@@ -28,6 +29,25 @@ class AlarmReceiver : BroadcastReceiver() {
     const val AUTO_STOP_DURATION_MS = 60000L
     const val PLAY_DURATION_MS = 500L
     const val SILENCE_DURATION_MS = 200L
+    // N134: 予備の経路は前面サービスではないので、鳴らしている間は CPU が眠らないよう WakeLock を持つ（期限つき）
+    private const val WAKE_LOCK_TIMEOUT_MS = 70000L
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    // N134: 予備の経路の WakeLock とバイブを手放す（AlarmReceiver の stopAlarm と MainActivity の stopAlarm から呼ぶ）
+    // バイブの cancel はこのアプリのバイブをすべて止める（ふだんの経路のバイブも止まるが、どちらも止めるときに呼ぶ）
+    fun releaseFallbackResources(context: Context) {
+      try {
+        wakeLock?.let { if (it.isHeld) it.release() }
+      } catch (e: Exception) {
+        Log.e("AlarmReceiver", "❌ WakeLock の解放エラー: ${e.message}")
+      }
+      wakeLock = null
+      try {
+        (context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator).cancel()
+      } catch (e: Exception) {
+        Log.e("AlarmReceiver", "❌ バイブの停止エラー: ${e.message}")
+      }
+    }
   }
 
   override fun onReceive(context: Context, intent: Intent?) {
@@ -205,7 +225,7 @@ class AlarmReceiver : BroadcastReceiver() {
       // N135: 新しい音の準備ができてから前の音を止める（準備に失敗したら上の throw で抜けるので、前の音は鳴り続ける）
       // stopAlarm で前のループとタイマーも消えるので、Handler とタイマーは常に 1 本になる
       val previousAlarmId = if (isAlarmPlaying) currentAlarmId else null
-      stopAlarm()
+      stopAlarm(context)
       if (previousAlarmId != null) {
         Log.d("AlarmReceiver", "🔁 前のアラームを止めて次を鳴らします（前: $previousAlarmId → 次: $alarmId）")
         // 新しい通知はすでに出ているので、同じ id なら消さない
@@ -220,7 +240,8 @@ class AlarmReceiver : BroadcastReceiver() {
       isAlarmPlaying = true
       alarmStartTime = System.currentTimeMillis()
       alarmHandler = Handler(Looper.getMainLooper())
-      
+      acquireWakeLock(context)
+
       Log.d("AlarmReceiver", "🔊 アラーム音繰り返し再生開始: $selectedAlarmSound（MediaPlayer）")
       Log.d("AlarmReceiver", "📌 停止ボタンを押すまで鳴らし続けます")
       Log.d("AlarmReceiver", "⏱️ 1分間何もしない場合は自動停止します")
@@ -245,8 +266,7 @@ class AlarmReceiver : BroadcastReceiver() {
         mediaPlayer?.start()
         Log.d("AlarmReceiver", "🔊 再生中...（0.5秒）")
 
-        vibrateOnce(context)
-
+        // N134: バイブは startFallback で 60 秒ぶんまとめて渡すので、ここでは震わせない
         alarmHandler?.postDelayed({
           if (isAlarmPlaying && mediaPlayer?.isPlaying == true) {
             mediaPlayer?.pause()
@@ -280,7 +300,9 @@ class AlarmReceiver : BroadcastReceiver() {
     }, 1000L)
   }
 
-  private fun stopAlarm() {
+  // N134: WakeLock とバイブも手放す（次のアラームに切り替えるときは、このあと startFallback がバイブを始め直す）
+  private fun stopAlarm(context: Context) {
+    releaseFallbackResources(context)
     try {
       // N135: stop() が例外を出しても必ず片付ける（MainActivity の stopAlarm と同じ考え方）
       isAlarmPlaying = false
@@ -301,7 +323,7 @@ class AlarmReceiver : BroadcastReceiver() {
 
   // 停止ボタンの処理：音を止める＋通知を消す＋停止時刻を保存（＝起床扱い）
   private fun handleAlarmStopped(context: Context, alarmId: String?) {
-    stopAlarm()
+    stopAlarm(context)
     // N29: フォアグラウンドサービスで鳴っている音も止める
     context.stopService(Intent(context, AlarmSoundService::class.java))
     // N141: 止めたあとに見張りの予約で鳴り直さないように取り消す
@@ -319,37 +341,59 @@ class AlarmReceiver : BroadcastReceiver() {
 
   // N27: 予備の鳴らし方での 1 分自動停止：音を止めて、お知らせ通知に差し替える（起床扱いにはしない）
   private fun handleAutoStopped(context: Context, alarmId: String) {
-    stopAlarm()
+    stopAlarm(context)
     NotificationManagerCompat.from(context).cancel(alarmId.hashCode())
     AlarmSoundService.showAutoStoppedNotification(context, alarmId)
   }
 
-  private fun vibrateOnce(context: Context) {
+  // N134: 鳴らしている間は CPU が眠らないようにする（70 秒で自動的に切れる。stopAlarm で手放す）
+  private fun acquireWakeLock(context: Context) {
+    try {
+      val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+      wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ShiftSleep:AlarmFallback").apply {
+        setReferenceCounted(false)
+        acquire(WAKE_LOCK_TIMEOUT_MS)
+      }
+      Log.d("AlarmReceiver", "🔋 WakeLock を取得しました（${WAKE_LOCK_TIMEOUT_MS / 1000}秒）")
+    } catch (e: Exception) {
+      Log.e("AlarmReceiver", "❌ WakeLock エラー: ${e.message}")
+    }
+  }
+
+  // N134: 0.5 秒震えて 0.2 秒止める、を 60 秒ぶん 1 回でシステムに渡す（くり返しなしなので、60 秒で自然に終わる）
+  // アプリのループが止まっても、バイブはシステム側で続く
+  // USAGE_ALARM を付ける（用途がないと、裏にいるアプリのバイブは無視される）
+  private fun vibrate(context: Context) {
     try {
       val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+      val timings = fallbackVibrationTimings()
+      val attributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ALARM)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(VibrationEffect.createWaveform(timings, -1), attributes)
       } else {
         @Suppress("DEPRECATION")
-        vibrator.vibrate(100)
+        vibrator.vibrate(timings, -1, attributes)
       }
+      Log.d("AlarmReceiver", "📳 バイブレーション開始（${AUTO_STOP_DURATION_MS / 1000}秒・USAGE_ALARM）")
     } catch (e: Exception) {
       Log.e("AlarmReceiver", "❌ バイブレーションエラー: ${e.message}")
     }
   }
 
-  private fun vibrate(context: Context) {
-    try {
-      val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-      } else {
-        @Suppress("DEPRECATION")
-        vibrator.vibrate(500)
-      }
-      Log.d("AlarmReceiver", "📳 バイブレーション実行")
-    } catch (e: Exception) {
-      Log.e("AlarmReceiver", "❌ バイブレーションエラー: ${e.message}")
+  // [待ち 0, 震え 500, 止め 200, 震え 500, …, 震え 500] で合計ちょうど 60 秒（85 回くり返して最後に 1 回震える）
+  private fun fallbackVibrationTimings(): LongArray {
+    val cycles = ((AUTO_STOP_DURATION_MS - PLAY_DURATION_MS) / (PLAY_DURATION_MS + SILENCE_DURATION_MS)).toInt()
+    val timings = LongArray(cycles * 2 + 2)
+    timings[0] = 0L
+    for (i in 0 until cycles) {
+      timings[1 + i * 2] = PLAY_DURATION_MS
+      timings[2 + i * 2] = SILENCE_DURATION_MS
     }
+    timings[timings.size - 1] = PLAY_DURATION_MS
+    return timings
   }
 }
