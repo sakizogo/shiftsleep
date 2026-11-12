@@ -11,6 +11,7 @@ import android.util.Log
 // - start_foreground … サービスの startForeground の直前（F3）→ 予備の経路へ
 // - prepare          … サービスの 1 回目の音源の準備（F4）→ alarm_default で再挑戦
 // - prepare_all      … サービスの音源の準備をすべて（F4）→ バイブだけ
+// - service_hang     … サービスの onStartCommand の先頭で 12 秒眠る（F2）→ 落とされたあと見張りの予約で予備の経路へ
 object DebugFailFlag {
   private const val TAG = "DebugFailFlag"
   private const val PROP_KEY = "debug.shiftsleep.fail"
@@ -19,6 +20,7 @@ object DebugFailFlag {
   const val START_FOREGROUND = "start_foreground"
   const val PREPARE = "prepare"
   const val PREPARE_ALL = "prepare_all"
+  const val SERVICE_HANG = "service_hang"
 
   // 今のフラグの値。debuggable でない（リリース版）・読めないときは "" （フラグなし）
   fun read(context: Context): String {

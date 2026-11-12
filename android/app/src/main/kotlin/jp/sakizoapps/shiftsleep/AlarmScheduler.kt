@@ -110,6 +110,65 @@ object AlarmScheduler {
         }
     }
 
+    // N141: 見張りの予約。サービスが startForeground まで届かずにプロセスごと落とされても（F2・F3）、
+    // あとで予備の経路だけで鳴らすための予約。本番のアラームとは別の action なので取り消しも別になる
+    const val WATCHDOG_ACTION = "jp.sakizoapps.shiftsleep.ALARM_WATCHDOG"
+    // 本番の id（YYYYMMDD＋0/1）・10 秒後に鳴らす 999999990 とぶつからない値（日付としてはありえない）
+    private const val WATCHDOG_REQUEST_CODE = 999999980
+    const val WATCHDOG_DELAY_MS = 12000L
+
+    // 見張りの予約は 1 本だけ持つ（同じ requestCode なので、次のアラームの予約で上書きされる）
+    // delayMs が 0 なら「今すぐ」（システムの決まりで、実際には数秒後になる）
+    fun scheduleWatchdog(
+        context: Context,
+        delayMs: Long,
+        alarmId: String,
+        label: String,
+        body: String,
+        selectedAlarmSound: String
+    ) {
+        try {
+            val intent = Intent(context, AlarmReceiver::class.java).apply {
+                action = WATCHDOG_ACTION
+                putExtra("alarmId", alarmId)
+                putExtra("label", label)
+                putExtra("body", body)
+                putExtra("selectedAlarmSound", selectedAlarmSound)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, WATCHDOG_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + delayMs,
+                pendingIntent
+            )
+            Log.d("AlarmScheduler", "👀 見張りの予約を入れました（ID: $alarmId, ${delayMs / 1000}秒後）")
+        } catch (e: Exception) {
+            Log.e("AlarmScheduler", "❌ 見張りの予約エラー（ID: $alarmId）: ${e.message}")
+        }
+    }
+
+    fun cancelWatchdog(context: Context) {
+        try {
+            val intent = Intent(context, AlarmReceiver::class.java).apply {
+                action = WATCHDOG_ACTION
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context, WATCHDOG_REQUEST_CODE, intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+            Log.d("AlarmScheduler", "👀 見張りの予約を取り消しました")
+        } catch (e: Exception) {
+            Log.e("AlarmScheduler", "❌ 見張りの予約の取消エラー: ${e.message}")
+        }
+    }
+
     // N126: 控えから登録し直す（BootReceiver と、アプリを開いたときの MethodChannel から呼ぶ）
     // 未来の予約は登録し直し、過去の予約は控えから消す。アラームが OFF なら何もしない（控えにも触らない）
     // 戻り値：restored（復元）・removed（過去なので削除）・denied（権限なし）・failed（その他の失敗）・off（OFF なら 1）

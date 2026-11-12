@@ -100,6 +100,11 @@ class AlarmSoundService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // N141: 確かめる用（debuggable のときだけ）。12 秒眠らせて、startForeground が間に合わない F2 を起こす
+    if (DebugFailFlag.shouldFail(this, DebugFailFlag.SERVICE_HANG)) {
+      Log.w(TAG, "🧪 service_hang：12 秒眠ります")
+      Thread.sleep(12000L)
+    }
     if (intent == null) {
       Log.w(TAG, "⚠️ Intent が null のため停止します")
       stopSelf()
@@ -134,16 +139,21 @@ class AlarmSoundService : Service() {
       }
       ServiceCompat.startForeground(this, alarmId.hashCode(), notification, type)
       Log.d(TAG, "✅ 前面通知を表示しました")
+      // N141: ここまで来れば落とされないので、見張りの予約は要らない
+      AlarmScheduler.cancelWatchdog(this)
       // N34: 前のアラームの通知は、前面サービスの通知から外れたあとで消す
       if (previousAlarmId != null && previousAlarmId != alarmId) {
         NotificationManagerCompat.from(this).cancel(previousAlarmId.hashCode())
       }
     } catch (e: Exception) {
-      Log.e(TAG, "❌ startForeground エラー（予備の経路で鳴らします）: ${e.message}")
+      Log.e(TAG, "❌ startForeground エラー（見張りの予約で予備の経路に切り替えます）: ${e.message}")
       // N141: 予備の経路の通知は同じ id で出すので、先に前面の通知を外し、onDestroy でも消さないようにする
       ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
       currentAlarmId = null
+      // この場でも予備の経路で鳴らすが、stopSelf のあとアプリごと落とされることがある（Android 16 で確認）。
+      // 落とされても鳴らせるよう、見張りの予約を「今すぐ」に入れ直す（落とされなければ、見張りは鳴っているのを見て何もしない）
       AlarmReceiver().startFallback(applicationContext, alarmId, label, body, selectedAlarmSound)
+      AlarmScheduler.scheduleWatchdog(applicationContext, 0L, alarmId, label, body, selectedAlarmSound)
       stopSelf()
       return START_NOT_STICKY
     }

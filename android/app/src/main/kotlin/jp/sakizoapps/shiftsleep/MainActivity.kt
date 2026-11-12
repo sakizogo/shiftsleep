@@ -126,6 +126,8 @@ class MainActivity: FlutterActivity() {
             stopped = false
             Log.e("MainActivity", "❌ サービスの停止エラー: ${e.message}")
         }
+        // N141: 止めたあとに見張りの予約で鳴り直さないように取り消す（失敗してもログだけ。戻り値は変えない）
+        AlarmScheduler.cancelWatchdog(this)
 
         // 🆕 companion object の変数に直接アクセス
         // N129 2/2 D1: prepare() に失敗した MediaPlayer が残っていると stop() は例外になる。

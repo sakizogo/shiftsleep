@@ -45,6 +45,11 @@ class AlarmReceiver : BroadcastReceiver() {
       return
     }
 
+    if (intent.action == AlarmScheduler.WATCHDOG_ACTION) {
+      handleWatchdog(context, intent)
+      return
+    }
+
     val alarmId = intent.getStringExtra("alarmId") ?: "unknown"
     val label = intent.getStringExtra("label") ?: "Alarm"
     val selectedAlarmSound = intent.getStringExtra("selectedAlarmSound") ?: "default"
@@ -63,6 +68,11 @@ class AlarmReceiver : BroadcastReceiver() {
         putExtra("body", body)
         putExtra("selectedAlarmSound", selectedAlarmSound)
       }
+      // N141: サービスが startForeground まで届かずに落とされても鳴らせるよう、先に見張りの予約を入れる
+      // （startForeground に成功したらサービスが取り消す）
+      AlarmScheduler.scheduleWatchdog(
+        context, AlarmScheduler.WATCHDOG_DELAY_MS, alarmId, label, body, selectedAlarmSound
+      )
       // N141: 確かめる用（debuggable のときだけ）。F1 を起こして予備の経路に落とす
       if (DebugFailFlag.shouldFail(context, DebugFailFlag.START_FGS)) {
         throw IllegalStateException("debug: start_fgs")
@@ -72,8 +82,28 @@ class AlarmReceiver : BroadcastReceiver() {
     } catch (e: Exception) {
       // 起動できなかったときは、今までどおりこの中で鳴らす
       Log.e("AlarmReceiver", "❌ AlarmSoundService の起動エラー（従来の方法で鳴らします）: ${e.message}")
+      // N141: ここで予備の経路に入るので、見張りの予約は要らない
+      AlarmScheduler.cancelWatchdog(context)
       startFallback(context, alarmId, label, body, selectedAlarmSound)
     }
+  }
+
+  // N141: 見張りの予約が届いた＝サービスが startForeground まで届かなかった（F2・F3）
+  // 同じプロセスでまだ鳴っていれば何もしない。鳴っていなければ予備の経路だけで鳴らす（サービスは試さない）
+  private fun handleWatchdog(context: Context, intent: Intent) {
+    val alarmId = intent.getStringExtra("alarmId") ?: "unknown"
+    if (AlarmSoundService.isSoundPlaying || isAlarmPlaying) {
+      Log.d("AlarmReceiver", "👀 見張りの予約が届きましたが、鳴っているので何もしません（ID: $alarmId）")
+      return
+    }
+    Log.w("AlarmReceiver", "👀 見張りの予約が届きました。予備の経路で鳴らします（ID: $alarmId）")
+    startFallback(
+      context,
+      alarmId,
+      intent.getStringExtra("label") ?: "Alarm",
+      intent.getStringExtra("body") ?: "",
+      intent.getStringExtra("selectedAlarmSound") ?: "default"
+    )
   }
 
   // N141: 予備の経路の入口（サービスの中で startForeground に失敗したときも、ここから鳴らす）
@@ -274,6 +304,8 @@ class AlarmReceiver : BroadcastReceiver() {
     stopAlarm()
     // N29: フォアグラウンドサービスで鳴っている音も止める
     context.stopService(Intent(context, AlarmSoundService::class.java))
+    // N141: 止めたあとに見張りの予約で鳴り直さないように取り消す
+    AlarmScheduler.cancelWatchdog(context)
 
     if (alarmId != null) {
       NotificationManagerCompat.from(context).cancel(alarmId.hashCode())
