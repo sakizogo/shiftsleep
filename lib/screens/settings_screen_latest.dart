@@ -21,6 +21,7 @@ import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/wake_alarm_choice.dart';  // N19
 import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N19
+import 'package:shiftsleep/services/wake_time_change.dart';  // N166
 import '../services/manual_wake_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -1432,24 +1433,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // N19：保存の途中でタブを切り替えても再登録と知らせを続けられるよう、最初の await より前に取得
       final messenger = ScaffoldMessenger.of(context);
       final sleepProvider = context.read<SleepProvider>();
+      final previousWakeUpTime = _wakeUpTime;  // N166：保存できなかったら戻す
       setState(() {
         _wakeUpTime = picked;
       });
 
       // ✅ N4: 手動起床時刻を「今夜だけ有効」として保存（「今から寝る」で使う）
-      await ManualWakeService.save(picked);
-      // ✅ N11: 毎日 ON なら毎日使う時刻も更新
-      if (_useDailyWakeUpSetting) {
-        await ManualWakeService.setDaily(true, time: picked);
+      var saveFailed = false;
+      try {
+        await ManualWakeService.save(picked);
+      } catch (e) {
+        debugPrint('❌ N166: 起床時刻（今夜だけの予約）を保存できませんでした: $e');
+        saveFailed = true;
       }
+      // ✅ N11: 毎日 ON なら毎日使う時刻も更新（N166：save が失敗したら書かない。戻した表示と合わなくなるため）
+      var dailyFailed = false;
+      if (!saveFailed && _useDailyWakeUpSetting) {
+        try {
+          await ManualWakeService.setDaily(true, time: picked);
+        } catch (e) {
+          debugPrint('❌ N166: 起床時刻の変更で「毎日」の設定を保存できませんでした: $e');
+          dailyFailed = true;
+        }
+      }
+      final messages = wakeTimeChangeMessages(saveFailed: saveFailed, dailyFailed: dailyFailed);
+
+      // N166：save が失敗したら元の時刻に戻し、実際に保存されている状態を読み直して ⚠️。DB の保存へは進まない
+      if (!shouldSaveSettingsAfterWakeTimeChange(saveFailed: saveFailed)) {
+        if (mounted) setState(() => _wakeUpTime = previousWakeUpTime);
+        await _loadDailyWakeUpSetting();
+        _showWakeTimeChangeMessages(messenger, messages);
+        return;
+      }
+
       if (mounted) {
         setState(() {
           _hasManualWakeTonight = true;
         });
       }
+      // N166：「毎日」を書けなかったら、チェックを保存されている状態に読み直す
+      if (dailyFailed) await _loadDailyWakeUpSetting();
 
       // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
       await _saveSettings(messenger: messenger, sleepProvider: sleepProvider);
+      // N166：「毎日」の ⚠️ は _saveSettings の ✅ のあとに出す
+      _showWakeTimeChangeMessages(messenger, messages);
+    }
+  }
+
+  /// N166：起床時刻の［変更］のあとの ⚠️ を順に出す（前の知らせは消さない）
+  void _showWakeTimeChangeMessages(
+    ScaffoldMessengerState messenger,
+    List<({String text, Color? color, int seconds})> messages,
+  ) {
+    for (final message in messages) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message.text),
+          backgroundColor: message.color,
+          duration: Duration(seconds: message.seconds),
+        ),
+      );
     }
   }
 
