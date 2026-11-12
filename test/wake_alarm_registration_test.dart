@@ -10,6 +10,7 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/wake_alarm_choice.dart';
 import 'package:shiftsleep/services/wake_alarm_registration_service.dart';
 
@@ -245,6 +246,21 @@ void main() {
       expect(scheduledIds, isEmpty);
       expect(cancelledIds, isEmpty);
       expect(wakeAlarmMessages(result), isEmpty);
+    });
+
+    test('N147：今夜だけの予約がなく毎日 ON → 毎日の時刻で main を登録する', () async {
+      SharedPreferences.setMockInitialValues({
+        'shiftsleep_manual_wake_daily': true,
+        'shiftsleep_manual_wake_time': '06:00',
+      });
+      // 毎日の時刻は実際の時計で次に来る 6:00（今日か明日）
+      final expected = ManualWakeService.nextOccurrence(const TimeOfDay(hour: 6, minute: 0));
+
+      final result = await register();
+
+      expect(result.plan, WakeAlarmPlan.mainOnly);
+      expect(result.manualWakeAt, expected);
+      expect(scheduledIds, [_id(expected, 0)]);
     });
   });
 

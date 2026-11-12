@@ -14,6 +14,7 @@ import 'package:shiftsleep/screens/vacation_settings_screen.dart';
 import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
+import 'package:shiftsleep/services/daily_wake_toggle.dart';  // N147
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
@@ -235,6 +236,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _hasManualWakeTonight = hasTonight;
     });
     return true;
+  }
+
+  /// 「この設定を毎日使用する」のチェック
+  /// ✅ N11: SharedPreferences に保存（ON は画面に表示中の時刻を毎日使う時刻にする）
+  /// N147：睡眠中に ON にしたら、「今から寝る」と同じ判定で起床アラームを登録し直す（OFF はこれまでどおり setDaily が取り消す）
+  /// 処理中は _isAlarmBusy を立て、ほかのアラームの操作と重ならないようにする
+  /// N166：保存できなかったら ⚠️ で知らせ、「✅ 毎晩…」は出さない
+  Future<void> _toggleDailyWakeUp(bool value) async {
+    // await の前に取得（画面が閉じられても登録と知らせを続ける）
+    final messenger = ScaffoldMessenger.of(context);
+    final sleepProvider = context.read<SleepProvider>();
+    final displayTime = sleepProvider.autoWakeUpTimeOfDay ?? _wakeUpTime;
+    final timeStr = '${displayTime.hour.toString().padLeft(2, '0')}:${displayTime.minute.toString().padLeft(2, '0')}';
+    final settings = _currentSettings;
+    setState(() {
+      _useDailyWakeUpSetting = value;
+      _isAlarmBusy = true;
+    });
+    try {
+      var saveFailed = false;
+      try {
+        if (value) {
+          await ManualWakeService.setDaily(true, time: displayTime);
+        } else {
+          await ManualWakeService.setDaily(false);
+        }
+      } catch (e) {
+        debugPrint('❌ N166: 毎日の設定を保存できませんでした: $e');
+        saveFailed = true;
+      }
+      // 保存できなかったときも、実際に保存されている状態をチェックに出す
+      final reloaded = await _loadDailyWakeUpSetting();
+      if (saveFailed && !reloaded && mounted) {
+        setState(() => _useDailyWakeUpSetting = !value);
+      }
+
+      print('[SettingsScreen] 📌 毎日設定チェックボックス: ${value ? "✅ ON" : "❌ OFF"}（保存の失敗: $saveFailed）');
+
+      WakeAlarmRegistrationResult? alarmResult;
+      var alarmError = false;
+      if (!saveFailed && value && sleepProvider.isSleepingNow && settings != null) {
+        try {
+          alarmResult = await WakeAlarmRegistrationService.register(
+            now: DateTime.now(),
+            settings: settings,
+            vibrateOnMain: false,
+          );
+        } catch (e) {
+          debugPrint('❌ N147: 毎日 ON のあと、起床アラームを登録できませんでした: $e');
+          alarmError = true;
+        }
+      }
+
+      // N154：読み直せなかったときは成功の知らせの代わりに ⚠️（バナーは出さない）
+      final messages = dailyWakeToggleMessages(
+        enabled: value,
+        timeText: timeStr,
+        saveFailed: saveFailed,
+        reloadFailed: !reloaded,
+        alarmResult: alarmResult,
+        alarmError: alarmError,
+      );
+      messenger.hideCurrentSnackBar();
+      for (final message in messages) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(message.text),
+            backgroundColor: message.color,
+            duration: Duration(seconds: message.seconds),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAlarmBusy = false);
+    }
   }
 
     // ========== 🆕 新規追加：SharedPreferences から アラーム有効フラグを読み込み ==========
@@ -817,45 +893,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           value: _useDailyWakeUpSetting,
                           // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない（表示中の既定の時刻を毎日の時刻にしない）
                           onChanged: !canEdit ? null : (bool? value) async {
-                            if (value != null) {
-                              setState(() {
-                                _useDailyWakeUpSetting = value;
-                              });
-                              // ✅ N11: SharedPreferences に保存（ON は画面に表示中の時刻を毎日使う時刻にする）
-                              final displayTime = context.read<SleepProvider>().autoWakeUpTimeOfDay ?? _wakeUpTime;
-                              final timeStr = '${displayTime.hour.toString().padLeft(2, '0')}:${displayTime.minute.toString().padLeft(2, '0')}';
-                              final messenger = ScaffoldMessenger.of(context);  // await 前に取得
-                              if (value) {
-                                await ManualWakeService.setDaily(true, time: displayTime);
-                              } else {
-                                await ManualWakeService.setDaily(false);
-                              }
-                              final reloaded = await _loadDailyWakeUpSetting();
-
-                              print('[SettingsScreen] 📌 毎日設定チェックボックス: ${value ? "✅ ON" : "❌ OFF"}');
-
-                              // ユーザーに通知
-                              // N154：読み直せなかったときは成功の知らせの代わりに ⚠️（バナーは出さない）
-                              if (!reloaded) {
-                                messenger.hideCurrentSnackBar();
-                                messenger.showSnackBar(
-                                  const SnackBar(
-                                    content: Text('⚠️ 毎日の設定は保存しましたが、表示を読み直せませんでした。画面を開き直してください'),
-                                    backgroundColor: Colors.orange,
-                                    duration: Duration(seconds: 6),
-                                  ),
-                                );
-                              } else if (mounted) {
-                                messenger.showSnackBar(
-                                  SnackBar(
-                                    content: Text(value
-                                        ? '✅ 毎晩 $timeStr に起こします（出勤前アラームの方が早い日はそちらを優先）'
-                                        : '⬜ 「変更」で選んだ夜だけこの時刻を使います'),
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            }
+                            if (value != null) await _toggleDailyWakeUp(value);
                           },
                           activeColor: AppColors.primaryGradientStart,
                           controlAffinity: ListTileControlAffinity.leading,
