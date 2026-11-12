@@ -107,6 +107,9 @@ class AlarmReceiver : BroadcastReceiver() {
         .setContentTitle("⏰ $label")
         .setContentText(body.ifEmpty { label })
         .setPriority(NotificationCompat.PRIORITY_HIGH)
+        // N32: アラームとして扱わせる（おやすみモードで「アラームを許可」なら抑えられない）・ロック画面でも本文と［停止］を見せる
+        .setCategory(NotificationCompat.CATEGORY_ALARM)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setAutoCancel(false)
         .setContentIntent(openPendingIntent)
         .addAction(
