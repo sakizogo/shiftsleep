@@ -453,7 +453,7 @@ void main() {
       repository.failReadById = true;
       final provider = await tapWakeButton(tester, () => sleepingProvider(start, id: 'a'));
 
-      expect(find.textContaining('❌ エラー'), findsOneWidget);
+      expect(find.text('❌ 起床を記録できませんでした。もう一度「起きる」を押してください'), findsOneWidget);
       expect(find.text('✅ 起床しました。睡眠が記録されました。'), findsNothing);
       expect(provider.isSleepingNow, isTrue);
       await tester.pump(const Duration(seconds: 10));

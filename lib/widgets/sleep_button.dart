@@ -124,8 +124,8 @@ class _SleepButtonState extends State<SleepButton>
       } catch (e) {
         debugPrint('[SleepButton] ❌ 睡眠の記録を保存できませんでした: $e');
         messenger.showSnackBar(
-          SnackBar(
-            content: Text('❌ 睡眠の記録を保存できませんでした: $e'),
+          const SnackBar(
+            content: Text('❌ 睡眠の記録を保存できませんでした。もう一度お試しください'),
             backgroundColor: Colors.red,
           ),
         );
@@ -171,10 +171,10 @@ class _SleepButtonState extends State<SleepButton>
       }
 
     } catch (e) {
-      print('[SleepButton] ❌ Error starting sleep: $e');
+      debugPrint('[SleepButton] ❌ Error starting sleep: $e');
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('❌ エラー: $e'),
+        const SnackBar(
+          content: Text('❌ 「今から寝る」を完了できませんでした。睡眠中の表示になっているか確かめてください'),
           backgroundColor: Colors.red,
         ),
       );
@@ -214,10 +214,10 @@ class _SleepButtonState extends State<SleepButton>
 
       widget.onPressed?.call();
     } catch (e) {
-      print('[SleepButton] ❌ Error waking up: $e');
+      debugPrint('[SleepButton] ❌ Error waking up: $e');
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('❌ エラー: $e'),
+        const SnackBar(
+          content: Text('❌ 起床を記録できませんでした。もう一度「起きる」を押してください'),
           backgroundColor: Colors.red,
         ),
       );

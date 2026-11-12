@@ -64,7 +64,7 @@ class WakeAlarmRegistrationService {
         );
       } catch (e) {
         debugPrint('❌ [WakeAlarmRegistration] main を登録できませんでした: $e');
-        mainError = _unexpectedErrorText(e);
+        mainError = _unexpectedErrorText;
       }
     }
 
@@ -82,7 +82,7 @@ class WakeAlarmRegistrationService {
         preError = AlarmService.alarmErrorMessage(errorCode);
       } catch (e) {
         debugPrint('❌ [WakeAlarmRegistration] pre を登録できませんでした: $e');
-        preError = _unexpectedErrorText(e);
+        preError = _unexpectedErrorText;
       }
     }
 
@@ -136,6 +136,6 @@ class WakeAlarmRegistrationService {
     }
   }
 
-  static String _unexpectedErrorText(Object e) =>
-      '⚠️ 起床アラームを登録できませんでした: $e『起きる』→『今から寝る』をやり直してください';
+  static const String _unexpectedErrorText =
+      '⚠️ 起床アラームを登録できませんでした。『起きる』→『今から寝る』をやり直してください';
 }

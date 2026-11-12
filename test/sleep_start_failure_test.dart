@@ -144,7 +144,7 @@ void main() {
       final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
       expect(snackBar.backgroundColor, Colors.red);
       expect(
-        find.text('❌ 睡眠の記録を保存できませんでした: Exception: disk full'),
+        find.text('❌ 睡眠の記録を保存できませんでした。もう一度お試しください'),
         findsOneWidget,
       );
       expect(find.text(_sleepingText), findsNothing);

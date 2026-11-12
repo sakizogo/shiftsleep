@@ -498,13 +498,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await prefs.setInt('alarm_volume_percent', (_soundVolume * 100).round());
         } catch (e) {
           messenger.showSnackBar(
-            SnackBar(
-              content: Text('❌ 保存に失敗しました: $e'),
+            const SnackBar(
+              content: Text('❌ アラーム音を保存できませんでした。もう一度お試しください'),
               backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
+              duration: Duration(seconds: 3),
             ),
           );
-          print('❌ [Error] 保存エラー: $e');
+          debugPrint('❌ [Error] 保存エラー: $e');
           return;
         }
 
@@ -1346,11 +1346,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
     } catch (e) {
-      print('[SettingsScreen] ❌ 有料版確認エラー: $e');
+      debugPrint('[SettingsScreen] ❌ 有料版確認エラー: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('確認エラー: $e'),
+          const SnackBar(
+            content: Text('❌ プレミアム版の状態を確認できませんでした。しばらくしてからもう一度お試しください'),
             backgroundColor: AppColors.warningRed,
           ),
         );
@@ -1556,10 +1556,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('✅ Step 3️⃣ DB 保存完了！');
 
     } catch (e) {
-      print('❌ Step 1-3 実行エラー: $e');
+      debugPrint('❌ Step 1-3 実行エラー: $e');
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('❌ エラー: $e'),
+        const SnackBar(
+          content: Text('❌ 設定を保存できませんでした。もう一度お試しください'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1593,10 +1593,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[Settings] 📌 Provider の autoWakeUpTimeOfDay = ${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')}');
       
     } catch (e) {
-      print('❌ Step 4 実行エラー: $e');
+      debugPrint('❌ Step 4 実行エラー: $e');
       messenger.showSnackBar(
-        SnackBar(
-          content: Text('❌ プロバイダー更新エラー: $e'),
+        const SnackBar(
+          content: Text('❌ 設定は保存しましたが、起床時刻を画面に反映できませんでした。もう一度［設定を保存］を押してください'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1800,13 +1800,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         sleepProvider.setAutoWakeUpTime(wakeUpDateTime);
       }
     } catch (e) {
-      print('❌ 起床時刻更新エラー: $e');
+      debugPrint('❌ 起床時刻更新エラー: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('起床時刻計算エラー: $e'),
+          const SnackBar(
+            content: Text('❌ 起床時刻を計算できませんでした'),
             backgroundColor: AppColors.warningRed,
-            duration: const Duration(seconds: 2),
+            duration: Duration(seconds: 2),
           ),
         );
       }
