@@ -29,6 +29,29 @@ void main() {
     });
   });
 
+  group('shouldApplyLoadedAlarmEnabled（N164）', () {
+    test('処理中でなければ読み込んだ ON/OFF を出す', () {
+      expect(shouldApplyLoadedAlarmEnabled(alarmBusy: false), isTrue);
+    });
+    test('処理中は押したあとの値を上書きしない', () {
+      expect(shouldApplyLoadedAlarmEnabled(alarmBusy: true), isFalse);
+    });
+  });
+
+  group('alarmVolumeFromPercent（N164）', () {
+    test('保存していなければ 100%', () {
+      expect(alarmVolumeFromPercent(null), 1.0);
+    });
+    test('保存した値を 0.0〜1.0 にする', () {
+      expect(alarmVolumeFromPercent(40), 0.4);
+      expect(alarmVolumeFromPercent(0), 0.0);
+    });
+    test('範囲の外は 0〜100 に収める', () {
+      expect(alarmVolumeFromPercent(150), 1.0);
+      expect(alarmVolumeFromPercent(-5), 0.0);
+    });
+  });
+
   group('canReloadSettings', () {
     test('再読み込み中でなければ押せる', () {
       expect(canReloadSettings(reloading: false), isTrue);

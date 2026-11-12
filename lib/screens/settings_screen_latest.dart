@@ -90,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
     // ========== Week 25+ 新規追加：SharedPreferences からチェックボックス状態を読み込み ==========
     // N154：毎日使用フラグと今夜の手動起床の有無は _loadSettings の中で読む（読めなければバナー）
-    _loadAlarmEnabledSetting();  // ✅ H4: 保存済みの ON/OFF をスイッチに反映
+    // N164：アラームの ON/OFF と音量も _loadSettings の中で読む（別の読み込みを並べて走らせない）
     // ============================================================
   }
 
@@ -105,6 +105,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // N154：毎日使用フラグと今夜の手動起床の有無も同じ try で読む（読めなければ既定の表示のまま押せなくする）
       final isDaily = await ManualWakeService.isDaily();
       final hasTonight = (await ManualWakeService.getActive()) != null;
+      // N164：アラームの ON/OFF と音量（SharedPreferences）も同じ try で読む（読めなければバナー・音量は動かせない）
+      final prefs = await SharedPreferences.getInstance();
+      final isAlarmEnabled = prefs.getBool('is_alarm_enabled') ?? true;  // ✅ H4: 保存していなければ ON
+      final soundVolume = alarmVolumeFromPercent(prefs.getInt('alarm_volume_percent'));  // ✅ N49
 
       // N118 2/4 2c：起床時刻を読めない値も「読み込めなかった」に含めるため、setState の前に変換する
       TimeOfDay? wakeUpTime;
@@ -131,6 +135,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
         _useDailyWakeUpSetting = isDaily;  // N154
         _hasManualWakeTonight = hasTonight;  // N154
+        // N164：［再読み込み］の途中でスイッチが押されていたら、押したあとの値を残す
+        if (shouldApplyLoadedAlarmEnabled(alarmBusy: _isAlarmBusy)) {
+          _isAlarmEnabled = isAlarmEnabled;
+        }
+        _soundVolume = soundVolume;  // N164
         // N118 2/4 2c：行がなければ既定値のまま（今と同じ）。どちらも読み込めたので操作を押せるようにする
         _settingsLoaded = true;
         _settingsLoadFailed = false;
@@ -314,22 +323,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-    // ========== 🆕 新規追加：SharedPreferences から アラーム有効フラグを読み込み ==========
-    /// SharedPreferences から「アラーム有効」フラグを読み込み
-    Future<void> _loadAlarmEnabledSetting() async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        if (!mounted) return;  // ✅ H4: 読み込み中に画面が破棄された場合は反映しない
-        setState(() {
-          _isAlarmEnabled = prefs.getBool('is_alarm_enabled') ?? true;
-          // ✅ N49: 保存した音量を読み込む（保存していなければ 100%）
-          _soundVolume = (prefs.getInt('alarm_volume_percent') ?? 100).clamp(0, 100) / 100.0;
-        });
-        print('✅ アラーム有効フラグを読み込み: $_isAlarmEnabled');
-      } catch (e) {
-        print('⚠️ アラーム有効フラグ読み込みエラー: $e');
-      }
-    }
+    // N164：アラームの ON/OFF と音量の読み込み（_loadAlarmEnabledSetting）は _loadSettings にまとめた
 
     /// SharedPreferences にアラーム有効フラグを保存
     /// N123：保存できたら true（ON の保存に失敗したら登録し直さないため）
@@ -1051,7 +1045,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               value: _soundVolume,
                               min: 0.0,
                               max: 1.0,
-                              onChanged: (value) {
+                              // N164：読み込めるまでは動かせない（既定の 100% のまま保存しないため）
+                              onChanged: !canEdit ? null : (value) {
                                 setState(() {
                                   _soundVolume = value;
                                 });
