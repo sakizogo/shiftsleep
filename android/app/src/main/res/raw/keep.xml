@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- N179: リリース版のリソースの削除（shrinkResources）で消されないようにする -->
+<!-- - @raw/alarm_*：AlarmReceiver・AlarmSoundService が getIdentifier で名前から探す／Dart の RawResourceAndroidNotificationSound から名前で指定する -->
+<!-- - @mipmap/ic_launcher：Dart の AndroidInitializationSettings から名前で指定する（通知のアイコン） -->
+<!-- - @drawable/ic_stat_alarm：鳴っている間の通知のアイコン（R で参照しているが念のため） -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/alarm_default,@raw/alarm_gentle,@raw/alarm_harsh,@mipmap/ic_launcher,@drawable/ic_stat_alarm" />
