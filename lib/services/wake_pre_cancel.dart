@@ -6,12 +6,13 @@
 // DB・アラームには依存しない
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/services/next_shift.dart';
 
 /// 「起きる」で取り消す pre の範囲（起きた時刻からこの時間以内に鳴るもの。ちょうどを含む）
 const Duration wakePreCancelWindow = Duration(hours: 3);
 
-/// 登録されている pre が鳴る時刻（今の登録と同じ式：登録した日＋開始時刻−minutesBefore 分）
-/// N180 3/3 で、登録と一緒に shiftStartDateTime を使う式に変える
+/// 登録されている pre が鳴る時刻（登録と同じ式：shiftStartDateTime の開始−minutesBefore 分。N180 3/3）
+/// 0:00〜4:59 開始は登録した日の翌日に始まるので、月曜の欄の 0:00 開始・60 分前は月曜 23:00
 /// 分数 0 以下・シフトなし（pattern が null）・削除済み・出勤以外・開始時刻なし → null（pre は登録されていない）
 DateTime? registeredPreAlarmAt({
   required DateTime shiftDate,
@@ -21,8 +22,7 @@ DateTime? registeredPreAlarmAt({
   final startTime = pattern?.startTime;
   if (minutesBefore <= 0 || pattern == null || pattern.isDeleted) return null;
   if (pattern.patternType != ShiftType.work || startTime == null) return null;
-  return DateTime(shiftDate.year, shiftDate.month, shiftDate.day, startTime.hour, startTime.minute)
-      .subtract(Duration(minutes: minutesBefore));
+  return shiftStartDateTime(shiftDate, startTime).subtract(Duration(minutes: minutesBefore));
 }
 
 /// 起きた時刻と pre が鳴る時刻から、pre を取り消すか決める

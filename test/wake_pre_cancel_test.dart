@@ -4,7 +4,7 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/services/wake_pre_cancel.dart';
 
-// N180 2/3：registeredPreAlarmAt・shouldCancelPreOnWake のテスト
+// N180 2/3：registeredPreAlarmAt・shouldCancelPreOnWake のテスト（N180 3/3 で shiftStartDateTime の式に）
 
 void main() {
   // 2026-11-16 は月曜
@@ -24,10 +24,10 @@ void main() {
       expect(registeredPreAlarmAt(shiftDate: monday, pattern: work(8, 0), minutesBefore: 30), mon(7, 30));
     });
 
-    test('2. 今の登録の式のまま：月曜の欄の 0:00 開始・60 分前は日曜 23:00（N180 3/3 で直す）', () {
+    test('2. N180 3/3：月曜の欄の 0:00 開始は火曜 0:00 に始まり、60 分前は月曜 23:00', () {
       expect(
         registeredPreAlarmAt(shiftDate: monday, pattern: work(0, 0), minutesBefore: 60),
-        DateTime(2026, 11, 15, 23, 0),
+        mon(23, 0),
       );
     });
 
@@ -102,9 +102,10 @@ void main() {
       expect(shouldCancelPreOnWake(wakeUpTime: mon(6, 0), preAlarmAt: null), isFalse);
     });
 
-    test('8. 今の 24 時間ずれた登録：月曜の欄 0:00・60 分前（日曜 23:00）は月曜 17:00 の起床で取り消す（過ぎているので害がない）', () {
+    test('8. N180 3/3：月曜の欄 0:00・60 分前（月曜 23:00）は、月曜 17:00 の起床では残し、21:00 の起床では取り消す', () {
       final preAt = registeredPreAlarmAt(shiftDate: monday, pattern: work(0, 0), minutesBefore: 60);
-      expect(shouldCancelPreOnWake(wakeUpTime: mon(17, 0), preAlarmAt: preAt), isTrue);
+      expect(shouldCancelPreOnWake(wakeUpTime: mon(17, 0), preAlarmAt: preAt), isFalse);
+      expect(shouldCancelPreOnWake(wakeUpTime: mon(21, 0), preAlarmAt: preAt), isTrue);
     });
   });
 }

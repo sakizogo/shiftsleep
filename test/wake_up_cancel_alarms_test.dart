@@ -12,6 +12,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
+import 'package:shiftsleep/services/next_shift.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
 
@@ -127,7 +128,13 @@ void main() {
     shiftRepository = FakeShiftRepository();
     WakeUpService.shiftRepositoryForTest = shiftRepository;
     // N180 2/3：今と同じ時・分に始まる出勤（pre は 30 分前に鳴った＝起床から 3 時間以内なので取り消す）
-    workShift(TimeOfDay.fromDateTime(DateTime.now()));
+    // N180 3/3：今が 0:00〜4:59 だと、その時刻の開始は翌日になるので、5:00 開始・180 分前（2:00 に鳴る）にする
+    final current = TimeOfDay.fromDateTime(DateTime.now());
+    if (startsOnNextDay(current)) {
+      workShift(const TimeOfDay(hour: 5, minute: 0), minutes: 180);
+    } else {
+      workShift(current);
+    }
     cancelledIds = [];
     failNativeCancel = false;
     failNotificationCancel = false;
@@ -253,15 +260,23 @@ void main() {
       expect(cancelledIds, contains(_mainId(yesterday)));
     });
 
-    test('今の登録（0:00 開始は登録日の 0:00−60 分）：前の晩に鳴った pre は取り消し、今夜鳴る翌日の欄の pre には触らない', () async {
-      // 起きた日の欄の pre は前の日の 23:00 に鳴った（過ぎているので取り消しても害がない）
-      // 今夜 23:00 に鳴るのは翌日の欄の pre（ID が違うので、今までどおり残る）
+    test('N180 3/3：夜勤明けの 17:00 に起きても、起きた日の欄の 0:00 勤務の pre（その日の 23:00）は残す', () async {
+      // 起きた日の欄の 0:00 開始は翌日 0:00 に始まり、60 分前の pre は起きた日の 23:00 に鳴る（6 時間後）
       workShift(const TimeOfDay(hour: 0, minute: 0), minutes: 60);
 
       expect((await wakeAt(at(17, 0))).alarmsCancelled, isTrue);
 
-      expect(cancelledIds, contains(_preId(yesterday)));
+      expect(cancelledIds, contains(_mainId(yesterday)));
+      expect(cancelledIds, isNot(contains(_preId(yesterday))));
       expect(cancelledIds, isNot(contains(_preId(today))));
+    });
+
+    test('N180 3/3：21:00 に起きたら、起きた日の欄の 0:00 勤務の pre（23:00。2 時間後）は取り消す', () async {
+      workShift(const TimeOfDay(hour: 0, minute: 0), minutes: 60);
+
+      await wakeAt(at(21, 0));
+
+      expect(cancelledIds, contains(_preId(yesterday)));
     });
 
     test('シフトがなければ pre は取り消さず、取り消せた（true）として返す', () async {

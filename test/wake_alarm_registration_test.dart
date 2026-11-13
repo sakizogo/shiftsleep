@@ -44,6 +44,7 @@ void main() {
 
   late _FakeShiftRepository repository;
   late List<int> scheduledIds;
+  late Map<int, DateTime> scheduledAt;  // N180 3/3：ID → 鳴る日時
   late List<int> cancelledIds;
   late Set<int> armedIds;  // AlarmManager に入っている ID
   late List<String> events;  // 呼ばれた順
@@ -115,6 +116,7 @@ void main() {
     repository = _FakeShiftRepository();
     WakeAlarmRegistrationService.shiftRepositoryForTest = repository;
     scheduledIds = [];
+    scheduledAt = {};
     cancelledIds = [];
     armedIds = {};
     events = [];
@@ -128,6 +130,7 @@ void main() {
       if (call.method == 'scheduleAlarmWithAlarmManager') {
         if (failScheduleIds.contains(id)) throw PlatformException(code: failCode);
         scheduledIds.add(id);
+        scheduledAt[id] = DateTime.fromMillisecondsSinceEpoch((call.arguments as Map)['timestampMs'] as int);
         armedIds.add(id);
         events.add('schedule:$id');
       } else if (call.method == 'cancelAlarmWithAlarmManager') {
@@ -161,6 +164,26 @@ void main() {
       expect(result.manualWakeAt, isNull);
       expect(scheduledIds, [preId]);
       expect(cancelledIds, isEmpty);
+    });
+
+    test('N180 3/3：今日の欄の 0:00 勤務・60 分前 → 今日の欄の ID で、今日の 23:00 に鳴る pre を登録する', () async {
+      workShift();
+      repository.pattern = ShiftPatternModel(
+        id: 'p',
+        patternName: '深夜',
+        patternType: ShiftType.work,
+        startTime: const TimeOfDay(hour: 0, minute: 0),
+        endTime: const TimeOfDay(hour: 9, minute: 0),
+      );
+
+      final result = await register(minutes: 60);
+
+      final at23 = DateTime(day.year, day.month, day.day, 23, 0);
+      expect(result.plan, WakeAlarmPlan.preOnly);
+      expect(result.preAlarmAt, at23);
+      expect(result.todayWorkStartAt, DateTime(day.year, day.month, day.day + 1, 0, 0));
+      expect(scheduledIds, [preId]);
+      expect(scheduledAt[preId], at23);
     });
 
     test('手動あり・シフトなし → main だけ', () async {

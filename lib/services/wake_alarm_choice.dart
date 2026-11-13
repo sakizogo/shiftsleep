@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
+import 'package:shiftsleep/services/next_shift.dart';
 
 /// 登録するアラーム
 enum WakeAlarmPlan {
@@ -20,7 +21,7 @@ enum WakeAlarmPlan {
   bool get includesPre => this == preOnly || this == mainAndPre;
 }
 
-/// 今日の pre が鳴る時刻
+/// 今日の欄の pre が鳴る時刻（N180 3/3：shiftStartDateTime の開始−分数。0:00〜4:59 開始は翌日に始まる）
 /// 分数 0 以下・シフトなし（pattern が null）・出勤以外・出勤時刻なし・すでに過ぎた時刻 → null
 DateTime? todayPreAlarmAt({
   required DateTime now,
@@ -32,12 +33,11 @@ DateTime? todayPreAlarmAt({
   // ✅ N14: 出勤（work）以外のパターン（休日・有休・半休）では pre を登録しない
   if (startTime == null || pattern.patternType != ShiftType.work) return null;
 
-  final alarmAt = DateTime(now.year, now.month, now.day, startTime.hour, startTime.minute)
-      .subtract(Duration(minutes: minutesBefore));
+  final alarmAt = shiftStartDateTime(now, startTime).subtract(Duration(minutes: minutesBefore));
   return alarmAt.isAfter(now) ? alarmAt : null;
 }
 
-/// N118 2b：今日の出勤時刻（まだ先のときだけ）
+/// N118 2b：今日の欄の出勤時刻（まだ先のときだけ。N180 3/3：shiftStartDateTime。0:00〜4:59 開始は翌日）
 /// 出勤（work）以外・出勤時刻なし・シフトなし（pattern が null）・出勤時刻ちょうど／過ぎている → null
 /// pre の時刻が過ぎているかどうかは見ない
 DateTime? todayWorkStartAt({
@@ -46,7 +46,7 @@ DateTime? todayWorkStartAt({
 }) {
   final startTime = pattern?.startTime;
   if (pattern == null || startTime == null || pattern.patternType != ShiftType.work) return null;
-  final startAt = DateTime(now.year, now.month, now.day, startTime.hour, startTime.minute);
+  final startAt = shiftStartDateTime(now, startTime);
   return startAt.isAfter(now) ? startAt : null;
 }
 

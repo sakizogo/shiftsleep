@@ -667,7 +667,14 @@ const SizedBox(height: AppDimensions.paddingLarge),
     onConfirmed?.call();  // N140：アラームの結果に関係なく、DB に書けたら未確定はなくなる
 
     // N117：古い行の日の pre を取り消し、新しい出勤日の pre を登録する（どちらも今日〜CalendarRange の終わり）
-    final plan = confirmAlarmPlan(oldShifts, patternMap, DateTime.now(), CalendarRange.lastDate);
+    // N180 3/3：昨日から（前日の欄の 0:00〜4:59 開始の pre は今日鳴ることがあるため）
+    final confirmedAt = DateTime.now();
+    final plan = confirmAlarmPlan(
+      oldShifts,
+      patternMap,
+      DateTime(confirmedAt.year, confirmedAt.month, confirmedAt.day - 1),
+      CalendarRange.lastDate,
+    );
     String? alarmErrorCode;  // ✅ Step2-2: 取り消し・登録の失敗を記録（EXACT_ALARM_DENIED を優先）
 
     // ✅ H3: pre だけを取り消す（main＝起床アラームは残す）。1 日失敗しても最後まで続ける
@@ -693,12 +700,11 @@ const SizedBox(height: AppDimensions.paddingLarge),
         for (final shift in plan.schedule) {
           print('🔔 アラームスケジュール: ${shift.date}, 出勤時刻: ${shift.startTime.hour}:${shift.startTime.minute}');
 
-          final errorCode = await AlarmService.scheduleAlarmForShift(
+          // N180 3/3：pre だけを、実際の開始（startAt。0:00〜4:59 開始は翌日）から登録する。ID は登録した日
+          final errorCode = await AlarmService.schedulePreAlarm(
             shiftDate: shift.date,
-            alarmTime: shift.startTime,
-            mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
-            preAlarmEnabled: true,
-            preAlarmMinutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
+            startAt: shift.startAt,
+            minutes: alarmTimeBeforeShift,  // ✅ ShiftPre: 5分前固定を廃止し、設定値を使用
             selectedAlarmSound: selectedAlarmSound,  // N124：設定の音（確定の前に読んだもの）
           );
           if (errorCode != null && alarmErrorCode != 'EXACT_ALARM_DENIED') {

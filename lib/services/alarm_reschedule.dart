@@ -11,13 +11,14 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/services/confirm_alarm_plan.dart';
 import 'package:shiftsleep/services/shift_load.dart';
 
-/// 登録し直す pre の日・開始時刻・鳴る時刻
+/// 登録し直す pre の日・開始時刻・実際の開始日時・鳴る時刻
 /// - rows は shifts の行（shift_date・pattern_id）。パターンは shiftMapFromRows で決める
-/// - 出勤（work）で開始時刻がある、今日〜rangeEnd の日（confirmAlarmPlan の schedule と同じ）
-/// - preAt（日付＋開始時刻−minutesBefore）が now より後の日だけ（開始 0:30 なら前日に鳴ることもある）
+/// - 出勤（work）で開始時刻がある、昨日〜rangeEnd の日（confirmAlarmPlan の schedule と同じ。N180 3/3 で昨日から）
+/// - startAt は勤務が実際に始まる日時（shiftStartDateTime。0:00〜4:59 開始は登録した日の翌日。N180 3/3）
+/// - preAt（startAt−minutesBefore）が now より後の日だけ
 /// - minutesBefore が 0 以下（無効）なら空
 /// - shift_date が読めない行があれば例外（shiftMapFromRows。読み込みの失敗として扱う）
-List<({DateTime date, TimeOfDay startTime, DateTime preAt})> preAlarmRescheduleTargets(
+List<({DateTime date, TimeOfDay startTime, DateTime startAt, DateTime preAt})> preAlarmRescheduleTargets(
   List<Map<String, dynamic>> rows,
   List<ShiftPatternModel> patterns,
   ShiftPatternModel dayOffPattern,
@@ -27,18 +28,12 @@ List<({DateTime date, TimeOfDay startTime, DateTime preAt})> preAlarmRescheduleT
 ) {
   final map = shiftMapFromRows(rows, patterns, dayOffPattern);
   if (minutesBefore <= 0) return [];
-  final plan = confirmAlarmPlan(const [], map, now, rangeEnd);
-  final targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
+  final plan = confirmAlarmPlan(const [], map, DateTime(now.year, now.month, now.day - 1), rangeEnd);
+  final targets = <({DateTime date, TimeOfDay startTime, DateTime startAt, DateTime preAt})>[];
   for (final shift in plan.schedule) {
-    final preAt = DateTime(
-      shift.date.year,
-      shift.date.month,
-      shift.date.day,
-      shift.startTime.hour,
-      shift.startTime.minute,
-    ).subtract(Duration(minutes: minutesBefore));
+    final preAt = shift.startAt.subtract(Duration(minutes: minutesBefore));
     if (preAt.isAfter(now)) {
-      targets.add((date: shift.date, startTime: shift.startTime, preAt: preAt));
+      targets.add((date: shift.date, startTime: shift.startTime, startAt: shift.startAt, preAt: preAt));
     }
   }
   return targets;
@@ -152,7 +147,8 @@ PreMinutesAction preMinutesAction(int oldMinutes, int newMinutes) {
 }
 
 /// 分数が変わったときに pre を取り消す日（N125）
-/// - rows は shifts の行（shift_date）。今日〜rangeEnd（両方含む）の日だけ、日付だけ・重複なし・日付順
+/// - rows は shifts の行（shift_date）。today〜rangeEnd（両方含む）の日だけ、日付だけ・重複なし・日付順
+///   （N180 3/3：呼び出し元は today に「昨日」を渡す）
 /// - shift_date が読めない行があれば例外（読み込みの失敗として扱い、何も取り消さない。
 ///   飛ばすと、取り消したあとの登録し直しが同じ行で失敗し「取り消したのに登録できなかった」になるため）
 List<DateTime> preAlarmCancelDates(

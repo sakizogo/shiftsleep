@@ -106,4 +106,25 @@ void main() {
     final plan = confirmAlarmPlan([row('不正'), row('2026-11-05'), row('2026-11-05')], {}, today, rangeEnd);
     expect(plan.cancel, [DateTime(2026, 11, 5)]);
   });
+
+  // N180 3/3：startAt は shiftStartDateTime（0:00〜4:59 開始は登録した日の翌日）
+  test('N180 3/3：startAt は実際の開始。月曜の欄の 0:00 開始は火曜 0:00、7:00 開始は当日', () {
+    final zero = ShiftPatternModel(
+      id: '1730000000002',
+      patternName: '深夜',
+      patternType: ShiftType.work,
+      startTime: const TimeOfDay(hour: 0, minute: 0),
+      endTime: const TimeOfDay(hour: 9, minute: 0),
+    );
+    final plan = confirmAlarmPlan([], {DateTime(2026, 11, 16): zero, DateTime(2026, 11, 17): early}, today, rangeEnd);
+    expect(plan.schedule.map((s) => s.date), [DateTime(2026, 11, 16), DateTime(2026, 11, 17)]);
+    expect(plan.schedule.map((s) => s.startAt), [DateTime(2026, 11, 17, 0, 0), DateTime(2026, 11, 17, 7, 0)]);
+  });
+
+  test('N180 3/3：呼び出し元が昨日を渡すと、昨日の欄も cancel・schedule に入る', () {
+    final yesterday = DateTime(2026, 11, 1);
+    final plan = confirmAlarmPlan([row('2026-10-31'), row('2026-11-01')], {yesterday: early}, yesterday, rangeEnd);
+    expect(plan.cancel, [yesterday]);
+    expect(plan.schedule.map((s) => s.date), [yesterday]);
+  });
 }

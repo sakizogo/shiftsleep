@@ -69,6 +69,21 @@ void main() {
     test('ちょうど今なら null', () {
       expect(at(pattern: _pattern(), time: pre), isNull);
     });
+
+    // N180 3/3：今日の欄の 0:00〜4:59 開始は翌日に始まる
+    test('N180 3/3：今日の欄の 0:00 開始・60 分前は、今日の昼に寝ても今日 23:00', () {
+      final zero = _pattern(start: const TimeOfDay(hour: 0, minute: 0));
+      expect(at(minutes: 60, pattern: zero, time: DateTime(2026, 11, 5, 14, 0)), DateTime(2026, 11, 5, 23, 0));
+      expect(at(minutes: 60, pattern: zero, time: DateTime(2026, 11, 5, 23, 0)), isNull);
+    });
+
+    test('N180 3/3：境目：4:59 開始は翌日、5:00 開始は今日', () {
+      final early = DateTime(2026, 11, 5, 3, 0);
+      expect(at(pattern: _pattern(start: const TimeOfDay(hour: 4, minute: 59)), time: early),
+          DateTime(2026, 11, 6, 4, 29));
+      expect(at(pattern: _pattern(start: const TimeOfDay(hour: 5, minute: 0)), time: early),
+          DateTime(2026, 11, 5, 4, 30));
+    });
   });
 
   group('planWakeAlarms', () {
@@ -134,6 +149,12 @@ void main() {
     test('出勤時刻ちょうど・過ぎていれば null', () {
       expect(at(_pattern(), time: DateTime(2026, 11, 5, 15, 0)), isNull);
       expect(at(_pattern(), time: DateTime(2026, 11, 5, 15, 1)), isNull);
+    });
+
+    test('N180 3/3：今日の欄の 0:00 開始は明日 0:00（今日の 23:30 でもまだ先）', () {
+      final zero = _pattern(start: const TimeOfDay(hour: 0, minute: 0));
+      expect(at(zero), DateTime(2026, 11, 6, 0, 0));
+      expect(at(zero, time: DateTime(2026, 11, 5, 23, 30)), DateTime(2026, 11, 6, 0, 0));
     });
 
     test('出勤以外・削除済み・出勤時刻なし・シフトなしは null', () {

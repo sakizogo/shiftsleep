@@ -64,7 +64,7 @@ void main() {
       expect(notYet.single.preAt, DateTime(2026, 11, 2, 14, 30));
     });
 
-    test('4. 開始 0:30・60 分前は前日 23:30 に鳴る（明日の分は入り、今日の分は過ぎている）', () {
+    test('4. N180 3/3：開始 0:30 は登録した日の翌日に始まり、60 分前は登録した日の 23:30 に鳴る（どちらの欄も入る）', () {
       final targets = preAlarmRescheduleTargets(
         [row('2026-11-02', 'p_night'), row('2026-11-03', 'p_night')],
         patterns,
@@ -73,8 +73,9 @@ void main() {
         now,
         rangeEnd,
       );
-      expect(targets.single.date, DateTime(2026, 11, 3));
-      expect(targets.single.preAt, DateTime(2026, 11, 2, 23, 30));
+      expect(targets.map((t) => t.date), [DateTime(2026, 11, 2), DateTime(2026, 11, 3)]);
+      expect(targets.map((t) => t.startAt), [DateTime(2026, 11, 3, 0, 30), DateTime(2026, 11, 4, 0, 30)]);
+      expect(targets.map((t) => t.preAt), [DateTime(2026, 11, 2, 23, 30), DateTime(2026, 11, 3, 23, 30)]);
     });
 
     test('5. 削除済み・有休・半休・休日（pattern_id が null も）は入らない', () {
@@ -103,6 +104,74 @@ void main() {
         () => preAlarmRescheduleTargets([row('broken', 'p_early')], patterns, dayOff, 30, now, rangeEnd),
         throwsFormatException,
       );
+    });
+
+    // N180 3/3：0:00〜4:59 開始は前日の欄に登録する（2026-11-16 は月曜）
+    group('N180 3/3：0 時台の開始', () {
+      final zero = ShiftPatternModel(
+        id: 'p_zero',
+        patternName: '深夜 0 時',
+        patternType: ShiftType.work,
+        startTime: const TimeOfDay(hour: 0, minute: 0),
+        endTime: const TimeOfDay(hour: 9, minute: 0),
+        colorIndex: 5,
+      );
+      final four = ShiftPatternModel(
+        id: 'p_four',
+        patternName: '4 時',
+        patternType: ShiftType.work,
+        startTime: const TimeOfDay(hour: 4, minute: 0),
+        endTime: const TimeOfDay(hour: 12, minute: 0),
+        colorIndex: 5,
+      );
+      final all = [...patterns, zero, four];
+
+      test('月曜の欄の 0:00・60 分前は月曜 23:00 に鳴る（日曜に登録し直しても）', () {
+        final targets = preAlarmRescheduleTargets(
+            [row('2026-11-16', 'p_zero')], all, dayOff, 60, DateTime(2026, 11, 15, 10, 0), rangeEnd);
+        expect(targets.single.date, DateTime(2026, 11, 16));
+        expect(targets.single.startAt, DateTime(2026, 11, 17, 0, 0));
+        expect(targets.single.preAt, DateTime(2026, 11, 16, 23, 0));
+      });
+
+      test('月曜の昼に登録し直しても、月曜の欄の pre（月曜 23:00）は入る', () {
+        final targets = preAlarmRescheduleTargets(
+            [row('2026-11-16', 'p_zero')], all, dayOff, 60, DateTime(2026, 11, 16, 12, 0), rangeEnd);
+        expect(targets.single.preAt, DateTime(2026, 11, 16, 23, 0));
+      });
+
+      test('夜勤が続く（月・火・水の欄）：月・火・水の 23:00 に鳴り、前の日曜には鳴らない', () {
+        final targets = preAlarmRescheduleTargets(
+          [row('2026-11-16', 'p_zero'), row('2026-11-17', 'p_zero'), row('2026-11-18', 'p_zero')],
+          all,
+          dayOff,
+          60,
+          DateTime(2026, 11, 15, 10, 0),
+          rangeEnd,
+        );
+        expect(targets.map((t) => t.date), [DateTime(2026, 11, 16), DateTime(2026, 11, 17), DateTime(2026, 11, 18)]);
+        expect(targets.map((t) => t.preAt),
+            [DateTime(2026, 11, 16, 23, 0), DateTime(2026, 11, 17, 23, 0), DateTime(2026, 11, 18, 23, 0)]);
+      });
+
+      test('昨日の欄の 4:00・30 分前は今日 3:30 に鳴るので入る（ID は昨日の欄）', () {
+        final targets = preAlarmRescheduleTargets(
+            [row('2026-11-15', 'p_four')], all, dayOff, 30, DateTime(2026, 11, 16, 1, 0), rangeEnd);
+        expect(targets.single.date, DateTime(2026, 11, 15));
+        expect(targets.single.preAt, DateTime(2026, 11, 16, 3, 30));
+      });
+
+      test('昨日の欄でも、鳴る時刻が過ぎていれば入らない／一昨日の欄は入らない', () {
+        final targets = preAlarmRescheduleTargets(
+          [row('2026-11-14', 'p_four'), row('2026-11-15', 'p_four')],
+          all,
+          dayOff,
+          30,
+          DateTime(2026, 11, 16, 4, 0),
+          rangeEnd,
+        );
+        expect(targets, isEmpty);
+      });
     });
   });
 

@@ -15,6 +15,7 @@ import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/daily_wake_toggle.dart';  // N147
+import 'package:shiftsleep/services/next_shift.dart';  // N180 3/3
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
@@ -423,15 +424,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       try {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
+        // N180 3/3：昨日の欄も取り消す（前日の欄の 0:00〜4:59 開始の pre は今日鳴ることがあるため）
+        final yesterday = DateTime(now.year, now.month, now.day - 1);
         final targetDates = <DateTime>{
+          yesterday,
           today,
           today.add(const Duration(days: 1)),
         };
-        // N118：シフトを読めなくても今日・明日の分は取り消し、スイッチは OFF のままで知らせる
+        // N118：シフトを読めなくても昨日・今日・明日の分は取り消し、スイッチは OFF のままで知らせる
         var shiftsReadFailed = false;
         try {
           final shifts = await _shiftRepository.getShiftsForDateRange(
-            today,
+            yesterday,
             CalendarRange.lastDate,
           );
           for (final shift in shifts) {
@@ -1727,11 +1731,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    // N180 3/3：昨日の欄から（前日の欄の 0:00〜4:59 開始の pre は今日鳴ることがあるため）
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
     final List<DateTime> cancelDates;
     try {
-      final rows = await _shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
-      cancelDates = preAlarmCancelDates(rows, today, CalendarRange.lastDate);
+      final rows = await _shiftRepository.getShiftsForDateRange(yesterday, CalendarRange.lastDate);
+      cancelDates = preAlarmCancelDates(rows, yesterday, CalendarRange.lastDate);
     } catch (e) {
       debugPrint('❌ [Settings] 分数の変更：シフトを読めなかったため、pre は取り消しません: $e');
       return (action: action, count: 0, errorCode: null, readFailed: true);
@@ -1802,6 +1807,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           (a['shift_date'] as String? ?? '').compareTo(b['shift_date'] as String? ?? ''));
 
       // ✅ H2: 起床時刻（シフト日＋開始時刻 − 設定分数）が「今より後」になる最初の出勤シフトを採用する
+      //    N180 3/3：開始は shiftStartDateTime（0:00〜4:59 開始は登録した日の翌日）。pre の登録と同じ式
       //    開始時刻は shifts ではなく pattern_id → getPatternById → startTime から取得（表示用のみ）
       final now = DateTime.now();
       DateTime? wakeUpDateTime;
@@ -1812,13 +1818,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final pattern = await _shiftRepository.getPatternById(patternId);
         final startTime = pattern?.startTime;
         if (startTime == null) continue;  // 休日・有休・削除済みパターン等はスキップ
-        final candidate = DateTime(
-          shiftDate.year,
-          shiftDate.month,
-          shiftDate.day,
-          startTime.hour,
-          startTime.minute,
-        ).subtract(Duration(minutes: _alarmTimeBeforeShift));
+        final candidate = shiftStartDateTime(shiftDate, startTime)
+            .subtract(Duration(minutes: _alarmTimeBeforeShift));
         if (candidate.isAfter(now)) {
           wakeUpDateTime = candidate;  // 実際のシフト日で計算（明日固定にしない）
           break;

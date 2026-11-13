@@ -8,6 +8,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/manual_wake_service.dart';
+import 'package:shiftsleep/services/next_shift.dart';
 import 'package:shiftsleep/services/wake_alarm_choice.dart';
 
 class WakeAlarmRegistrationService {
@@ -71,12 +72,12 @@ class WakeAlarmRegistrationService {
     String? preError;
     if (plan.includesPre) {
       try {
-        final errorCode = await AlarmService.scheduleAlarmForShift(
-          shiftDate: DateTime(now.year, now.month, now.day),
-          alarmTime: read.pattern!.startTime!,
-          mainAlarmEnabled: false,  // ✅ ShiftPre: 出勤時刻ちょうどのアラームは登録しない
-          preAlarmEnabled: true,
-          preAlarmMinutes: minutesBefore,
+        // N180 3/3：pre だけを、今日の欄の実際の開始（0:00〜4:59 開始は翌日）から登録する。ID は今日の欄
+        final today = DateTime(now.year, now.month, now.day);
+        final errorCode = await AlarmService.schedulePreAlarm(
+          shiftDate: today,
+          startAt: shiftStartDateTime(today, read.pattern!.startTime!),
+          minutes: minutesBefore,
           selectedAlarmSound: settings.selectedAlarmSound,
         );
         preError = AlarmService.alarmErrorMessage(errorCode);

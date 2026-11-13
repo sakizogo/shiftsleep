@@ -11,6 +11,16 @@ const TimeOfDay nextDayStartBoundary = TimeOfDay(hour: 5, minute: 0);
 
 int _minutesOf(TimeOfDay time) => time.hour * 60 + time.minute;
 
+/// N180 3/3：パターン画面で、開始が 0:00〜4:59 のときに出勤時刻の下に出す説明
+const String nextDayRegistrationHint = 'ℹ️ 0:00〜4:59 に始まる勤務は、前日の欄に登録してください（例：火曜の 0:00 から働くなら月曜の欄）';
+
+/// N180 3/3：パターン一覧で、開始が 0:00〜4:59 のパターンの時刻に添える文言
+const String nextDayRegistrationLabel = '（前日の欄に登録）';
+
+/// 登録した日の翌日に始まる勤務か（開始が boundary より前。N180 3/3）
+bool startsOnNextDay(TimeOfDay startTime, {TimeOfDay boundary = nextDayStartBoundary}) =>
+    _minutesOf(startTime) < _minutesOf(boundary);
+
 /// 勤務が実際に始まる日時
 /// - shiftDate は登録した日（時刻は捨てる）
 /// - 開始が boundary より前なら翌日、boundary 以後なら当日
@@ -19,7 +29,7 @@ DateTime shiftStartDateTime(
   TimeOfDay startTime, {
   TimeOfDay boundary = nextDayStartBoundary,
 }) {
-  final dayOffset = _minutesOf(startTime) < _minutesOf(boundary) ? 1 : 0;
+  final dayOffset = startsOnNextDay(startTime, boundary: boundary) ? 1 : 0;
   return DateTime(
     shiftDate.year,
     shiftDate.month,

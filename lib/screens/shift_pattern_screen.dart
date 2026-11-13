@@ -6,6 +6,7 @@ import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/screens/shift_management_screen.dart';
+import 'package:shiftsleep/services/next_shift.dart';
 import 'package:shiftsleep/services/pattern_usage.dart';
 
 
@@ -277,6 +278,17 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                         ),
                       ),
                     ),
+                    // N180 3/3：0:00〜4:59 開始は前日の欄に登録する決まりを、その時刻を選んだときだけ知らせる
+                    if (startsOnNextDay(_startTime)) ...[
+                      const SizedBox(height: 6.0),
+                      Text(
+                        nextDayRegistrationHint,
+                        style: AppTextStyles.bodyTextStyle.copyWith(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: AppDimensions.paddingMedium),
 
                     // 退勤時刻選択
@@ -561,7 +573,9 @@ class _ShiftPatternScreenState extends State<ShiftPatternScreen> {
                 ),
                 const SizedBox(height: 2.0),
                 Text(
-                  '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')} ～ ${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}',
+                  // N180 3/3：0:00〜4:59 開始のパターンには「前日の欄に登録」を添える
+                  '${pattern.startTime!.hour.toString().padLeft(2, '0')}:${pattern.startTime!.minute.toString().padLeft(2, '0')} ～ ${pattern.endTime!.hour.toString().padLeft(2, '0')}:${pattern.endTime!.minute.toString().padLeft(2, '0')}'
+                  '${startsOnNextDay(pattern.startTime!) ? nextDayRegistrationLabel : ''}',
                   style: AppTextStyles.bodyTextStyle.copyWith(
                     fontSize: 12,
                     color: AppColors.textMuted,

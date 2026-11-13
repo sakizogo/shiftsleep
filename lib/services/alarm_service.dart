@@ -207,6 +207,41 @@ class AlarmService {
     return mainError ?? preError;
   }
 
+  /// N180 3/3: 出勤前アラーム（pre）だけを登録する（確定・登録し直し・睡眠ボタンから呼ぶ）
+  /// - shiftDate：登録した日（ID に使う。取り消しも同じ日で行う）
+  /// - startAt：勤務が実際に始まる日時（shiftStartDateTime で出す。0:00〜4:59 開始は登録した日の翌日）
+  /// - 鳴る日時は startAt − minutes（過ぎていれば登録しない）
+  /// 戻り値は scheduleAlarmForShift と同じ（null=成功・スキップ・アラーム OFF / 'EXACT_ALARM_DENIED' / 'SCHEDULE_FAILED'）
+  static Future<String?> schedulePreAlarm({
+    required DateTime shiftDate,
+    required DateTime startAt,
+    required int minutes,
+    String selectedAlarmSound = 'default',
+  }) async {
+    if (!await isAlarmEnabled()) {
+      debugPrint('🔕 [AlarmService] アラームOFFのため pre を登録しません: $shiftDate');
+      return null;
+    }
+    final id = _generateNotificationId(shiftDate, 'pre');
+    final preAlarmDateTime = startAt.subtract(Duration(minutes: minutes));
+    debugPrint('🔔 [AlarmService] pre を登録: 欄 $shiftDate、出勤 $startAt、鳴る $preAlarmDateTime');
+
+    await _scheduleNotification(
+      id: id,
+      title: '出勤$minutes分前です',
+      body: '準備をお始めください',
+      scheduledDate: preAlarmDateTime,
+      selectedAlarmSound: selectedAlarmSound,
+    );
+    return _scheduleWithAlarmManager(
+      alarmId: id,
+      scheduledDate: preAlarmDateTime,
+      title: '出勤$minutes分前です',
+      body: '準備をお始めください',
+      selectedAlarmSound: selectedAlarmSound,
+    );
+  }
+
   /// ✅ Step2-2: エラーコードをユーザー向け文言に変換（null=通知不要）
   static String? alarmErrorMessage(String? code) {
     switch (code) {

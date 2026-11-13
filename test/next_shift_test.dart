@@ -46,6 +46,20 @@ void main() {
     });
   });
 
+  group('startsOnNextDay（N180 3/3）', () {
+    test('0:00・4:59 は翌日、5:00・23:59 は当日', () {
+      expect(startsOnNextDay(hm(0, 0)), isTrue);
+      expect(startsOnNextDay(hm(4, 59)), isTrue);
+      expect(startsOnNextDay(hm(5, 0)), isFalse);
+      expect(startsOnNextDay(hm(23, 59)), isFalse);
+    });
+
+    test('境目は引数で変えられる', () {
+      expect(startsOnNextDay(hm(5, 30), boundary: hm(6, 0)), isTrue);
+      expect(startsOnNextDay(hm(0, 0), boundary: hm(0, 0)), isFalse);
+    });
+  });
+
   group('shiftEndDateTime', () {
     DateTime? end(TimeOfDay start, TimeOfDay? endTime, {DateTime? date}) =>
         shiftEndDateTime(shiftStartDateTime(date ?? monday, start), endTime);

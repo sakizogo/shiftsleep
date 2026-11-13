@@ -31,7 +31,7 @@ class PreAlarmRescheduleService {
   /// 実行中の登録し直し（二重に走らせないため）
   static Future<PreAlarmRescheduleResult>? _running;
 
-  /// DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直し、結果を返す
+  /// DB の昨日〜CalendarRange の終わりの出勤日の pre を登録し直し、結果を返す（N180 3/3 で昨日から）
   /// 分数・音は DB から読み直す（行がなければ 30 分・'default'）。同じ ID で登録するので、登録済みの pre は上書きされる
   /// 実行中にもう一度呼ばれたら、新しく走らせずに実行中の結果（同じ Future）を返す
   static Future<PreAlarmRescheduleResult> reschedule() {
@@ -48,17 +48,17 @@ class PreAlarmRescheduleService {
   static Future<PreAlarmRescheduleResult> _reschedule() async {
     final shiftRepository = ShiftRepository();
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
     var minutesBefore = 30;
     var selectedAlarmSound = 'default';
-    var targets = <({DateTime date, TimeOfDay startTime, DateTime preAt})>[];
+    var targets = <({DateTime date, TimeOfDay startTime, DateTime startAt, DateTime preAt})>[];
     var readFailed = false;
     try {
       final settings = await shiftRepository.getAppSettings('test_user');
       minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
       selectedAlarmSound = settings?.selectedAlarmSound ?? 'default';
       if (minutesBefore > 0) {
-        final rows = await shiftRepository.getShiftsForDateRange(today, CalendarRange.lastDate);
+        final rows = await shiftRepository.getShiftsForDateRange(yesterday, CalendarRange.lastDate);
         final patterns = await shiftRepository.getAllPatterns();
         targets = preAlarmRescheduleTargets(
           rows,
@@ -78,12 +78,11 @@ class PreAlarmRescheduleService {
     if (!readFailed) {
       for (final target in targets) {
         try {
-          codes.add(await AlarmService.scheduleAlarmForShift(
+          // N180 3/3：pre だけを、実際の開始（startAt）から登録する（確定と同じ）。ID は登録した日
+          codes.add(await AlarmService.schedulePreAlarm(
             shiftDate: target.date,
-            alarmTime: target.startTime,
-            mainAlarmEnabled: false,  // 出勤時刻ちょうどのアラームは登録しない（確定と同じ）
-            preAlarmEnabled: true,
-            preAlarmMinutes: minutesBefore,
+            startAt: target.startAt,
+            minutes: minutesBefore,
             selectedAlarmSound: selectedAlarmSound,
           ));
         } catch (e) {
