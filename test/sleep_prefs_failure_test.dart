@@ -13,6 +13,8 @@ import 'package:shiftsleep/services/sleep_preference_service.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
 
+import 'fakes/fake_shift_repository.dart';
+
 const _idKey = 'current_sleep_record_id';
 const _startKey = 'sleep_start_time_ms';
 const _shiftKey = 'current_shift_id';
@@ -166,6 +168,7 @@ void main() {
   setUp(() {
     repository = _FakeRepository();
     WakeUpService.sleepRepositoryForTest = repository;
+    WakeUpService.shiftRepositoryForTest = FakeShiftRepository();  // N180 2/3：シフトなし（pre は取り消さない）
     useStore({});
     alarmCalls = [];
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

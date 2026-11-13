@@ -2,10 +2,13 @@ import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
+import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/manual_wake_service.dart';
+import 'package:shiftsleep/services/pattern_usage.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
+import 'package:shiftsleep/services/wake_pre_cancel.dart';
 
 /// N19：起床はできたがアラームを取り消せなかったときの文言
 const alarmCancelFailedText = '⚠️ 起床は記録しましたが、アラームを取り消せませんでした。鳴ったら止めてください';
@@ -109,6 +112,13 @@ class WakeUpService {
   @visibleForTesting
   static set sleepRepositoryForTest(SleepRepository repository) => _sleepRepository = repository;
 
+  /// N180 2/3：起床で pre を取り消すかを決めるために、設定・シフト・パターンを読む
+  static ShiftRepository _shiftRepository = ShiftRepository();
+
+  /// N180 2/3：テストで偽物の DB に差し替える
+  @visibleForTesting
+  static set shiftRepositoryForTest(ShiftRepository repository) => _shiftRepository = repository;
+
   // AlarmReceiver.kt が "flutter.alarm_stopped_at_ms" として保存する停止時刻（ミリ秒）
   static const String _alarmStoppedAtKey = 'alarm_stopped_at_ms';
   static bool _isProcessingPendingStop = false;
@@ -125,6 +135,7 @@ class WakeUpService {
   /// stopSound: 今鳴っている音を止めるか（N142：通知の「停止」では AlarmReceiver が止めているので false。
   /// このとき鳴っている音は別のアラームなので、黙って止めない）
   /// N19：どちらの起床でも、wakeUpTime の日付の main・pre と、今日・明日の main を取り消す
+  /// N180 2/3：pre は wakeUpTime から 3 時間以内に鳴るときだけ（_cancelAlarmsForWakeUp）
   /// N142：記録が見つからなくても、記録なしの起床として最後まで進める（睡眠中から必ず抜けられる）
   /// DB を読めない・更新できないときは例外を投げ、睡眠中のままにする（もう一度「起きる」を押せる）
   /// 戻り値の知らせは呼び出し元が出す（wakeUpWarningTexts）
@@ -220,14 +231,37 @@ class WakeUpService {
 
   /// N19：起床で main・pre を取り消す。失敗しても例外を外に出さず、false を返す
   /// 片方が失敗しても、もう片方は取り消す
+  /// N180 2/3：pre は、起きた日の欄の pre が起きた時刻から 3 時間以内に鳴るときだけ取り消す
+  /// （設定・シフト・パターンを読めなかったら取り消さず、false を返す）
   static Future<bool> _cancelAlarmsForWakeUp(DateTime wakeUpTime) async {
     var cancelled = true;
+    final wakeUpDate = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
     try {
-      final wakeUpDate = DateTime(wakeUpTime.year, wakeUpTime.month, wakeUpTime.day);
-      cancelled = await AlarmService.cancelAlarm(wakeUpDate);
+      cancelled = await AlarmService.cancelMainAlarm(wakeUpDate);
     } catch (e) {
-      debugPrint('[WakeUpService] ❌ 起床の日の main・pre を取り消せませんでした: $e');
+      debugPrint('[WakeUpService] ❌ 起床の日の main を取り消せませんでした: $e');
       cancelled = false;
+    }
+    DateTime? preAlarmAt;
+    var preReadFailed = false;
+    try {
+      preAlarmAt = await _readPreAlarmAt(wakeUpDate);
+    } catch (e) {
+      debugPrint('[WakeUpService] ❌ 起床の日のシフトを読めなかったため、pre は取り消しません: $e');
+      preReadFailed = true;
+      cancelled = false;
+    }
+    if (!preReadFailed) {
+      final cancelPre = shouldCancelPreOnWake(wakeUpTime: wakeUpTime, preAlarmAt: preAlarmAt);
+      debugPrint('[WakeUpService] 🔔 起床の日の pre（$preAlarmAt）を${cancelPre ? '取り消します' : '残します'}');
+      if (cancelPre) {
+        try {
+          if (!await AlarmService.cancelPreAlarm(wakeUpDate)) cancelled = false;
+        } catch (e) {
+          debugPrint('[WakeUpService] ❌ 起床の日の pre を取り消せませんでした: $e');
+          cancelled = false;
+        }
+      }
     }
     try {
       // ✅ N17: 明日の日付で登録された手動起床アラームも残さない
@@ -237,6 +271,21 @@ class WakeUpService {
       cancelled = false;
     }
     return cancelled;
+  }
+
+  /// N180 2/3：起きた日の欄の pre が鳴る時刻（registeredPreAlarmAt）を DB から読む
+  /// シフトなし・休日・分数 0 以下・パターンが見つからない（削除済み）→ null
+  /// 設定・シフト・パターンを読めなかったら例外をそのまま外に出す
+  static Future<DateTime?> _readPreAlarmAt(DateTime wakeUpDate) async {
+    final settings = await _shiftRepository.getAppSettings('test_user');
+    final minutesBefore = settings?.alarmTimeBeforeShift ?? 30;
+    if (minutesBefore <= 0) return null;
+    final rows = await _shiftRepository.getShiftsForDateRange(wakeUpDate, wakeUpDate);
+    if (rows.isEmpty) return null;
+    final patternId = rows.first['pattern_id'] as String?;
+    if (patternId == null || patternId == 'default_dayoff' || patternId == legacyDayOffPatternId) return null;
+    final pattern = await _shiftRepository.getPatternById(patternId);
+    return registeredPreAlarmAt(shiftDate: wakeUpDate, pattern: pattern, minutesBefore: minutesBefore);
   }
 
   /// 通知の「停止」ボタン（AlarmReceiver.kt）が保存した停止時刻で起床処理を行う

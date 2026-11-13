@@ -431,16 +431,18 @@ class AlarmService {
   }
 
   /// ✅ H3: 出勤前アラーム（pre）だけをキャンセルする（起床時刻アラーム main には触れない）
-  static Future<void> cancelPreAlarm(DateTime date) async {
+  /// N180 2/3：戻り値 true=AlarmManager から取り消せた（対象なしを含む）
+  static Future<bool> cancelPreAlarm(DateTime date) async {
     final preAlarmId = _generateNotificationId(date, 'pre');
 
     // flutter_local_notifications の pre のみキャンセル
     await _notificationsPlugin.cancel(preAlarmId);
 
     // AlarmManager の pre のみキャンセル（成功／対象なし／エラーは _cancelWithAlarmManager がログ出力）
-    await _cancelWithAlarmManager(preAlarmId);
+    final cancelled = await _cancelWithAlarmManager(preAlarmId);
 
     print('✓ 出勤前アラーム（pre）をキャンセルしました: $date');
+    return cancelled;
   }
 
   /// selectedAlarmSound から実際のファイル名を取得

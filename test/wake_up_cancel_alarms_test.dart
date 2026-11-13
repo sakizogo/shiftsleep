@@ -1,15 +1,21 @@
 // N19 1/2：起床（「起きる」・通知の「停止」）で main・pre を取り消す
+// N180 2/3：pre は起きた時刻から 3 時間以内に鳴るときだけ取り消す
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/models/app_settings.dart';
+import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
+
+import 'fakes/fake_shift_repository.dart';
 
 const _alarmChannel = MethodChannel('com.sakizoapps.shiftsleep/alarm');
 const _notificationChannel = MethodChannel('dexterous.com/flutter/local_notifications');
@@ -72,6 +78,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late _FakeRepository repository;
+  late FakeShiftRepository shiftRepository;
   late List<int> cancelledIds;
   late bool failNativeCancel;
   late bool failNotificationCancel;
@@ -90,12 +97,37 @@ void main() {
     return provider;
   }
 
+  /// N180 2/3：どの日の欄にも start 開始の出勤シフトを入れ、出勤前の分数を minutes にする
+  void workShift(TimeOfDay start, {int minutes = 30}) {
+    shiftRepository.settings = AppSettings(
+      id: 1,
+      userId: 'test_user',
+      alarmTimeBeforeShift: minutes,
+      createdAt: DateTime(2026, 1, 1),
+      updatedAt: DateTime(2026, 1, 1),
+    );
+    shiftRepository.rows = [
+      {'shift_date': 'x', 'pattern_id': 'p'},
+    ];
+    shiftRepository.pattern = ShiftPatternModel(
+      id: 'p',
+      patternName: '勤務',
+      patternType: ShiftType.work,
+      startTime: start,
+      endTime: const TimeOfDay(hour: 9, minute: 0),
+    );
+  }
+
   // テスト環境では通知プラグインが自動で登録されない（呼び出し先は下の偽物のチャンネル）
   setUpAll(AndroidFlutterLocalNotificationsPlugin.registerWith);
 
   setUp(() {
     repository = _FakeRepository();
     WakeUpService.sleepRepositoryForTest = repository;
+    shiftRepository = FakeShiftRepository();
+    WakeUpService.shiftRepositoryForTest = shiftRepository;
+    // N180 2/3：今と同じ時・分に始まる出勤（pre は 30 分前に鳴った＝起床から 3 時間以内なので取り消す）
+    workShift(TimeOfDay.fromDateTime(DateTime.now()));
     cancelledIds = [];
     failNativeCancel = false;
     failNotificationCancel = false;
@@ -186,6 +218,68 @@ void main() {
       expect(result, PendingAlarmStopResult.notProcessed);
       expect(cancelledIds, isEmpty);
       expect(provider.isSleepingNow, isTrue);
+    });
+  });
+
+  // N180 2/3：起きる時刻は昨日に固定する（日付や時刻が実際の時計で変わらないように）
+  group('pre は起きた時刻から 3 時間以内に鳴るときだけ取り消す', () {
+    final yesterday = _dateOnly(DateTime.now()).subtract(const Duration(days: 1));
+    final today = yesterday.add(const Duration(days: 1));
+    DateTime at(int hour, int minute) => DateTime(yesterday.year, yesterday.month, yesterday.day, hour, minute);
+
+    Future<WakeUpResult> wakeAt(DateTime wakeUpTime) async {
+      final provider = await sleepingProvider(wakeUpTime.subtract(const Duration(hours: 7)));
+      return WakeUpService.wakeUp(provider, wakeUpTime);
+    }
+
+    test('夜勤前の仮眠：17:00 に起き、23:00 の pre（6 時間後）は残し、main は取り消す', () async {
+      workShift(const TimeOfDay(hour: 23, minute: 30));
+
+      expect((await wakeAt(at(17, 0))).alarmsCancelled, isTrue);
+
+      expect(cancelledIds, contains(_mainId(yesterday)));
+      expect(cancelledIds, isNot(contains(_preId(yesterday))));
+    });
+
+    test('ちょうど 3 時間後の pre は取り消し、3 時間 1 分後は残す', () async {
+      workShift(const TimeOfDay(hour: 9, minute: 30));  // pre 9:00
+      await wakeAt(at(6, 0));
+      expect(cancelledIds, contains(_preId(yesterday)));
+
+      cancelledIds.clear();
+      workShift(const TimeOfDay(hour: 9, minute: 31));  // pre 9:01
+      await wakeAt(at(6, 0));
+      expect(cancelledIds, isNot(contains(_preId(yesterday))));
+      expect(cancelledIds, contains(_mainId(yesterday)));
+    });
+
+    test('今の登録（0:00 開始は登録日の 0:00−60 分）：前の晩に鳴った pre は取り消し、今夜鳴る翌日の欄の pre には触らない', () async {
+      // 起きた日の欄の pre は前の日の 23:00 に鳴った（過ぎているので取り消しても害がない）
+      // 今夜 23:00 に鳴るのは翌日の欄の pre（ID が違うので、今までどおり残る）
+      workShift(const TimeOfDay(hour: 0, minute: 0), minutes: 60);
+
+      expect((await wakeAt(at(17, 0))).alarmsCancelled, isTrue);
+
+      expect(cancelledIds, contains(_preId(yesterday)));
+      expect(cancelledIds, isNot(contains(_preId(today))));
+    });
+
+    test('シフトがなければ pre は取り消さず、取り消せた（true）として返す', () async {
+      shiftRepository.rows = [];
+
+      expect((await wakeAt(at(17, 0))).alarmsCancelled, isTrue);
+
+      expect(cancelledIds, contains(_mainId(yesterday)));
+      expect(cancelledIds, isNot(contains(_preId(yesterday))));
+    });
+
+    test('設定・シフトを読めなければ pre は取り消さず、main は取り消して false を返す', () async {
+      shiftRepository.failRead = true;
+
+      expect((await wakeAt(at(6, 0))).alarmsCancelled, isFalse);
+
+      expect(cancelledIds, contains(_mainId(yesterday)));
+      expect(cancelledIds, isNot(contains(_preId(yesterday))));
     });
   });
 

@@ -8,6 +8,8 @@ import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 
+import 'fakes/fake_shift_repository.dart';
+
 const _idKey = 'current_sleep_record_id';
 const _startKey = 'sleep_start_time_ms';
 
@@ -89,6 +91,7 @@ void main() {
   setUp(() {
     repository = _FakeRepository();
     WakeUpService.sleepRepositoryForTest = repository;
+    WakeUpService.shiftRepositoryForTest = FakeShiftRepository();  // N180 2/3：シフトなし（pre は取り消さない）
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
       const MethodChannel('com.sakizoapps.shiftsleep/alarm'),
