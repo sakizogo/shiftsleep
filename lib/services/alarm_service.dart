@@ -402,6 +402,24 @@ class AlarmService {
     }
   }
 
+  /// N181: 控え（shiftsleep_native_alarms）にある予約をまとめて取り消し、控えを空にする（アラームを OFF にしたとき）
+  ///    Android のときだけ（ほかには控えがないので true）。戻り値 true=全部取り消せた。例外は外に出さない
+  static Future<bool> cancelAllSavedAlarms() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final counts = await _methodChannel.invokeMapMethod<String, int>('cancelAllAlarms');
+      debugPrint('🔕 [AlarmService] 控えの予約をまとめて取り消し：$counts');
+      return cancelAllSucceeded(counts);
+    } catch (e) {
+      debugPrint('❌ [AlarmService] 控えの予約をまとめて取り消せませんでした: $e');
+      return false;
+    }
+  }
+
+  /// N181: cancelAllAlarms の件数の Map から、全部取り消せたかを決める（failed が 0 のときだけ true）
+  @visibleForTesting
+  static bool cancelAllSucceeded(Map<String, int>? counts) => counts != null && counts['failed'] == 0;
+
   /// N129 2/2: 今アラームの音が鳴っているか（サービス・予備の経路のどちらでも true）
   ///    Android のときだけ。例外は外に出さず false を返す
   static Future<bool> isAlarmSoundPlaying() async {

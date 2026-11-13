@@ -82,6 +82,26 @@ List<({DateTime date, TimeOfDay startTime, DateTime startAt, DateTime preAt})> p
   return (text: '✅ 出勤前アラームを $count件 登録し直しました', color: Colors.green);
 }
 
+/// N181：アラームを OFF にして、登録済みのアラームをすべて取り消せたときの文言
+const alarmOffDoneText = '🔕 アラームを OFF にしました。登録済みのアラームはすべて取り消しました';
+
+/// N181：アラームを OFF にしたが、取り消せなかったアラームがあるかもしれないときの文言（H4・N118 からの文言）
+const alarmOffPartialText = '⚠️ 一部のアラームを取り消せませんでした。もう一度 OFF にしてください';
+
+/// N181：アラームを OFF にしたあとの SnackBar（color が null なら既定の色）
+/// - 控えの予約のまとめての取り消し（savedCancelFailed）と、シフトを読んで 1 日ずつの取り消し（dailyCancelFailed：
+///   シフトを読めなかった・途中で例外）の、どちらかが失敗したら ⚠️（オレンジ）
+/// - どちらも成功したら 🔕（既定の色）
+({String text, Color? color}) alarmOffMessage({
+  required bool savedCancelFailed,
+  required bool dailyCancelFailed,
+}) {
+  if (savedCancelFailed || dailyCancelFailed) {
+    return (text: alarmOffPartialText, color: Colors.orange);
+  }
+  return (text: alarmOffDoneText, color: null);
+}
+
 /// 睡眠中で手動起床が有効なときに、起床アラーム（main）は戻らないことを知らせる文言
 /// N123（ON に戻したとき）と N128（「アラームとリマインダー」が許可されたとき）で使う
 const manualWakeNotRestoredText = '⚠️ 起床アラームは戻りません。『起きる』→『今から寝る』をやり直してください';

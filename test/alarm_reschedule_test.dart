@@ -175,6 +175,49 @@ void main() {
     });
   });
 
+  // N181：アラームを OFF にしたあとの知らせ
+  group('alarmOffMessage', () {
+    test('1. どちらも成功 → 🔕（既定の色）', () {
+      final message = alarmOffMessage(savedCancelFailed: false, dailyCancelFailed: false);
+      expect(message.text, alarmOffDoneText);
+      expect(message.color, isNull);
+    });
+
+    test('2. 控えのまとめての取り消しだけ失敗 → ⚠️（オレンジ）', () {
+      final message = alarmOffMessage(savedCancelFailed: true, dailyCancelFailed: false);
+      expect(message.text, alarmOffPartialText);
+      expect(message.color, Colors.orange);
+    });
+
+    test('3. 1 日ずつの取り消しだけ失敗（シフトを読めなかった・途中で例外）→ ⚠️', () {
+      final message = alarmOffMessage(savedCancelFailed: false, dailyCancelFailed: true);
+      expect(message.text, alarmOffPartialText);
+      expect(message.color, Colors.orange);
+    });
+
+    test('4. どちらも失敗 → ⚠️ を 1 つだけ', () {
+      final message = alarmOffMessage(savedCancelFailed: true, dailyCancelFailed: true);
+      expect(message.text, alarmOffPartialText);
+    });
+  });
+
+  // N181：控えの予約のまとめての取り消しの結果
+  group('AlarmService.cancelAllSucceeded', () {
+    test('failed が 0 なら成功（取り消した件数が 0 でも）', () {
+      expect(AlarmService.cancelAllSucceeded({'cancelled': 3, 'failed': 0}), isTrue);
+      expect(AlarmService.cancelAllSucceeded({'cancelled': 0, 'failed': 0}), isTrue);
+    });
+
+    test('failed が 1 以上なら失敗', () {
+      expect(AlarmService.cancelAllSucceeded({'cancelled': 2, 'failed': 1}), isFalse);
+    });
+
+    test('結果がない・failed がないなら失敗', () {
+      expect(AlarmService.cancelAllSucceeded(null), isFalse);
+      expect(AlarmService.cancelAllSucceeded({'cancelled': 2}), isFalse);
+    });
+  });
+
   group('summarizeRescheduleResults', () {
     test('1. 何もなければ 0 件・エラーなし', () {
       final result = summarizeRescheduleResults([]);

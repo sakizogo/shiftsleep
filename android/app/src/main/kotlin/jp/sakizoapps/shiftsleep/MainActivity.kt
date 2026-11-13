@@ -52,6 +52,15 @@ class MainActivity: FlutterActivity() {
                         null -> result.error("CANCEL_FAILED", "AlarmManager キャンセル失敗", alarmId)
                     }
                 }
+                "cancelAllAlarms" -> {
+                    // N181: アラームを OFF にしたときに、控えにある予約をまとめて取り消す（件数の Map を返す）
+                    try {
+                        result.success(AlarmScheduler.cancelAll(this))
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "❌ 控えの予約のまとめての取り消しエラー: ${e.message}")
+                        result.error("CANCEL_ALL_FAILED", "控えの予約をまとめて取り消せませんでした", e.message)
+                    }
+                }
                 "restoreAlarms" -> {
                     // N126: アプリを開いたときに控えから登録し直す（件数の Map を返す）
                     try {

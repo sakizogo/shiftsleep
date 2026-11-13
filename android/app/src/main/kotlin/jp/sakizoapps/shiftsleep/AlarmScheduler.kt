@@ -224,6 +224,23 @@ object AlarmScheduler {
         return mapOf("restored" to restored, "removed" to removed, "denied" to denied, "failed" to failed, "off" to 0)
     }
 
+    // N181: 控えにある予約をまとめて取り消す（アラームを OFF にしたときに MethodChannel から呼ぶ）
+    // DB のシフトに関係なく、登録できた予約はすべて控えにあるので、ここで全部取り消せる
+    // 取り消せた（対象なしを含む）予約は cancel の中で控えから消える。例外になった予約は控えに残す
+    // 最後に commit で控えの削除をディスクに書き終えてから戻る（すぐにプロセスが止められても控えに残さないため）
+    // 戻り値：cancelled（取り消した・対象なし）・failed（例外）
+    fun cancelAll(context: Context): Map<String, Int> {
+        var cancelled = 0
+        var failed = 0
+        for (alarm in loadAll(context)) {
+            if (cancel(context, alarm.alarmId) == null) failed++ else cancelled++
+        }
+        val committed = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().commit()
+        if (!committed) failed++
+        Log.d("AlarmScheduler", "🔕 控えの予約をまとめて取り消し：取り消し $cancelled 件 / 失敗 $failed 件")
+        return mapOf("cancelled" to cancelled, "failed" to failed)
+    }
+
     // ✅ H2 Step 3: 予約の保存（保存済みの予約をすべて読み出す。Step 4 で使用）
     fun loadAll(context: Context): List<SavedAlarm> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

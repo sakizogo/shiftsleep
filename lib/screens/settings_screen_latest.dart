@@ -420,7 +420,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     //    対象：今日・明日 ＋ DB に存在する今日〜CalendarRange の終わりのシフト日（Set で重複排除）
     //    N123：範囲の終わりを確定の登録（CalendarRange.lastDate）にそろえる
     //    N118 2/4 2c：知らせは呼び出し元が await 前に取った messenger で出す（N133 と同じ。画面が閉じられても飛ばさない）
+    //    N181：OFF の保存（呼び出し元）のあと、まず控えの予約をまとめて取り消し（DB に関係なく全部・1 回で終わる）、
+    //    次に今までの 1 日ずつの取り消しを念のため行い、最後に完了か ⚠️ を知らせる（alarmOffMessage）
     Future<void> _cancelAllAlarmsForOff(ScaffoldMessengerState messenger) async {
+      final savedCancelled = await AlarmService.cancelAllSavedAlarms();
+      var dailyCancelFailed = false;
       try {
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
@@ -453,19 +457,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           await AlarmService.cancelPreAlarm(date);
         }
         print('🔕 [Settings] アラームOFF: ${targetDates.length}日分の main / pre をキャンセルしました');
-        if (shiftsReadFailed) {
-          messenger.hideCurrentSnackBar();
-          messenger.showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ 一部のアラームを取り消せませんでした。もう一度 OFF にしてください'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 6),
-            ),
-          );
-        }
+        dailyCancelFailed = shiftsReadFailed;
       } catch (e) {
         print('❌ [Settings] アラームOFF時のキャンセルエラー: $e');
+        dailyCancelFailed = true;  // N181：途中で止まったら ⚠️ を出す
       }
+      final message = alarmOffMessage(
+        savedCancelFailed: !savedCancelled,
+        dailyCancelFailed: dailyCancelFailed,
+      );
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message.text),
+          backgroundColor: message.color,
+          duration: Duration(seconds: message.color == Colors.orange ? 6 : 3),
+        ),
+      );
     }
 
     // N124：アラーム音を保存し、アラームが ON なら登録済みの pre を新しい音で登録し直す
