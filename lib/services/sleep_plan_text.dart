@@ -2,6 +2,7 @@
 //
 // 決まり：言い切らない（「目安」「ごろ」）・どの場面にも「眠れなくても大丈夫」の一言・責めない／急かさない
 // - 時刻は、その睡眠が属する夜の日（入眠 − 5:00 の日）を基準に書き、次の日の時刻は「翌 0:30」（D41）
+//   ただし日の呼び方が夜（今夜など）の行では、次の日の 0:00〜4:59 は同じ夜なので「翌」を付けない（D71）
 // - 日の呼び方は入眠の時刻で分ける。5:00〜17:59 は「今日／明日／11/19（木）」、
 //   18:00〜4:59 は「今夜／明日の夜／11/19（木）の夜」（D52・D53）
 // - 「あと何時間」は出さない（D44）
@@ -108,16 +109,24 @@ String planTimeOfDay(DateTime time) => '${time.hour}:${time.minute.toString().pa
 String planMonthDay(DateTime date) => '${date.month}/${date.day}（${_weekdays[date.weekday - 1]}）';
 
 /// D41：baseDate の日の時刻はそのまま、次の日は「翌 0:30」、それ以外は「11/19（木） 0:30」
-String planTime(DateTime time, {required DateTime baseDate}) {
+/// D71：sameNight（日の呼び方が「今夜／明日の夜／〇〇の夜」）なら、次の日の 0:00〜4:59 は同じ夜なので「翌」を付けない
+///   （「今夜 寝る目安 0:00 ごろ → 起きる目安 翌 7:00 ごろ」。5:00 以降の次の日の時刻には「翌」を付ける）
+String planTime(DateTime time, {required DateTime baseDate, bool sameNight = false}) {
   final diff = _daysBetween(baseDate, time);
   if (diff == 0) return planTimeOfDay(time);
-  if (diff == 1) return '翌 ${planTimeOfDay(time)}';
+  if (diff == 1) {
+    if (sameNight && time.hour < nextDayStartBoundary.hour) return planTimeOfDay(time);
+    return '翌 ${planTimeOfDay(time)}';
+  }
   return '${planMonthDay(_date(time))} ${planTimeOfDay(time)}';
 }
 
+/// 18:00〜4:59 に始まるものは夜（D53）
+bool _isNightStart(DateTime start) => start.hour >= 18 || start.hour < nextDayStartBoundary.hour;
+
 /// D52・D53：日の呼び方。18:00〜4:59 に始まるものは夜（今夜／明日の夜／11/19（木）の夜）
 String planDayLabel(DateTime start, {required DateTime now}) {
-  final night = start.hour >= 18 || start.hour < nextDayStartBoundary.hour;
+  final night = _isNightStart(start);
   final diff = _daysBetween(_nightKey(now), _nightKey(start));
   if (diff == 0) return night ? '今夜' : '今日';
   if (diff == 1) return night ? '明日の夜' : '明日';
@@ -220,17 +229,32 @@ String _sleepKindName(PlannedSleepKind kind) {
 }
 
 /// main の書き方：「寝る目安 23:00 ごろ → 起きる目安 翌 6:00 ごろ（7 時間）」
-String _mainWindowText(SleepWindow window, DateTime baseDate) =>
-    '寝る目安 ${planTime(window.sleepAt, baseDate: baseDate)} ごろ → '
-    '起きる目安 ${planTime(window.wakeAt, baseDate: baseDate)} ごろ（${planDuration(window.length)}）';
+/// sameNight：日の呼び方が夜のとき（D71。0:00〜4:59 に「翌」を付けない）
+String _mainWindowText(SleepWindow window, DateTime baseDate, {bool sameNight = false}) =>
+    '寝る目安 ${planTime(window.sleepAt, baseDate: baseDate, sameNight: sameNight)} ごろ → '
+    '起きる目安 ${planTime(window.wakeAt, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(window.length)}）';
 
 /// 追加の睡眠の書き方：「仮眠の目安 17:30〜19:00 ごろ（90 分ほど）」（「ごろ」は最後に 1 回）
-String _extraWindowText(PlannedSleepKind kind, SleepWindow window, DateTime baseDate) =>
-    '${_sleepKindName(kind)} ${planTime(window.sleepAt, baseDate: baseDate)}〜'
-    '${planTime(window.wakeAt, baseDate: baseDate)} ごろ（${planDuration(window.length)}ほど）';
+String _extraWindowText(PlannedSleepKind kind, SleepWindow window, DateTime baseDate, {bool sameNight = false}) =>
+    '${_sleepKindName(kind)} ${planTime(window.sleepAt, baseDate: baseDate, sameNight: sameNight)}〜'
+    '${planTime(window.wakeAt, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(window.length)}ほど）';
 
 /// 日の呼び方つきの行（「今夜　寝る目安 …」）
 String _labeled(DateTime start, DateTime now, String body) => '${planDayLabel(start, now: now)}　$body';
+
+/// 日の呼び方つきの main の行（D71：夜の呼び方なら 0:00〜4:59 に「翌」を付けない）
+String _labeledMain(SleepWindow window, DateTime now) => _labeled(
+      window.sleepAt,
+      now,
+      _mainWindowText(window, _nightKey(window.sleepAt), sameNight: _isNightStart(window.sleepAt)),
+    );
+
+/// 日の呼び方つきの追加の睡眠の行（D71 は main と同じ）
+String _labeledExtra(PlannedSleepKind kind, SleepWindow window, DateTime now) => _labeled(
+      window.sleepAt,
+      now,
+      _extraWindowText(kind, window, _nightKey(window.sleepAt), sameNight: _isNightStart(window.sleepAt)),
+    );
 
 /// 文言を作る（plan が null なら勤務なし）
 /// - sleeping：今寝ているか（中にいるときの文が変わる）
@@ -259,14 +283,8 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
   final nap = plan.preShiftNap;
   final today = _date(now);
 
-  String? mainLine;
-  if (main != null) {
-    mainLine = _labeled(main.sleepAt, now, _mainWindowText(main, _nightKey(main.sleepAt)));
-  }
-  String? freeNapLine;
-  if (nap != null) {
-    freeNapLine = _labeled(nap.sleepAt, now, _extraWindowText(PlannedSleepKind.preNightNap, nap, _nightKey(nap.sleepAt)));
-  }
+  final mainLine = main != null ? _labeledMain(main, now) : null;
+  final freeNapLine = nap != null ? _labeledExtra(PlannedSleepKind.preNightNap, nap, now) : null;
 
   final statusLines = <String>[
     if (plan.currentShift != null) '勤務中です。終わったあとの目安です',
@@ -338,8 +356,7 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
     styleNote: styleMatters ? sleepStyleNote(plan.style, plan.styleSource) : null,
     reasonLines: [for (final reason in plan.reasons) sleepPlanReasonText(reason)],
     extraLines: [
-      for (final extra in plan.extraSleeps)
-        _labeled(extra.window.sleepAt, now, _extraWindowText(extra.kind, extra.window, _nightKey(extra.window.sleepAt))),
+      for (final extra in plan.extraSleeps) _labeledExtra(extra.kind, extra.window, now),
     ],
     days: days,
   );

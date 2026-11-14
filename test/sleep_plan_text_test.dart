@@ -146,7 +146,7 @@ void main() {
       expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD}), alarmMinutesBefore: 120).mainLine,
           '今夜　寝る目安 23:00 ごろ → 起きる目安 翌 6:00 ごろ（7 時間）');
       expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).mainLine,
-          '今夜　寝る目安 翌 0:00 ごろ → 起きる目安 翌 7:00 ごろ（7 時間）');
+          '今夜　寝る目安 0:00 ごろ → 起きる目安 翌 7:00 ごろ（7 時間）');  // A-3 1/3：D71 で「翌 0:00」→「0:00」
       // 3 日分の行も、その日を基準に書く
       final days = text(t(16, 18), shiftsOf({16: dayD, 17: nightNt})).days;
       expect(days.first.title, '今日 11/16（月）');
@@ -189,11 +189,29 @@ void main() {
 
     test('21. 18:00 以降・0:00〜4:59 に始まる睡眠は「今夜」「明日の夜」', () {
       // 日→夜（D→Nt）を月 17:00 に見る：main は火 1:00 から（今夜）
-      expect(text(t(16, 17), shiftsOf({16: dayD, 17: nightNt})).mainLine, startsWith('今夜　寝る目安 翌 1:00 ごろ'));
+      expect(text(t(16, 17), shiftsOf({16: dayD, 17: nightNt})).mainLine, startsWith('今夜　寝る目安 1:00 ごろ'));  // A-3 1/3：D71 で「翌 1:00」→「1:00」
       // 休み→深夜（月の欄・火 0:00）を日 20:00 に見る：仮眠は月 21:30 から（明日の夜）
       final result = text(t(15, 20), shiftsOf({16: nightN}));
       expect(result.mainLine, startsWith('今夜　'));
       expect(result.extraLines, ['明日の夜　仮眠の目安 21:30〜23:00 ごろ（90 分ほど）']);
+    });
+  });
+
+  group('A-3 1/3：D71（夜の呼び方の行は、0:00〜4:59 に「翌」を付けない）', () {
+    test('11. 今夜 0:00／翌 7:00／今日 10:00〜14:00 ごろ／明日の夜 23:00 → 翌 6:00', () {
+      expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).mainLine,
+          '今夜　寝る目安 0:00 ごろ → 起きる目安 翌 7:00 ごろ（7 時間）');
+      expect(text(t(17, 9), shiftsOf({16: nightN, 18: dayD})).extraLines,
+          ['今日　明けの睡眠の目安 10:00〜14:00 ごろ（4 時間ほど）']);
+      // 月 12:00 に見て、水 8:00 の日勤（出勤前 120 分）：寝る 火 23:00、起きる 水 6:00
+      expect(text(t(16, 12), shiftsOf({18: dayD}), alarmMinutesBefore: 120).mainLine,
+          '明日の夜　寝る目安 23:00 ごろ → 起きる目安 翌 6:00 ごろ（7 時間）');
+
+      final base = t(17, 0);
+      expect(planTime(t(18, 0, 30), baseDate: base, sameNight: true), '0:30');
+      expect(planTime(t(18, 4, 59), baseDate: base, sameNight: true), '4:59');
+      expect(planTime(t(18, 5), baseDate: base, sameNight: true), '翌 5:00');
+      expect(planTime(t(18, 0, 30), baseDate: base), '翌 0:30');
     });
   });
 

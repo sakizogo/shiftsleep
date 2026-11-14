@@ -12,16 +12,32 @@ class FakeShiftRepository extends ShiftRepository {
   ShiftPatternModel? pattern;
   bool failRead = false;  // 設定・シフト・パターンの読み込みをすべて例外にする
 
+  // A-3 1/3：睡眠プランの読み込みのテスト用
+  List<ShiftPatternModel> patterns = [];  // getAllPatterns が返すもの
+  bool failSettings = false;  // 設定の読み込みだけを例外にする
+  bool failShifts = false;  // シフトの読み込みだけを例外にする
+  bool failPatterns = false;  // getAllPatterns だけを例外にする
+  DateTime? lastRangeStart;  // getShiftsForDateRange に渡された範囲
+  DateTime? lastRangeEnd;
+
   @override
   Future<AppSettings?> getAppSettings(String userId) async {
-    if (failRead) throw Exception('settings read failed');
+    if (failRead || failSettings) throw Exception('settings read failed');
     return settings;
   }
 
   @override
   Future<List<Map<String, dynamic>>> getShiftsForDateRange(DateTime startDate, DateTime endDate) async {
-    if (failRead) throw Exception('shifts read failed');
+    lastRangeStart = startDate;
+    lastRangeEnd = endDate;
+    if (failRead || failShifts) throw Exception('shifts read failed');
     return rows;
+  }
+
+  @override
+  Future<List<ShiftPatternModel>> getAllPatterns() async {
+    if (failRead || failPatterns) throw Exception('patterns read failed');
+    return patterns;
   }
 
   @override
