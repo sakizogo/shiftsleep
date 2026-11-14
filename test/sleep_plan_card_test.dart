@@ -1,6 +1,7 @@
 // A-3 2/3：SleepPlanCard（ホームの睡眠の目安のカード）の widget テスト
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -107,6 +108,7 @@ void main() {
     SleepPlanLoader loader, {
     Duration? tick,
     Future<void> Function(SleepStylePreference)? savePreference,
+    ValueListenable<int>? pendingDraftCount,
   }) async {
     await tester.pumpWidget(
       ChangeNotifierProvider<SleepProvider>.value(
@@ -118,6 +120,7 @@ void main() {
                 loader: loader,
                 clock: () => now,
                 tick: tick,
+                pendingDraftCount: pendingDraftCount,
                 savePreference: savePreference ??
                     (preference) async {
                       saved.add(preference);
@@ -343,6 +346,76 @@ void main() {
     expect(find.byIcon(Icons.lock), findsNothing);
     expect(find.text(mainDayToDay), findsOneWidget);
     await unmount(tester);
+  });
+
+  group('A-3 3/3：F1・F2（鍵・メモは絵文字を付けず、アイコンと文字だけ）', () {
+    testWidgets('F1：🔒 の案内は鍵のアイコン 1 つと「プレミアム」の文字だけ', (tester) async {
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]));
+      expect(find.text('プレミアム'), findsOneWidget);
+      expect(find.byIcon(Icons.lock), findsOneWidget);
+      expect(find.textContaining('🔒'), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('F2：未確定の一言はアイコンと文字だけ（📝 を付けない）', (tester) async {
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]), pendingDraftCount: ValueNotifier<int>(1));
+      expect(find.text('未確定のシフトがあります。確定すると目安に反映されます'), findsOneWidget);
+      expect(find.byIcon(Icons.edit_note), findsOneWidget);
+      expect(find.textContaining('📝'), findsNothing);
+      await unmount(tester);
+    });
+  });
+
+  group('D72：未確定のシフトの一言', () {
+    testWidgets('勤務ありの形：未確定があれば一言が出て、なければ出ない', (tester) async {
+      final pending = ValueNotifier<int>(2);
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]), pendingDraftCount: pending);
+      expect(find.text(mainDayToDay), findsOneWidget);
+      expect(find.text(sleepPlanDraftPendingText), findsOneWidget);
+      expect(find.byIcon(Icons.edit_note), findsOneWidget);
+      await unmount(tester);
+
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]), pendingDraftCount: ValueNotifier<int>(0));
+      expect(find.text(sleepPlanDraftPendingText), findsNothing);
+      await unmount(tester);
+
+      // 渡されなければ出さない
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]));
+      expect(find.text(sleepPlanDraftPendingText), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('勤務なしの形：未確定があれば一言が出て、なければ出ない', (tester) async {
+      await pumpCard(tester, _ScriptedLoader([inputsOf(const [])]), pendingDraftCount: ValueNotifier<int>(1));
+      expect(find.text('この 2 日は勤務がありません。ふだんどおりに過ごせる日です'), findsOneWidget);
+      expect(find.text(sleepPlanDraftPendingText), findsOneWidget);
+      await unmount(tester);
+
+      await pumpCard(tester, _ScriptedLoader([inputsOf(const [])]), pendingDraftCount: ValueNotifier<int>(0));
+      expect(find.text(sleepPlanDraftPendingText), findsNothing);
+      await unmount(tester);
+    });
+
+    testWidgets('未確定が確定・破棄されて 0 になると一言が消え、また入れると出る', (tester) async {
+      final pending = ValueNotifier<int>(1);
+      await pumpCard(tester, _ScriptedLoader([inputsOf(dayToDay)]), pendingDraftCount: pending);
+      expect(find.text(sleepPlanDraftPendingText), findsOneWidget);
+
+      pending.value = 0;  // ShiftDraftStore.clear（確定・破棄）で 0 になる
+      await tester.pump();
+      expect(find.text(sleepPlanDraftPendingText), findsNothing);
+      expect(find.text(mainDayToDay), findsOneWidget);
+
+      pending.value = 3;
+      await tester.pump();
+      expect(find.text(sleepPlanDraftPendingText), findsOneWidget);
+      await unmount(tester);
+
+      // 外したあとに値が変わっても落ちない（removeListener）
+      pending.value = 0;
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
   });
 
   testWidgets('25. 外したあとにアプリに戻っても落ちない（removeObserver）', (tester) async {

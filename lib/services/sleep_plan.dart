@@ -223,11 +223,19 @@ class SleepWindow {
   /// now から見た状態
   final SleepWindowStatus status;
 
+  /// 寝る目安を now・実際の入眠から数え直した（D16・D17。表示のときだけ 5 分単位に丸める。F4）
+  final bool sleepAtRecounted;
+
+  /// 起きる目安を数え直した寝る目安から数え直した（入眠で決まるもの。表示のときだけ 5 分単位に丸める。F4）
+  final bool wakeAtRecounted;
+
   const SleepWindow({
     required this.sleepAt,
     required this.wakeAt,
     required this.shortened,
     required this.status,
+    this.sleepAtRecounted = false,
+    this.wakeAtRecounted = false,
   });
 
   /// 寝る目安から起きる目安までの長さ
@@ -526,6 +534,8 @@ SleepWindow? _settle({
   var start = sleepAt;
   var end = wakeAt;
   var status = _statusOf(start, end, now);
+  var sleepAtRecounted = false;
+  var wakeAtRecounted = false;
   if (status == SleepWindowStatus.ongoing) {
     final newStart = sleepingSince ?? now;
     var newEnd = end;
@@ -539,6 +549,8 @@ SleepWindow? _settle({
       start = newStart;
       end = newEnd;
       status = now.isBefore(end) ? SleepWindowStatus.ongoing : SleepWindowStatus.past;
+      sleepAtRecounted = true;
+      wakeAtRecounted = sleepAnchored;
     }
   }
   return SleepWindow(
@@ -546,6 +558,8 @@ SleepWindow? _settle({
     wakeAt: end,
     shortened: end.difference(start) < intended,
     status: status,
+    sleepAtRecounted: sleepAtRecounted,
+    wakeAtRecounted: wakeAtRecounted,
   );
 }
 
@@ -665,7 +679,11 @@ _PlanCore? _buildCore({
     final napEnd = windowEnd!;
     final napStart = napEnd.subtract(preNightNapLength);
     final startsTooEarly = windowStart != null && napStart.isBefore(windowStart);
-    if (!startsTooEarly && !overlapsMain(napStart, napEnd)) {
+    // G1：D16・D17 で数え直した main とも重なるなら出さない（予定の main とは重ならなくても、伸びた main と重なることがある）
+    final overlapsRecountedMain = main != null &&
+        (main.sleepAtRecounted || main.wakeAtRecounted) &&
+        _overlaps(napStart, napEnd, main.sleepAt, main.wakeAt);
+    if (!startsTooEarly && !overlapsMain(napStart, napEnd) && !overlapsRecountedMain) {
       nap = _settle(
         sleepAt: napStart,
         wakeAt: napEnd,
@@ -735,9 +753,11 @@ _PlanCore? _buildCore({
       reasons.add(SleepPlanReason.eveningLaterWake);
       if (shiftedByPrevious) reasons.add(SleepPlanReason.shiftedByPrevious);
     case SleepScene.beforeNight:
-      reasons.addAll([SleepPlanReason.usualNight, SleepPlanReason.nightShiftNap]);
+      reasons.add(SleepPlanReason.usualNight);
+      if (nap != null) reasons.add(SleepPlanReason.nightShiftNap);  // G1：仮眠が出るときだけ
     case SleepScene.dayToNight:
-      reasons.addAll([SleepPlanReason.delayedNight, SleepPlanReason.nightShiftNap]);
+      reasons.add(SleepPlanReason.delayedNight);
+      if (nap != null) reasons.add(SleepPlanReason.nightShiftNap);  // G1：仮眠が出るときだけ
       if (shiftedByPrevious) reasons.add(SleepPlanReason.shiftedByPrevious);
     case SleepScene.betweenNights:
       reasons.add(styleReason);

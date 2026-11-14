@@ -29,6 +29,7 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/widgets/sleep_button.dart';
+import 'package:shiftsleep/widgets/sleep_plan_card.dart';  // A-3 3/3
 
 // Week 3 Day 5: シフト管理画面内の詳細状態管理
 enum ShiftManagementView { calendar, details }
@@ -800,6 +801,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+
+              // A-3 3/3：次のシフトに合わせた睡眠の目安（寝る・起きるボタンのすぐ下。D54）
+              // D72：未確定のシフトの日数を渡し、あれば一言を出す（ShiftDraftStore はこの State が持つので const にできない）
+              SleepPlanCard(pendingDraftCount: _shiftDraftStore.pendingCount),
 
               // ========================
               // Yesterday's Sleep Section - Card Style

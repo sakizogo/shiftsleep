@@ -7,6 +7,7 @@
 // - 色は Wong 2011（夜の目安は青 0072B2、⚠️ はオレンジ E69F00）。色だけに頼らず文字とアイコンも付ける
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
@@ -28,11 +29,14 @@ const String sleepPlanLoadingText = '⏳ 準備しています…';
 /// カードの見出し（読み込み中・失敗のとき）
 const String sleepPlanCardTitle = '睡眠の目安';
 
-/// 🔒 の文字
-const String sleepPlanPremiumLabel = '🔒 プレミアム';
+/// 🔒 の文字（鍵はアイコンで出すので、文字には付けない。F1）
+const String sleepPlanPremiumLabel = 'プレミアム';
 
 /// 寝方のタイプを保存できなかったときの文
 const String sleepStyleSaveFailedText = '⚠️ 寝方のタイプを保存できませんでした';
+
+/// D72：未確定のシフトがあるときの一言（カードは確定したシフトだけを使う。アイコンで出すので 📝 は付けない。F2）
+const String sleepPlanDraftPendingText = '未確定のシフトがあります。確定すると目安に反映されます';
 
 /// 寝方のタイプのシートの見出し
 const String sleepStyleSheetTitle = '寝方のタイプ';
@@ -61,7 +65,12 @@ class SleepPlanCard extends StatefulWidget {
     this.savePreference,
     this.clock,
     this.tick = const Duration(seconds: 20),
+    this.pendingDraftCount,
   });
+
+  /// D72：未確定のシフトの日数（home_screen の ShiftDraftStore.pendingCount。シフト管理タブのバッジと同じ値）
+  /// 1 以上なら「未確定のシフトがあります」の一言を出す。null なら出さない
+  final ValueListenable<int>? pendingDraftCount;
 
   /// 読み込み（テストで差し替える）。null なら SleepPlanLoader()
   final SleepPlanLoader? loader;
@@ -105,6 +114,7 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.pendingDraftCount?.addListener(_onDraftCountChanged);
     _load(initial: true);
     final tick = widget.tick;
     if (tick != null) {
@@ -115,10 +125,40 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
   }
 
   @override
+  void didUpdateWidget(SleepPlanCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pendingDraftCount != widget.pendingDraftCount) {
+      oldWidget.pendingDraftCount?.removeListener(_onDraftCountChanged);
+      widget.pendingDraftCount?.addListener(_onDraftCountChanged);
+    }
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
+    widget.pendingDraftCount?.removeListener(_onDraftCountChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _onDraftCountChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _hasPendingDraft => (widget.pendingDraftCount?.value ?? 0) > 0;
+
+  Widget _draftPendingRow() {
+    return const Padding(
+      padding: EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.edit_note, color: sleepPlanAccentColor, size: 18),
+          SizedBox(width: 6),
+          Expanded(child: Text(sleepPlanDraftPendingText, style: TextStyle(fontSize: 12))),
+        ],
+      ),
+    );
   }
 
   @override
@@ -318,6 +358,7 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
               ],
             ),
             for (final warning in model.warnings) _warningRow(warning),
+            if (_hasPendingDraft) _draftPendingRow(),
           ],
         );
       case SleepPlanCardState.ready:
@@ -345,6 +386,7 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
             child: Text(text.subline!, style: const TextStyle(fontSize: 12, color: Colors.black54)),
           ),
         for (final warning in model.warnings) _warningRow(warning),
+        if (_hasPendingDraft) _draftPendingRow(),
         if (text.mainLine != null)
           Padding(
             padding: const EdgeInsets.only(top: 10),

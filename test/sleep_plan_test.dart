@@ -767,6 +767,35 @@ void main() {
       expect(result?.preShiftNap, isNull);
       expect(result?.extraSleeps.where((s) => s.kind == napK), isEmpty);
     });
+
+    // G1：13 日の欄に深夜（14 日 0:00〜9:00）、14 日に夜勤（20:00〜翌 5:00）。帰ってすぐ寝るタイプ
+    // 予定の main は 10:00〜17:00 で仮眠 17:30〜19:00 と重ならないが、数え直すと 19:00 まで伸びて重なる
+    test('G1-1. 今から数え直して main が 19:00 まで伸びたら、仮眠・preShiftNap・nightShiftNap はない', () {
+      final result = plan(t(14, 12, 35), shiftsOf({13: nightN, 14: nightNt}));
+      expectMain(result, SleepScene.betweenNights, t(14, 12, 35), t(14, 19),
+          shortened: true, status: SleepWindowStatus.ongoing);
+      expect(result?.extraSleeps.where((s) => s.kind == napK), isEmpty);
+      expect(result?.preShiftNap, isNull);
+      expect(result?.reasons, isNot(contains(SleepPlanReason.nightShiftNap)));
+      expect(result?.reasons, [SleepPlanReason.sleepRightAfter, SleepPlanReason.fewRecords]);
+    });
+
+    test('G1-2. 寝ていて（12:00 から）main が 19:00 まで伸びたときも、仮眠・nightShiftNap はない', () {
+      final result = plan(t(14, 12, 35), shiftsOf({13: nightN, 14: nightNt}), sleepingSince: t(14, 12));
+      expectMain(result, SleepScene.betweenNights, t(14, 12), t(14, 19), status: SleepWindowStatus.ongoing);
+      expect(result?.extraSleeps.where((s) => s.kind == napK), isEmpty);
+      expect(result?.preShiftNap, isNull);
+      expect(result?.reasons, isNot(contains(SleepPlanReason.nightShiftNap)));
+    });
+
+    test('G1-3. 数え直していない（main の前に見る）ときは、今までどおり仮眠と nightShiftNap が出る', () {
+      final result = plan(t(14, 9, 30), shiftsOf({13: nightN, 14: nightNt}));
+      expectMain(result, SleepScene.betweenNights, t(14, 10), t(14, 17));
+      final nap = result!.extraSleeps.singleWhere((s) => s.kind == napK).window;
+      expect(nap.sleepAt, t(14, 17, 30));
+      expect(nap.wakeAt, t(14, 19));
+      expect(result.reasons, contains(SleepPlanReason.nightShiftNap));
+    });
   });
 
   // ===== A-2 4/4：D40（勤務中に開いたとき） =====

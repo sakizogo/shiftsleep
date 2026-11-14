@@ -215,6 +215,85 @@ void main() {
     });
   });
 
+  group('A-3 3/3：F3・F4・F5', () {
+    test('F3：3 日分で始まりと終わりが同じ日なら、終わりの「翌」を省く（違う日なら付ける）', () {
+      // 2 交代 ①（月 Nt・水 D）を火 5:00 に見る：水の欄の夜は 木 0:00〜7:00
+      final days = text(t(17, 5), shiftsOf({16: nightNt, 18: dayD})).days;
+      expect(days[1].lines.last, 'ふだんの睡眠の目安 翌 0:00〜7:00 ごろ（7 時間ほど）');
+      expect(days[2].lines.single, 'ふだんの睡眠の目安 翌 0:00〜7:00 ごろ（7 時間ほど）');
+      // 仮眠（同じ日の中）はそのまま
+      expect(text(t(16, 12), shiftsOf({17: nightNt})).days[1].lines.first, '仮眠の目安 17:30〜19:00 ごろ（90 分ほど）');
+    });
+
+    test('F3：始まりが基準の日で終わりが次の日なら「翌」を付けたまま', () {
+      final early = SleepBaseline(
+        sampleCount: 0,
+        usedDefault: true,
+        averageAsleep: defaultAverageAsleep,
+        rawAverageAsleep: null,
+        bedtime: null,
+        wakeTime: const CircularTimeMean(minuteOfDay: 6 * 60 + 30, concentration: 0.9),
+        midpoint: null,
+        afterShift: const [],
+        beforeShift: const [],
+        shortSleepCount: 0,
+        shortSleepTotal: Duration.zero,
+      );
+      final days = text(t(17, 5), shiftsOf({16: nightNt, 18: dayD}), baseline: early).days;
+      expect(days[1].lines.last, 'ふだんの睡眠の目安 23:30〜翌 6:30 ごろ（7 時間ほど）');
+    });
+
+    test('F4：5 分単位の近いほうに丸める（5 分ちょうどは変わらない）', () {
+      expect(planRoundToFiveMinutes(t(17, 10, 2)), t(17, 10, 0));
+      expect(planRoundToFiveMinutes(t(17, 10, 3)), t(17, 10, 5));
+      expect(planRoundToFiveMinutes(t(17, 17, 2)), t(17, 17, 0));
+      expect(planRoundToFiveMinutes(t(17, 10, 0)), t(17, 10, 0));
+      expect(planRoundToFiveMinutes(t(17, 23, 58)), t(18, 0, 0));
+    });
+
+    test('F4：数え直した時刻だけ表示で丸め、計算の値は変えない', () {
+      // 連続夜勤（帰ってすぐ寝る）を 8:02 に見る：計算は 8:02〜15:02、表示は 8:00〜15:00
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      final p = plan(t(17, 8, 2), shifts)!;
+      expect(p.main!.sleepAt, t(17, 8, 2));
+      expect(p.main!.wakeAt, t(17, 15, 2));
+      final result = sleepPlanText(p, now: t(17, 8, 2));
+      expect(result.mainLine, '今日　寝る目安 8:00 ごろ → 起きる目安 15:00 ごろ（7 時間）');
+      expect(result.statusLines, ['今から眠ると、起きる目安は 15:00 ごろです']);
+
+      // 日勤前を 1:03 に見る：寝る目安だけ数え直す（1:05）。起きる目安 7:00 はそのまま
+      expect(text(t(17, 1, 3), shiftsOf({16: dayD, 17: dayD})).mainLine,
+          '今夜　寝る目安 1:05 ごろ → 起きる目安 翌 7:00 ごろ（5 時間 55 分）');
+
+      // 数え直していない目安は変わらない
+      expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).mainLine,
+          '今夜　寝る目安 0:00 ごろ → 起きる目安 翌 7:00 ごろ（7 時間）');
+    });
+
+    test('F5：次が夜勤で仮眠がないとき（出勤ぎりぎりまで寝る）は 1 行出し、仮眠があるとき・日勤前は出さない', () {
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      expect(text(t(17, 5), shifts, preference: SleepStylePreference.lastMinute).extraLines, [sleepPlanNoNapText]);
+      expect(text(t(17, 5), shifts).extraLines, isNot(contains(sleepPlanNoNapText)));
+      expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).extraLines, isEmpty);
+      expect(sleepPlanNoNapText, isNot(contains('してください')));
+    });
+
+    test('G1：数え直した main と重なって仮眠を外したら、F5 の一言を出し、仮眠の理由は出さない', () {
+      final shifts = shiftsOf({13: nightN, 14: nightNt});
+      final napReason = sleepPlanReasonText(SleepPlanReason.nightShiftNap);
+      for (final sleepingSince in [null, t(14, 12)]) {
+        final result = text(t(14, 12, 35), shifts, sleepingSince: sleepingSince);
+        expect(result.extraLines, [sleepPlanNoNapText], reason: 'sleepingSince: $sleepingSince');
+        expect(result.freeNapLine, isNull);
+        expect(result.reasonLines, isNot(contains(napReason)));
+      }
+      // 数え直していないときは、今までどおり仮眠が出て、一言は出ない
+      final before = text(t(14, 9, 30), shifts);
+      expect(before.extraLines, isNot(contains(sleepPlanNoNapText)));
+      expect(before.reasonLines, contains(napReason));
+    });
+  });
+
   group('状態・一言（5・6）', () {
     test('5. 状態ごとの文', () {
       expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).statusLines, isEmpty);

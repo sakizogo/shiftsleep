@@ -230,14 +230,43 @@ String _sleepKindName(PlannedSleepKind kind) {
 
 /// main の書き方：「寝る目安 23:00 ごろ → 起きる目安 翌 6:00 ごろ（7 時間）」
 /// sameNight：日の呼び方が夜のとき（D71。0:00〜4:59 に「翌」を付けない）
-String _mainWindowText(SleepWindow window, DateTime baseDate, {bool sameNight = false}) =>
-    '寝る目安 ${planTime(window.sleepAt, baseDate: baseDate, sameNight: sameNight)} ごろ → '
-    '起きる目安 ${planTime(window.wakeAt, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(window.length)}）';
+String _mainWindowText(SleepWindow window, DateTime baseDate, {bool sameNight = false}) {
+  final start = _shownSleepAt(window);
+  final end = _shownWakeAt(window);
+  return '寝る目安 ${planTime(start, baseDate: baseDate, sameNight: sameNight)} ごろ → '
+      '起きる目安 ${planTime(end, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(end.difference(start))}）';
+}
 
 /// 追加の睡眠の書き方：「仮眠の目安 17:30〜19:00 ごろ（90 分ほど）」（「ごろ」は最後に 1 回）
-String _extraWindowText(PlannedSleepKind kind, SleepWindow window, DateTime baseDate, {bool sameNight = false}) =>
-    '${_sleepKindName(kind)} ${planTime(window.sleepAt, baseDate: baseDate, sameNight: sameNight)}〜'
-    '${planTime(window.wakeAt, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(window.length)}ほど）';
+/// F3：始まりと終わりが同じ日で、始まりが基準の日より後なら、終わりには「翌」や日付を付けない（「翌 0:00〜7:00 ごろ」）
+String _extraWindowText(PlannedSleepKind kind, SleepWindow window, DateTime baseDate, {bool sameNight = false}) {
+  final start = _shownSleepAt(window);
+  final end = _shownWakeAt(window);
+  final sameDay = _daysBetween(start, end) == 0;
+  final endText = sameDay && _daysBetween(baseDate, start) >= 1
+      ? planTimeOfDay(end)
+      : planTime(end, baseDate: baseDate, sameNight: sameNight);
+  return '${_sleepKindName(kind)} ${planTime(start, baseDate: baseDate, sameNight: sameNight)}〜'
+      '$endText ごろ（${planDuration(end.difference(start))}ほど）';
+}
+
+/// F4：表示のときだけ、5 分単位の近いほうに丸める（10:02 → 10:00、10:03 → 10:05。5 分ちょうどは変わらない）
+DateTime planRoundToFiveMinutes(DateTime time) {
+  final seconds = time.minute * 60 + time.second;
+  final minutes = (seconds + 150) ~/ 300 * 5;
+  return DateTime(time.year, time.month, time.day, time.hour).add(Duration(minutes: minutes));
+}
+
+/// 表示する寝る目安（D16・D17 で数え直したものだけ 5 分単位に丸める。F4）
+DateTime _shownSleepAt(SleepWindow window) =>
+    window.sleepAtRecounted ? planRoundToFiveMinutes(window.sleepAt) : window.sleepAt;
+
+/// 表示する起きる目安（数え直したものだけ 5 分単位に丸める。F4）
+DateTime _shownWakeAt(SleepWindow window) =>
+    window.wakeAtRecounted ? planRoundToFiveMinutes(window.wakeAt) : window.wakeAt;
+
+/// F5：次が夜勤の場面で仮眠の目安がないときの文
+const String sleepPlanNoNapText = '起きてから出勤までが短いので、今回は仮眠の目安はありません';
 
 /// 日の呼び方つきの行（「今夜　寝る目安 …」）
 String _labeled(DateTime start, DateTime now, String body) => '${planDayLabel(start, now: now)}　$body';
@@ -298,12 +327,12 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
           statusLines.add('勤務の間が短いため、いつもより短めの目安です。足りない分は、できるときに少しずつで大丈夫です');
         }
       case SleepWindowStatus.ongoing:
-        final wake = planTime(main.wakeAt, baseDate: today);
+        final wake = planTime(_shownWakeAt(main), baseDate: today);
         statusLines.add(sleeping ? 'おやすみ中です。起きる目安は $wake ごろです' : '今から眠ると、起きる目安は $wake ごろです');
       case SleepWindowStatus.past:
         statusLines.add('この目安の時間は終わりました。次の目安からで大丈夫です');
         if (nap != null && nap.status != SleepWindowStatus.past) {
-          statusLines.add('次は出勤前の仮眠の目安です（${planTime(nap.sleepAt, baseDate: today)} ごろ〜）');
+          statusLines.add('次は出勤前の仮眠の目安です（${planTime(_shownSleepAt(nap), baseDate: today)} ごろ〜）');
         }
     }
   }
@@ -357,6 +386,12 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
     reasonLines: [for (final reason in plan.reasons) sleepPlanReasonText(reason)],
     extraLines: [
       for (final extra in plan.extraSleeps) _labeledExtra(extra.kind, extra.window, now),
+      // F5：次が夜勤の場面（夜勤前・日勤→夜勤・連続夜勤）で仮眠の目安がないとき
+      if ((plan.scene == SleepScene.beforeNight ||
+              plan.scene == SleepScene.dayToNight ||
+              plan.scene == SleepScene.betweenNights) &&
+          !plan.extraSleeps.any((s) => s.kind == PlannedSleepKind.preNightNap))
+        sleepPlanNoNapText,
     ],
     days: days,
   );
