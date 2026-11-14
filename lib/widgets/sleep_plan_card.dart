@@ -58,6 +58,35 @@ String sleepStylePreferenceLabel(SleepStylePreference preference) {
   }
 }
 
+/// 寝方のタイプのシート（A-4 2/3：ホームのカードと設定画面の両方から開く）
+/// 選んだものを返す。閉じただけなら null
+Future<SleepStylePreference?> showSleepStyleSheet(BuildContext context, SleepStylePreference current) {
+  return showModalBottomSheet<SleepStylePreference>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(sleepStyleSheetTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          for (final preference in SleepStylePreference.values)
+            ListTile(
+              leading: Icon(
+                preference == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: sleepPlanAccentColor,
+              ),
+              title: Text(sleepStylePreferenceLabel(preference)),
+              onTap: () => Navigator.of(sheetContext).pop(preference),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
 class SleepPlanCard extends StatefulWidget {
   const SleepPlanCard({
     super.key,
@@ -222,30 +251,8 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
     final inputs = _inputs;
     if (inputs == null) return;
     final messenger = ScaffoldMessenger.of(context);
-    final choice = await showModalBottomSheet<SleepStylePreference>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(sleepStyleSheetTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ),
-            for (final preference in SleepStylePreference.values)
-              ListTile(
-                leading: Icon(
-                  preference == inputs.preference ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: sleepPlanAccentColor,
-                ),
-                title: Text(sleepStylePreferenceLabel(preference)),
-                onTap: () => Navigator.of(sheetContext).pop(preference),
-              ),
-          ],
-        ),
-      ),
-    );
+    // A-4 2/3：設定画面と同じシート（showSleepStyleSheet）
+    final choice = await showSleepStyleSheet(context, inputs.preference);
     if (choice == null || !mounted) return;
     try {
       await (widget.savePreference ?? SleepStylePreferenceService.save)(choice);

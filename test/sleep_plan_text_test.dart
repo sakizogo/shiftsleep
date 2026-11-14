@@ -325,13 +325,36 @@ void main() {
   });
 
   group('理由・寝方のタイプ（7・8）', () {
-    test('7. 理由 12 種類すべてに、ちがう文がある', () {
+    test('7. 理由 15 種類すべてに、ちがう文がある', () {
       final texts = SleepPlanReason.values.map(sleepPlanReasonText).toList();
-      expect(texts, hasLength(12));
+      expect(texts, hasLength(15));
       expect(texts.every((s) => s.isNotEmpty), isTrue);
-      expect(texts.toSet(), hasLength(12));
+      expect(texts.toSet(), hasLength(15));
       expect(text(t(16, 18), shiftsOf({16: dayD, 17: dayD})).reasonLines,
           [sleepPlanReasonText(SleepPlanReason.wakeForShift), sleepPlanReasonText(SleepPlanReason.fewRecords)]);
+    });
+
+    test('7b. A-4 2/3：起きる目安の理由の文', () {
+      expect(sleepPlanReasonText(SleepPlanReason.wakeForShift), '起きる目安は、出勤前アラームと同じころにしています。');
+      expect(sleepPlanReasonText(SleepPlanReason.wakeForCommutePrep),
+          '起きる目安は、出勤の時刻から、登録した通勤・身支度の時間を引いたころにしています。');
+      expect(sleepPlanReasonText(SleepPlanReason.wakeForCommutePrepBeforeAlarm),
+          '起きる目安は、出勤の時刻から、登録した通勤・身支度の時間を引いたころにしています。出勤前アラームより早めの目安です。');
+      expect(sleepPlanReasonText(SleepPlanReason.wakeDefaultLead),
+          '出勤前アラームが無効のため、起きる目安は出勤の 1 時間前ごろにしています。通勤・身支度を登録すると、それに合わせた目安になります。');
+      // 言い切らない・「あなた」を使わない
+      for (final reason in [
+        SleepPlanReason.wakeForShift,
+        SleepPlanReason.wakeForCommutePrep,
+        SleepPlanReason.wakeForCommutePrepBeforeAlarm,
+        SleepPlanReason.wakeDefaultLead,
+      ]) {
+        final s = sleepPlanReasonText(reason);
+        expect(s, contains('目安'));
+        expect(s, isNot(contains('あなた')));
+        expect(s, isNot(contains('してください')));
+        expect(s, isNot(contains('しなければ')));
+      }
     });
 
     test('8. 寝方のタイプ：設定・記録・既定。タイプで目安が変わる場面だけ', () {

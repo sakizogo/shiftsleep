@@ -169,11 +169,20 @@ String sleepSceneHeadline(SleepScene scene) {
   }
 }
 
+/// A-4 2/3：通勤・身支度から起きる目安を出したときの文
+const String _wakeForCommutePrepText = '起きる目安は、出勤の時刻から、登録した通勤・身支度の時間を引いたころにしています。';
+
 /// 理由の文
 String sleepPlanReasonText(SleepPlanReason reason) {
   switch (reason) {
     case SleepPlanReason.wakeForShift:
-      return '起きる目安は、出勤の時刻から準備の時間を引いたものです。出勤前アラームと同じ時刻にしています。';
+      return '起きる目安は、出勤前アラームと同じころにしています。';
+    case SleepPlanReason.wakeForCommutePrep:
+      return _wakeForCommutePrepText;
+    case SleepPlanReason.wakeForCommutePrepBeforeAlarm:
+      return '$_wakeForCommutePrepText出勤前アラームより早めの目安です。';
+    case SleepPlanReason.wakeDefaultLead:
+      return '出勤前アラームが無効のため、起きる目安は出勤の 1 時間前ごろにしています。通勤・身支度を登録すると、それに合わせた目安になります。';
     case SleepPlanReason.eveningLaterWake:
       return '準夜勤の日は帰りが遅くなるので、朝はいつもより 1 時間ほどゆっくりでも大丈夫です。';
     case SleepPlanReason.usualNight:

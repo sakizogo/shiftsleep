@@ -25,6 +25,7 @@ import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N
 import 'package:shiftsleep/services/wake_time_change.dart';  // N166
 import '../services/manual_wake_service.dart';
 import 'package:shiftsleep/widgets/premium_debug_toggle.dart';  // A-3 3/3
+import 'package:shiftsleep/widgets/sleep_plan_settings_section.dart';  // A-4 2/3
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -1111,6 +1112,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
+                const SizedBox(height: AppDimensions.paddingLarge),
+                const SizedBox(height: AppDimensions.paddingLarge),
+
+                // A-4 2/3：睡眠の目安セクション（ⓘ アラームは画面で今選んでいる分数で判定する）
+                SleepPlanSettingsSection(alarmMinutesBefore: _alarmTimeBeforeShift),
                 const SizedBox(height: AppDimensions.paddingLarge),
                 const SizedBox(height: AppDimensions.paddingLarge),
 

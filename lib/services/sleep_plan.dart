@@ -275,6 +275,15 @@ class SleepPlanOptions {
     return alarmMinutesBefore > 0 ? Duration(minutes: alarmMinutesBefore) : defaultLeadTime;
   }
 
+  /// 通勤・身支度から出した起きる目安（出勤 − L）が、出勤前アラーム（出勤 − 分数）より早い（アラームのほうが遅く鳴る）
+  /// - 通勤・身支度がどちらも未設定（L はアラームの分数そのもの）・アラームが無効（0 以下）なら false。同じ時刻も false
+  /// - 設定画面の ⓘ アラーム（shouldShowSleepPlanAlarmInfo）と理由の文（wakeForCommutePrepBeforeAlarm）の両方で使う
+  bool get wakesBeforeAlarm {
+    if (commute == null && prep == null) return false;
+    if (alarmMinutesBefore <= 0) return false;
+    return alarmMinutesBefore < leadTime.inMinutes;
+  }
+
   /// 帰る時間 H（勤務の終わりから寝られるまで）。通勤があればそれ、なければ前置き L（D20）
   Duration get homeTime => commute ?? leadTime;
 
@@ -286,8 +295,17 @@ class SleepPlanOptions {
 
 /// 目安の理由（3/4。プレミアム。大事な順に並べる。文言は 4/4 で enum から作る）
 enum SleepPlanReason {
-  /// 起きる目安は「出勤 − 前置き」で、出勤前アラームと同じ時刻
+  /// 起きる目安は「出勤 − 前置き」で、出勤前アラームと同じ時刻（通勤・身支度が未設定で、アラームが有効）
   wakeForShift,
+
+  /// A-4 2/3：起きる目安は「出勤 −（通勤＋身支度）」（通勤・身支度のどちらかを設定）
+  wakeForCommutePrep,
+
+  /// A-4 2/3：wakeForCommutePrep で、出勤前アラームのほうが遅く鳴る（SleepPlanOptions.wakesBeforeAlarm）
+  wakeForCommutePrepBeforeAlarm,
+
+  /// A-4 2/3：通勤・身支度が未設定で、出勤前アラームが無効（起きる目安は出勤の 1 時間前）
+  wakeDefaultLead,
 
   /// 準夜勤の前は、ふだんより 1 時間まで遅く起きてもよい（S9）
   eveningLaterWake,
@@ -580,6 +598,16 @@ SleepWindow? _settle({
 bool _overlaps(DateTime aStart, DateTime aEnd, DateTime bStart, DateTime bEnd) =>
     aStart.isBefore(bEnd) && bStart.isBefore(aEnd);
 
+/// A-4 2/3：日勤前・休み明けの、起きる目安の理由（前置き L をどこから決めたかで分ける）
+SleepPlanReason _wakeReason(SleepPlanOptions options) {
+  if (options.commute != null || options.prep != null) {
+    return options.wakesBeforeAlarm
+        ? SleepPlanReason.wakeForCommutePrepBeforeAlarm
+        : SleepPlanReason.wakeForCommutePrep;
+  }
+  return options.alarmMinutesBefore > 0 ? SleepPlanReason.wakeForShift : SleepPlanReason.wakeDefaultLead;
+}
+
 /// planNow で場面と予定を決め、statusNow（本当の now）で状態を付ける（3 日分では planNow が勤務の終わり）
 _PlanCore? _buildCore({
   required DateTime planNow,
@@ -761,7 +789,7 @@ _PlanCore? _buildCore({
   switch (scene) {
     case SleepScene.beforeDay:
     case SleepScene.afterRest:
-      reasons.add(SleepPlanReason.wakeForShift);
+      reasons.add(_wakeReason(options));  // A-4 2/3
       if (shiftedByPrevious) reasons.add(SleepPlanReason.shiftedByPrevious);
     case SleepScene.beforeEvening:
       reasons.add(SleepPlanReason.eveningLaterWake);

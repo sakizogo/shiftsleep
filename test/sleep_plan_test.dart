@@ -526,7 +526,43 @@ void main() {
         planOptions: const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(hours: 2, minutes: 30)),
       );
       expect(shifted?.scene, SleepScene.beforeDay);
-      expect(shifted?.reasons, [SleepPlanReason.wakeForShift, SleepPlanReason.shiftedByPrevious, SleepPlanReason.fewRecords]);
+      // A-4 2/3：通勤 2 時間 30 分（起きる目安 5:30）はアラーム 60 分前（7:00）より早い
+      expect(shifted?.reasons, [
+        SleepPlanReason.wakeForCommutePrepBeforeAlarm,
+        SleepPlanReason.shiftedByPrevious,
+        SleepPlanReason.fewRecords,
+      ]);
+    });
+
+    test('1b. A-4 2/3：起きる目安の理由は、前置きをどこから決めたかで分ける', () {
+      SleepPlanReason? wakeReasonOf(SleepPlanOptions options) =>
+          plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}), planOptions: options)?.reasons.first;
+      // 未設定・アラームあり：アラームと同じころ
+      expect(wakeReasonOf(const SleepPlanOptions(alarmMinutesBefore: 60)), SleepPlanReason.wakeForShift);
+      // 未設定・アラームが無効：出勤の 1 時間前
+      expect(wakeReasonOf(const SleepPlanOptions(alarmMinutesBefore: 0)), SleepPlanReason.wakeDefaultLead);
+      // 通勤・身支度あり：アラームより遅い・同じ時刻なら足さない
+      expect(wakeReasonOf(const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(minutes: 30))),
+          SleepPlanReason.wakeForCommutePrep);
+      expect(
+          wakeReasonOf(const SleepPlanOptions(
+              alarmMinutesBefore: 60, commute: Duration(minutes: 30), prep: Duration(minutes: 30))),
+          SleepPlanReason.wakeForCommutePrep);
+      // 通勤・身支度あり：アラームが無効なら足さない
+      expect(wakeReasonOf(const SleepPlanOptions(alarmMinutesBefore: 0, prep: Duration(minutes: 90))),
+          SleepPlanReason.wakeForCommutePrep);
+      // 通勤・身支度あり：アラームのほうが遅いときだけ足す
+      expect(
+          wakeReasonOf(const SleepPlanOptions(
+              alarmMinutesBefore: 60, commute: Duration(minutes: 120), prep: Duration(minutes: 60))),
+          SleepPlanReason.wakeForCommutePrepBeforeAlarm);
+    });
+
+    test('1c. A-4 2/3：wakesBeforeAlarm（設定画面の ⓘ アラームと同じ判定）', () {
+      expect(const SleepPlanOptions(alarmMinutesBefore: 60).wakesBeforeAlarm, isFalse);
+      expect(const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(minutes: 60)).wakesBeforeAlarm, isFalse);
+      expect(const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(minutes: 70)).wakesBeforeAlarm, isTrue);
+      expect(const SleepPlanOptions(alarmMinutesBefore: 0, commute: Duration(minutes: 70)).wakesBeforeAlarm, isFalse);
     });
 
     test('2. 準夜勤前は eveningLaterWake（E→E はずらしたので shiftedByPrevious も）', () {
