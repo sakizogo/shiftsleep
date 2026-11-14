@@ -159,4 +159,62 @@ void main() {
     expect(result.plan!.main!.sleepAt, t(16, 23, 30));
     expect(result.text!.statusLines, ['おやすみ中です。起きる目安は 7:00 ごろです']);
   });
+
+  // ===== A-4 1/3 =====
+  group('A-4 1/3：通勤・身支度・いつもの残業・ベースライン用の勤務', () {
+    test('通勤 40 分・身支度 30 分は目安の計算に入る（日勤前の起きる目安は 6:50）', () {
+      const inputs = SleepPlanInputs(
+        shifts: null,
+        alarmMinutesBefore: 60,
+        settingsFailed: false,
+        preference: SleepStylePreference.immediate,
+      );
+      expect(inputs.planOptions.leadTime, const Duration(hours: 1));
+      final withCommute = SleepPlanInputs(
+        shifts: shiftsOf({16: dayD, 17: dayD}),
+        alarmMinutesBefore: 60,
+        settingsFailed: false,
+        preference: SleepStylePreference.immediate,
+        commute: const Duration(minutes: 40),
+        prep: const Duration(minutes: 30),
+      );
+      final result = model(t(16, 18), withCommute);
+      expect(result.plan!.main!.sleepAt, t(16, 23, 50));
+      expect(result.plan!.main!.wakeAt, t(17, 6, 50));
+    });
+
+    // 夜勤（20:00〜5:00）明けに、登録どおりの終わりから 4 時間 30 分（残業 2 時間のあと 2 時間 30 分）で寝る記録が 3 件
+    final pastNights = shiftsOf({1: nightNt, 3: nightNt, 5: nightNt, 11: nightNt});
+    final afterNightRecords = [
+      for (final day in [2, 4, 6]) rec('a$day', t(day, 9, 30), t(day, 16, 30)),
+    ];
+    final overtime = {nightNt.id: const Duration(hours: 2)};
+
+    SleepPlanInputs autoInputs({List<WorkShift>? baselineShifts, Map<String, Duration> overtimeByPattern = const {}}) =>
+        SleepPlanInputs(
+          shifts: shiftsOf({11: nightNt}),  // 目安用（今日−2〜今日+6）には昔の夜勤が入らない
+          alarmMinutesBefore: 60,
+          settingsFailed: false,
+          preference: SleepStylePreference.auto,
+          baselineShifts: baselineShifts,
+          overtimeByPattern: overtimeByPattern,
+        );
+
+    test('残業 2 時間・帰ってすぐ寝る人（勤務明けの記録 3 件）は、記録から「帰ってすぐ寝る」と判定される', () {
+      final result =
+          model(t(10, 12), autoInputs(baselineShifts: pastNights, overtimeByPattern: overtime), records: afterNightRecords);
+      expect(result.plan!.style, SleepStyle.immediate);
+      expect(result.plan!.styleSource, SleepStyleSource.records);
+    });
+
+    test('残業がなければ 4 時間 30 分は 3 時間を超えるので、記録からは決まらない', () {
+      final result = model(t(10, 12), autoInputs(baselineShifts: pastNights), records: afterNightRecords);
+      expect(result.plan!.styleSource, SleepStyleSource.fallback);
+    });
+
+    test('D83：ベースライン用の勤務がなければ、目安用の範囲には昔の夜勤がなく、記録からは決まらない', () {
+      final result = model(t(10, 12), autoInputs(overtimeByPattern: overtime), records: afterNightRecords);
+      expect(result.plan!.styleSource, SleepStyleSource.fallback);
+    });
+  });
 }

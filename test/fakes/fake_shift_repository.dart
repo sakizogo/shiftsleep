@@ -19,6 +19,9 @@ class FakeShiftRepository extends ShiftRepository {
   bool failPatterns = false;  // getAllPatterns だけを例外にする
   DateTime? lastRangeStart;  // getShiftsForDateRange に渡された範囲
   DateTime? lastRangeEnd;
+  // A-4 1/3：getShiftsForDateRange に渡された範囲の始まり（呼んだ順）と、この始まりのときだけ例外にする
+  final List<DateTime> rangeStarts = [];
+  DateTime? failRangeStart;
 
   @override
   Future<AppSettings?> getAppSettings(String userId) async {
@@ -30,7 +33,8 @@ class FakeShiftRepository extends ShiftRepository {
   Future<List<Map<String, dynamic>>> getShiftsForDateRange(DateTime startDate, DateTime endDate) async {
     lastRangeStart = startDate;
     lastRangeEnd = endDate;
-    if (failRead || failShifts) throw Exception('shifts read failed');
+    rangeStarts.add(startDate);
+    if (failRead || failShifts || startDate == failRangeStart) throw Exception('shifts read failed');
     return rows;
   }
 

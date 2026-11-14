@@ -259,14 +259,8 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
     if (!mounted) return;
     final current = _inputs;
     if (current == null) return;
-    setState(() {
-      _inputs = SleepPlanInputs(
-        shifts: current.shifts,
-        alarmMinutesBefore: current.alarmMinutesBefore,
-        settingsFailed: current.settingsFailed,
-        preference: choice,
-      );
-    });
+    // A-4 1/3：通勤・身支度・残業・ベースライン用の勤務も引き継ぐ
+    setState(() => _inputs = current.withPreference(choice));
   }
 
   void _showPremiumLock() {

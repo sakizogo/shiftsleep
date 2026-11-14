@@ -123,10 +123,11 @@ Duration? _median(List<Duration> values) {
 /// - 帰ってすぐ寝る：勤務明けの gap が 3 件以上で、中央値が 3 時間以下
 /// - 出勤ギリギリまで寝る：出勤前の gap が 3 件以上で、中央値が 3 時間以下
 /// - 両方に当てはまれば中央値の小さいほう（同じなら帰ってすぐ寝る）
+/// - A-4 1/3（D79 C）：勤務明けの gap からはそのパターンのいつもの残業を引く（3 時間の境目に残業を足すのと同じ）
 ({SleepStyle? style, int afterSamples, int beforeSamples}) detectSleepStyle(SleepBaseline baseline) {
   final after = [
     for (final gap in baseline.afterShift)
-      if (gap.shift.kind == ShiftKind.night) gap.gap,
+      if (gap.shift.kind == ShiftKind.night) gap.gap - gap.overtime,
   ];
   final before = [
     for (final gap in baseline.beforeShift)
@@ -250,13 +251,21 @@ class SleepPlanOptions {
   /// 出勤前アラームの分数（app_settings の alarmTimeBeforeShift。0 以下は無効）
   final int alarmMinutesBefore;
 
-  /// 通勤の時間（A-4 で任意の設定にする予定）
+  /// 通勤の時間（片道。A-4 の任意の設定。行き・帰りの両方に使う。D75）
   final Duration? commute;
 
-  /// 身支度の時間（A-4 で任意の設定にする予定）
+  /// 身支度の時間（A-4 の任意の設定）
   final Duration? prep;
 
-  const SleepPlanOptions({required this.alarmMinutesBefore, this.commute, this.prep});
+  /// パターンの ID → いつもの残業（A-4 の任意の設定。D78）
+  final Map<String, Duration> overtimeByPattern;
+
+  const SleepPlanOptions({
+    required this.alarmMinutesBefore,
+    this.commute,
+    this.prep,
+    this.overtimeByPattern = const {},
+  });
 
   /// 前置き L（起きてから出勤までに要る時間）
   /// - 通勤・身支度のどちらかがあれば、その合計（ないほうは 0）
@@ -268,6 +277,11 @@ class SleepPlanOptions {
 
   /// 帰る時間 H（勤務の終わりから寝られるまで）。通勤があればそれ、なければ前置き L（D20）
   Duration get homeTime => commute ?? leadTime;
+
+  /// D79 C：勤務のあと寝られるようになる時刻（登録どおりの終わり ＋ そのパターンのいつもの残業 ＋ 帰る時間 H）
+  /// - 勤務の終わり（endAt）そのものは延ばさない。勤務中・間が短い・3 日分で勤務と重なる時間は登録どおりの終わりで見る
+  DateTime readyToSleepAt(WorkShift shift) =>
+      shift.endAt.add(overtimeOfShift(overtimeByPattern, shift)).add(homeTime);
 }
 
 /// 目安の理由（3/4。プレミアム。大事な順に並べる。文言は 4/4 で enum から作る）
@@ -587,7 +601,7 @@ _PlanCore? _buildCore({
 
   final average = baseline.averageAsleep;
   final wakeMinute = baseline.wakeTime?.minuteOfDay ?? defaultWakeTime.hour * 60 + defaultWakeTime.minute;
-  final windowStart = previous?.endAt.add(options.homeTime);
+  final windowStart = previous == null ? null : options.readyToSleepAt(previous);  // D79 C
   final windowEnd = next?.startAt.subtract(options.leadTime);
 
   // 場面ごとの予定（寝る・起きる）と、予定の長さ・入眠で決まるか

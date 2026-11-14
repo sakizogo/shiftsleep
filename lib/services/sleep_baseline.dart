@@ -102,7 +102,10 @@ class ShiftSleepGap {
   /// 勤務明け：勤務の終わり→入眠。出勤前：起床→出勤
   final Duration gap;
 
-  const ShiftSleepGap({required this.sleep, required this.shift, required this.gap});
+  /// A-4 1/3（D79 C）：勤務明けのとき、その勤務のパターンのいつもの残業（gap は登録どおりの終わりから測る）
+  final Duration overtime;
+
+  const ShiftSleepGap({required this.sleep, required this.shift, required this.gap, this.overtime = Duration.zero});
 
   @override
   String toString() => 'ShiftSleepGap(sleep: ${sleep.start}〜${sleep.end}, shift: ${shift.startAt}, gap: $gap)';
@@ -248,6 +251,10 @@ CircularTimeMean? circularMeanOfMinutes(Iterable<int> minutesOfDay) {
 
 int _minuteOfDay(DateTime time) => time.hour * 60 + time.minute;
 
+/// A-4 1/3：勤務のパターンのいつもの残業（設定がなければ 0）
+Duration overtimeOfShift(Map<String, Duration> overtimeByPattern, WorkShift shift) =>
+    overtimeByPattern[shift.pattern.id] ?? Duration.zero;
+
 /// 睡眠記録と勤務から、睡眠のベースラインを出す
 /// - メイン睡眠が baselineMinSamples 件未満なら、平均は 7 時間・円周平均は null（usedDefault）
 /// - そうでなければ、平均を 6〜9 時間に収める（収める前の値は rawAverageAsleep）
@@ -255,10 +262,13 @@ int _minuteOfDay(DateTime time) => time.hour * 60 + time.minute;
 /// - 出勤前：起床の後に始まる最初の勤務（nextWorkShift。12 時間以内。ちょうどを含み、起床と同時に始まる勤務は除く）
 /// - 1 回の睡眠が勤務明けと出勤前の両方に入ってもよい。半休の日の出勤も勤務として数える（workShiftsFromMap）
 /// - メイン睡眠に入らなかった睡眠（30 分以上 5 時間未満）は件数と合計だけを出す
+/// - A-4 1/3（D79 C）：いつもの残業（overtimeByPattern）があるパターンの勤務明けは、6 時間にその残業を足す
+///   （gap は登録どおりの終わりから測り、ShiftSleepGap.overtime に残業を入れる）
 SleepBaseline computeSleepBaseline({
   required List<SleepRecord> records,
   required List<WorkShift> shifts,
   required DateTime now,
+  Map<String, Duration> overtimeByPattern = const {},
 }) {
   final sessions = _sleepSessions(records, now, baselineWindow, sleepMergeMaxGap);
   final mains = sessions.where((s) => s.asleep >= mainSleepMinAsleep).toList();
@@ -286,10 +296,15 @@ SleepBaseline computeSleepBaseline({
 
   final afterShift = <ShiftSleepGap>[];
   final beforeShift = <ShiftSleepGap>[];
+  final maxOvertime = overtimeByPattern.values.fold(Duration.zero, (max, d) => d > max ? d : max);
   for (final sleep in mains) {
-    final previous = previousWorkShift(sleep.start, shifts, lookback: afterShiftMaxGap);
+    final previous = previousWorkShift(sleep.start, shifts, lookback: afterShiftMaxGap + maxOvertime);
     if (previous != null) {
-      afterShift.add(ShiftSleepGap(sleep: sleep, shift: previous, gap: sleep.start.difference(previous.endAt)));
+      final overtime = overtimeOfShift(overtimeByPattern, previous);
+      final gap = sleep.start.difference(previous.endAt);
+      if (gap <= afterShiftMaxGap + overtime) {
+        afterShift.add(ShiftSleepGap(sleep: sleep, shift: previous, gap: gap, overtime: overtime));
+      }
     }
     final next = nextWorkShift(sleep.end, shifts, within: beforeShiftMaxGap);
     if (next != null) {

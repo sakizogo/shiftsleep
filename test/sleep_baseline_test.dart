@@ -349,4 +349,58 @@ void main() {
       expect(gap.shift.kind, ShiftKind.night);
     });
   });
+
+  // ===== A-4 1/3：D79 C（いつもの残業は勤務明けの上限に足す。gap は登録どおりの終わりから） =====
+  group('A-4 1/3：いつもの残業（D79 C）', () {
+    const overtime2h = {'p_night20': Duration(hours: 2)};
+
+    test('27. 残業 2 時間なら、終わりから 8 時間までは勤務明けに入る（gap は登録どおりの終わりから。overtime に残業）', () {
+      final shifts = workShiftsFromMap({t(16, 0): night20});  // 16 日 20:00〜17 日 5:00
+      final records = [rec('a', t(17, 12, 30), t(17, 19, 30))];  // 終わりから 7 時間 30 分
+      expect(computeSleepBaseline(records: records, shifts: shifts, now: now).afterShift, isEmpty);
+
+      final withOvertime = computeSleepBaseline(records: records, shifts: shifts, now: now, overtimeByPattern: overtime2h);
+      expect(withOvertime.afterShift.single.gap, const Duration(hours: 7, minutes: 30));
+      expect(withOvertime.afterShift.single.overtime, const Duration(hours: 2));
+
+      final edge = computeSleepBaseline(
+          records: [rec('a', t(17, 13), t(17, 20))], shifts: shifts, now: now, overtimeByPattern: overtime2h);
+      expect(edge.afterShift.single.gap, afterShiftMaxGap + const Duration(hours: 2));
+      final outside = computeSleepBaseline(
+          records: [rec('a', t(17, 13, 1), t(17, 20, 1))], shifts: shifts, now: now, overtimeByPattern: overtime2h);
+      expect(outside.afterShift, isEmpty);
+    });
+
+    test('28. 残業がない日の 6:00 に寝た記録も、勤務明けの睡眠として数える（登録どおりの終わりから 1 時間）', () {
+      final baseline = computeSleepBaseline(
+        records: [rec('a', t(17, 6), t(17, 13))],
+        shifts: workShiftsFromMap({t(16, 0): night20}),
+        now: now,
+        overtimeByPattern: overtime2h,
+      );
+      expect(baseline.afterShift.single.gap, const Duration(hours: 1));
+      expect(baseline.afterShift.single.overtime, const Duration(hours: 2));
+    });
+
+    test('29. ほかのパターンの残業では、上限は延びない（overtime は 0）', () {
+      final shifts = workShiftsFromMap({t(16, 0): night20});
+      const dayOnly = {'p_day': Duration(hours: 2)};
+      final late = computeSleepBaseline(
+          records: [rec('a', t(17, 12, 30), t(17, 19, 30))], shifts: shifts, now: now, overtimeByPattern: dayOnly);
+      expect(late.afterShift, isEmpty);
+      final early = computeSleepBaseline(
+          records: [rec('a', t(17, 6), t(17, 13))], shifts: shifts, now: now, overtimeByPattern: dayOnly);
+      expect(early.afterShift.single.overtime, Duration.zero);
+      expect(overtimeOfShift(dayOnly, shifts.single), Duration.zero);
+      expect(overtimeOfShift(overtime2h, shifts.single), const Duration(hours: 2));
+    });
+
+    test('30. 出勤前の睡眠は残業で変わらない', () {
+      final shifts = workShiftsFromMap({t(18, 0): dayShift});
+      final records = [rec('a', t(17, 12, 59), t(17, 19, 59))];  // 出勤まで 12 時間 1 分
+      final baseline = computeSleepBaseline(
+          records: records, shifts: shifts, now: now, overtimeByPattern: const {'p_day': Duration(hours: 2)});
+      expect(baseline.beforeShift, isEmpty);
+    });
+  });
 }

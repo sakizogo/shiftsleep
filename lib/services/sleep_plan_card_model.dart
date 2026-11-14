@@ -119,15 +119,16 @@ SleepPlanCardModel buildSleepPlanCardModel({
 
   final baseline = computeSleepBaseline(
     records: recordsFailed ? const [] : records,
-    shifts: shifts,
+    shifts: inputs.baselineShifts ?? shifts,  // D83
     now: now,
+    overtimeByPattern: inputs.overtimeByPattern,  // D79 C
   );
   final plan = buildSleepPlan(
     now: now,
     shifts: shifts,
     baseline: baseline,
     preference: inputs.preference,
-    options: SleepPlanOptions(alarmMinutesBefore: inputs.alarmMinutesBefore),
+    options: inputs.planOptions,  // A-4 1/3：通勤・身支度・いつもの残業
     sleepingSince: sleepingSince,
   );
   final text = sleepPlanText(plan, now: now, sleeping: sleepingSince != null);

@@ -824,4 +824,113 @@ void main() {
       ]);
     });
   });
+
+  // ===== A-4 1/3：通勤・身支度（前置き）と、いつもの残業（D79 C） =====
+  group('A-4 1/3：前置き（通勤・身支度）', () {
+    test('1. 通勤だけ：前置きも帰る時間も通勤', () {
+      const options = SleepPlanOptions(alarmMinutesBefore: 30, commute: Duration(minutes: 40));
+      expect(options.leadTime, const Duration(minutes: 40));
+      expect(options.homeTime, const Duration(minutes: 40));
+    });
+
+    test('2. 身支度だけ：前置きは身支度、帰る時間も前置きと同じ', () {
+      const options = SleepPlanOptions(alarmMinutesBefore: 30, prep: Duration(minutes: 30));
+      expect(options.leadTime, const Duration(minutes: 30));
+      expect(options.homeTime, const Duration(minutes: 30));
+    });
+
+    test('3. 両方：前置きは合計、帰る時間は通勤（出勤前アラームの分数は使わない。D77）', () {
+      const options =
+          SleepPlanOptions(alarmMinutesBefore: 30, commute: Duration(minutes: 40), prep: Duration(minutes: 30));
+      expect(options.leadTime, const Duration(minutes: 70));
+      expect(options.homeTime, const Duration(minutes: 40));
+    });
+
+    test('4. どちらも未設定：今までどおり出勤前アラームの分数（0 なら 60 分）', () {
+      expect(const SleepPlanOptions(alarmMinutesBefore: 45).leadTime, const Duration(minutes: 45));
+      expect(const SleepPlanOptions(alarmMinutesBefore: 45).homeTime, const Duration(minutes: 45));
+      expect(const SleepPlanOptions(alarmMinutesBefore: 0).leadTime, defaultLeadTime);
+      expect(const SleepPlanOptions(alarmMinutesBefore: 45).overtimeByPattern, isEmpty);
+    });
+
+    test('5. 通勤 40 分・身支度 30 分なら、日勤前の起きる目安は出勤の 70 分前（6:50）', () {
+      expectMain(
+        plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}),
+            planOptions: const SleepPlanOptions(
+                alarmMinutesBefore: 60, commute: Duration(minutes: 40), prep: Duration(minutes: 30))),
+        SleepScene.beforeDay,
+        t(16, 23, 50),
+        t(17, 6, 50),
+      );
+    });
+  });
+
+  group('A-4 1/3：いつもの残業（D79 C）', () {
+    // 前置き・帰る時間は 60 分。夜勤 Nt（20:00〜5:00）にいつもの残業 2 時間
+    const withOvertime = SleepPlanOptions(alarmMinutesBefore: 60, overtimeByPattern: {'Nt': Duration(hours: 2)});
+
+    test('1. 寝られるようになる時刻は、登録どおりの終わり＋そのパターンの残業＋帰る時間', () {
+      final night = shiftsOf({16: nightNt}).single;
+      final day = shiftsOf({16: dayD}).single;
+      expect(withOvertime.readyToSleepAt(night), t(17, 8));
+      expect(withOvertime.readyToSleepAt(day), t(16, 18));  // 残業のないパターンは今までどおり
+      const withCommute = SleepPlanOptions(
+          alarmMinutesBefore: 60, commute: Duration(minutes: 40), overtimeByPattern: {'Nt': Duration(hours: 2)});
+      expect(withCommute.readyToSleepAt(night), t(17, 7, 40));
+      expect(night.endAt, t(17, 5));  // 勤務の終わりは延ばさない
+    });
+
+    test('2. 夜勤明け→休み：明けの睡眠は 2 時間遅くなる（8:00〜12:00）', () {
+      expectMain(plan(t(17, 5), shiftsOf({16: nightNt})), SleepScene.nightToOff, t(17, 6), t(17, 10));
+      expectMain(plan(t(17, 5), shiftsOf({16: nightNt}), planOptions: withOvertime), SleepScene.nightToOff, t(17, 8),
+          t(17, 12));
+    });
+
+    test('3. 連続夜勤：帰ってすぐ寝るタイプは 8:00〜15:00、出勤ぎりぎりまで寝るタイプは変わらない（12:00〜19:00）', () {
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      expectMain(plan(t(17, 5), shifts, planOptions: withOvertime), SleepScene.betweenNights, t(17, 8), t(17, 15));
+      expectMain(
+        plan(t(17, 5), shifts, planOptions: withOvertime, preference: SleepStylePreference.lastMinute),
+        SleepScene.betweenNights,
+        t(17, 12),
+        t(17, 19),
+      );
+    });
+
+    test('4. 残業がない日の 6:00（家にいる）に開いても勤務中にならず、明けの目安（8:00〜）が出る', () {
+      final result = plan(t(17, 6), shiftsOf({16: nightNt}), planOptions: withOvertime);
+      expect(result?.currentShift, isNull);
+      expectMain(result, SleepScene.nightToOff, t(17, 8), t(17, 12));
+    });
+
+    test('5. 勤務中の判定は登録どおりの終わりまで（4:59 は勤務中で、その終わり 5:00 の時点の目安）', () {
+      final result = plan(t(17, 4, 59), shiftsOf({16: nightNt}), planOptions: withOvertime);
+      expect(result?.currentShift?.endAt, t(17, 5));
+      expectMain(result, SleepScene.nightToOff, t(17, 8), t(17, 12));
+    });
+
+    test('6. 間が短いの判定は登録どおりの終わりで見る（10:00〜19:00＋残業 3 時間 → 翌 8:00 の日勤は間 13 時間）', () {
+      final shifts = shiftsOf({16: work('P1019', hm(10, 0), hm(19, 0)), 17: dayD});
+      final result = plan(
+        t(16, 20),
+        shifts,
+        planOptions: const SleepPlanOptions(alarmMinutesBefore: 60, overtimeByPattern: {'P1019': Duration(hours: 3)}),
+      );
+      expect(result?.currentShift, isNull);  // 19:00 で勤務は終わっている
+      expectMain(result, SleepScene.beforeDay, t(17, 0), t(17, 7));
+    });
+
+    test('7. 寝方のタイプ：勤務明けの gap から残業を引いて 3 時間の境目と比べる', () {
+      final night = shiftsOf({16: nightNt}).single;
+      ShiftSleepGap gap(Duration overtime) => ShiftSleepGap(
+            sleep: MainSleep(start: t(17, 9, 30), end: t(17, 16, 30), asleep: h(7), recordIds: const ['x']),
+            shift: night,
+            gap: h(4.5),
+            overtime: overtime,
+          );
+      // 登録どおりの終わりから 4 時間 30 分（残業 2 時間のあと 2 時間 30 分）で寝る記録が 3 件
+      expect(detectSleepStyle(baselineWith(after: List.filled(3, gap(h(2))))).style, SleepStyle.immediate);
+      expect(detectSleepStyle(baselineWith(after: List.filled(3, gap(Duration.zero)))).style, isNull);
+    });
+  });
 }
