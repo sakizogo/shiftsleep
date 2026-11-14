@@ -480,4 +480,292 @@ void main() {
       expect(beforeDay?.preShiftNap, isNull);
     });
   });
+
+  // ===== A-2 3/4：理由・追加の睡眠・3 日分 =====
+
+  /// 追加の睡眠を（種類, 寝る, 起きる）の一覧にする
+  List<(PlannedSleepKind, DateTime, DateTime)> extrasOf(SleepPlan? result) => [
+        for (final sleep in result?.extraSleeps ?? const <PlannedSleep>[])
+          (sleep.kind, sleep.window.sleepAt, sleep.window.wakeAt),
+      ];
+
+  /// 3 日分を（日, 勤務の開始の一覧, 睡眠の（種類, 寝る, 起きる）の一覧）にする
+  List<(DateTime, List<DateTime>, List<(PlannedSleepKind, DateTime, DateTime)>)> daysOf(SleepPlan? result) => [
+        for (final day in result?.days ?? const <DayPlan>[])
+          (
+            day.date,
+            [for (final shift in day.shifts) shift.startAt],
+            [for (final sleep in day.sleeps) (sleep.kind, sleep.window.sleepAt, sleep.window.wakeAt)],
+          ),
+      ];
+
+  /// 3 日分を比べる（レコードの中の List は == で中身を比べないので、入れ子の List にして比べる）
+  void expectDays(
+    SleepPlan? result,
+    List<(DateTime, List<DateTime>, List<(PlannedSleepKind, DateTime, DateTime)>)> expected,
+  ) {
+    List<Object> flat(List<(DateTime, List<DateTime>, List<(PlannedSleepKind, DateTime, DateTime)>)> days) =>
+        [for (final day in days) [day.$1, day.$2, day.$3]];
+    expect(flat(daysOf(result)), flat(expected));
+  }
+
+  const mainK = PlannedSleepKind.main;
+  const napK = PlannedSleepKind.preNightNap;
+  const afterK = PlannedSleepKind.afterNightSleep;
+  const followK = PlannedSleepKind.followingNight;
+  const usualK = PlannedSleepKind.usualNight;
+
+  group('理由（SleepPlanReason）', () {
+    test('1. 日勤前は wakeForShift。前の勤務でずらしたときは shiftedByPrevious も入る', () {
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}))?.reasons,
+          [SleepPlanReason.wakeForShift, SleepPlanReason.fewRecords]);
+      // 10:00〜21:00 のあと（間 11 時間）で通勤 2 時間 30 分：寝る 23:30 にずらす
+      final shifted = plan(
+        t(16, 22),
+        shiftsOf({16: work('P2100', hm(10, 0), hm(21, 0)), 17: dayD}),
+        planOptions: const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(hours: 2, minutes: 30)),
+      );
+      expect(shifted?.scene, SleepScene.beforeDay);
+      expect(shifted?.reasons, [SleepPlanReason.wakeForShift, SleepPlanReason.shiftedByPrevious, SleepPlanReason.fewRecords]);
+    });
+
+    test('2. 準夜勤前は eveningLaterWake（E→E はずらしたので shiftedByPrevious も）', () {
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: eveningE}))?.reasons,
+          [SleepPlanReason.eveningLaterWake, SleepPlanReason.fewRecords]);
+      expect(plan(t(17, 1), shiftsOf({16: eveningE, 17: eveningE}))?.reasons,
+          [SleepPlanReason.eveningLaterWake, SleepPlanReason.shiftedByPrevious, SleepPlanReason.fewRecords]);
+    });
+
+    test('3. 夜勤前は usualNight・nightShiftNap の順', () {
+      expect(plan(t(16, 12), shiftsOf({17: nightNt}))?.reasons,
+          [SleepPlanReason.usualNight, SleepPlanReason.nightShiftNap, SleepPlanReason.fewRecords]);
+    });
+
+    test('4. 日勤→夜勤は delayedNight・nightShiftNap', () {
+      expect(plan(t(16, 17), shiftsOf({16: dayD, 17: nightNt}))?.reasons,
+          [SleepPlanReason.delayedNight, SleepPlanReason.nightShiftNap, SleepPlanReason.fewRecords]);
+    });
+
+    test('5. 連続夜勤はタイプに合わせる（帰ってすぐ寝るタイプは仮眠の理由も）', () {
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      expect(plan(t(17, 5), shifts)?.reasons,
+          [SleepPlanReason.sleepRightAfter, SleepPlanReason.nightShiftNap, SleepPlanReason.fewRecords]);
+      expect(plan(t(17, 5), shifts, preference: SleepStylePreference.lastMinute)?.reasons,
+          [SleepPlanReason.sleepUntilShift, SleepPlanReason.fewRecords]);
+    });
+
+    test('6. 間が短いときは shortGap が先頭（main が null のときも）', () {
+      final shifts = [...shiftsOf({16: dayD}), ...shiftsOf({16: nightN})];
+      expect(plan(t(16, 17), shifts)?.reasons,
+          [SleepPlanReason.shortGap, SleepPlanReason.sleepRightAfter, SleepPlanReason.fewRecords]);
+      final noMain = plan(t(17, 5), shiftsOf({16: nightNt, 17: dayD}),
+          planOptions: const SleepPlanOptions(alarmMinutesBefore: 90));
+      expect(noMain?.main, isNull);
+      expect(noMain?.reasons.first, SleepPlanReason.shortGap);
+    });
+
+    test('7. 夜勤明け→休み・夜勤→日勤は shortAfterNight・usualNightAfterNight', () {
+      const expected = [
+        SleepPlanReason.shortAfterNight,
+        SleepPlanReason.usualNightAfterNight,
+        SleepPlanReason.fewRecords,
+      ];
+      expect(plan(t(17, 5), shiftsOf({16: nightNt}))?.reasons, expected);
+      expect(plan(t(17, 5), shiftsOf({16: nightNt, 18: dayD}))?.reasons, expected);
+    });
+
+    test('8. 記録が少ないときだけ fewRecords が入る', () {
+      final withRecords = SleepBaseline(
+        sampleCount: 10,
+        usedDefault: false,
+        averageAsleep: const Duration(hours: 7),
+        rawAverageAsleep: const Duration(hours: 7),
+        bedtime: const CircularTimeMean(minuteOfDay: 0, concentration: 0.9),
+        wakeTime: const CircularTimeMean(minuteOfDay: 7 * 60, concentration: 0.9),
+        midpoint: const CircularTimeMean(minuteOfDay: 210, concentration: 0.9),
+        afterShift: const [],
+        beforeShift: const [],
+        shortSleepCount: 0,
+        shortSleepTotal: Duration.zero,
+      );
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}), baseline: withRecords)?.reasons,
+          [SleepPlanReason.wakeForShift]);
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}))?.reasons, contains(SleepPlanReason.fewRecords));
+    });
+  });
+
+  group('追加の睡眠（extraSleeps）', () {
+    test('9. 夜勤前の仮眠：2 交代は 17:30〜19:00、3 交代は 21:30〜23:00', () {
+      expect(extrasOf(plan(t(16, 12), shiftsOf({17: nightNt}))), [(napK, t(17, 17, 30), t(17, 19))]);
+      expect(extrasOf(plan(t(15, 20), shiftsOf({16: nightN}))), [(napK, t(16, 21, 30), t(16, 23))]);
+    });
+
+    test('10. 日勤→夜勤の仮眠（開始 − 前置きに終わる。D28）', () {
+      expect(extrasOf(plan(t(16, 17), shiftsOf({16: dayD, 17: nightNt}))), [(napK, t(17, 17, 30), t(17, 19))]);
+      expect(extrasOf(plan(t(17, 1), shiftsOf({16: eveningE, 17: nightN}))), [(napK, t(17, 21, 30), t(17, 23))]);
+    });
+
+    test('11. 連続夜勤で、帰ってすぐ寝るタイプは仮眠あり、出勤ギリギリまで寝るタイプはなし', () {
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      expect(extrasOf(plan(t(17, 5), shifts)), [(napK, t(17, 17, 30), t(17, 19))]);
+      expect(extrasOf(plan(t(17, 5), shifts, preference: SleepStylePreference.lastMinute)), isEmpty);
+    });
+
+    test('12. 夜勤→日勤の明けの 4 時間（3 交代 10:00〜14:00、2 交代 6:00〜10:00）', () {
+      expect(extrasOf(plan(t(17, 9), shiftsOf({16: nightN, 18: dayD}))), [(afterK, t(17, 10), t(17, 14))]);
+      expect(extrasOf(plan(t(17, 5), shiftsOf({16: nightNt, 18: dayD}))), [(afterK, t(17, 6), t(17, 10))]);
+    });
+
+    test('13. 夜勤明け→休みの「その夜ふだん」', () {
+      // 月曜の欄の N は火 9:00 に終わる → 火の夜（水 0:00〜7:00）
+      expect(extrasOf(plan(t(17, 9), shiftsOf({16: nightN}))), [(followK, t(18, 0), t(18, 7))]);
+    });
+
+    test('14. 日勤前・準夜勤前・休み明け・間が短いときは空', () {
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: dayD}))?.extraSleeps, isEmpty);
+      expect(plan(t(16, 18), shiftsOf({16: dayD, 17: eveningE}))?.extraSleeps, isEmpty);
+      expect(plan(t(17, 10), shiftsOf({18: dayD}))?.extraSleeps, isEmpty);
+      expect(plan(t(17, 1), shiftsOf({16: eveningE, 17: dayD}))?.extraSleeps, isEmpty);
+    });
+
+    test('15. 仮眠が前の勤務の終わり + H より前に始まるなら出さない', () {
+      // E→N で通勤 11 時間：使える時間は火 12:00〜13:00。仮眠は 11:30 からになるので出さない
+      final result = plan(t(17, 1), shiftsOf({16: eveningE, 17: nightN}),
+          planOptions: const SleepPlanOptions(alarmMinutesBefore: 60, commute: Duration(hours: 11)));
+      expect(result?.scene, SleepScene.dayToNight);
+      expect(result?.extraSleeps, isEmpty);
+      expect(result?.preShiftNap, isNull);
+    });
+  });
+
+  group('3 日分（days）', () {
+    test('16. 3 交代 ① 夜勤→休み→日勤', () {
+      expectDays((plan(t(17, 9), shiftsOf({16: nightN, 18: dayD}))), [
+        (t(17, 0), [t(17, 0)], [(afterK, t(17, 10), t(17, 14)), (mainK, t(18, 0), t(18, 7))]),
+        (t(18, 0), [t(18, 8)], [(usualK, t(19, 0), t(19, 7))]),
+        (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
+      ]);
+    });
+
+    test('16. 3 交代 ② 日勤→夜勤', () {
+      expectDays((plan(t(16, 18), shiftsOf({16: dayD, 17: nightN}))), [
+        (t(16, 0), [t(16, 8)], [(mainK, t(17, 1), t(17, 8))]),
+        (t(17, 0), <DateTime>[], [(napK, t(17, 21, 30), t(17, 23))]),
+        (t(18, 0), [t(18, 0)], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
+      ]);
+    });
+
+    test('16. 3 交代 ③ 連続夜勤', () {
+      expectDays((plan(t(17, 9), shiftsOf({16: nightN, 17: nightN}))), [
+        (t(17, 0), [t(17, 0)], [(mainK, t(17, 10), t(17, 17)), (napK, t(17, 21, 30), t(17, 23))]),
+        (t(18, 0), [t(18, 0)], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
+        (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
+      ]);
+    });
+
+    test('16. 2 交代 ① 夜勤→休み→日勤', () {
+      expectDays((plan(t(17, 5), shiftsOf({16: nightNt, 18: dayD}))), [
+        (t(17, 0), <DateTime>[], [(afterK, t(17, 6), t(17, 10)), (mainK, t(18, 0), t(18, 7))]),
+        (t(18, 0), [t(18, 8)], [(usualK, t(19, 0), t(19, 7))]),
+        (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
+      ]);
+    });
+
+    test('16. 2 交代 ② 日勤→夜勤', () {
+      expectDays((plan(t(16, 18), shiftsOf({16: dayD, 17: nightNt}))), [
+        (t(16, 0), [t(16, 8)], [(mainK, t(17, 1), t(17, 8))]),
+        (t(17, 0), [t(17, 20)], [(napK, t(17, 17, 30), t(17, 19))]),
+        (t(18, 0), <DateTime>[], [(mainK, t(18, 6), t(18, 10)), (followK, t(19, 0), t(19, 7))]),
+      ]);
+    });
+
+    test('16. 2 交代 ③ 連続夜勤', () {
+      expectDays((plan(t(17, 5), shiftsOf({16: nightNt, 17: nightNt}))), [
+        (t(17, 0), [t(17, 20)], [(mainK, t(17, 6), t(17, 13)), (napK, t(17, 17, 30), t(17, 19))]),
+        (t(18, 0), <DateTime>[], [(mainK, t(18, 6), t(18, 10)), (followK, t(19, 0), t(19, 7))]),
+        (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
+      ]);
+    });
+
+    test('17. 勤務のない日は毎晩ふだんの夜（勤務がまったくない 3 日間はプランが null）', () {
+      // 月 10:00 に見て、次の勤務は水 8:00 の D だけ
+      expectDays((plan(t(16, 10), shiftsOf({18: dayD}))), [
+        (t(16, 0), <DateTime>[], [(usualK, t(17, 0), t(17, 7))]),
+        (t(17, 0), <DateTime>[], [(mainK, t(18, 0), t(18, 7))]),
+        (t(18, 0), [t(18, 8)], [(usualK, t(19, 0), t(19, 7))]),
+      ]);
+      expect(plan(t(16, 10), []), isNull);
+    });
+
+    test('18. 0:00〜4:59 に寝る睡眠は前日の欄、5:00 以後は当日の欄に入る', () {
+      // 2 交代 ③：水 6:00 の明けの睡眠は水、木 0:00 の睡眠は水（前日の夜）
+      final days = plan(t(17, 5), shiftsOf({16: nightNt, 17: nightNt}))!.days;
+      expect(days[1].sleeps.map((s) => s.window.sleepAt), [t(18, 6), t(19, 0)]);
+      expect(days[2].sleeps.single.window.sleepAt, t(20, 0));
+    });
+
+    test('19. ふだんの夜は、集めた睡眠や勤務と重なれば足さない', () {
+      // 2 交代 ②：火の夜（水 0:00〜7:00）は Nt（19:00〜6:00。前置き・帰る時間を含む）と重なるので出ない
+      final days = plan(t(16, 18), shiftsOf({16: dayD, 17: nightNt}))!.days;
+      final all = [for (final day in days) ...day.sleeps];
+      expect(all.where((s) => s.kind == usualK), isEmpty);
+    });
+
+    test('20. 過ぎた睡眠も「過ぎた」を付けて残る', () {
+      // 2 交代 ① を火 12:00 に見る：明けの 6:00〜10:00 は過ぎた
+      final result = plan(t(17, 12), shiftsOf({16: nightNt, 18: dayD}));
+      final after = result!.days.first.sleeps.first;
+      expect(after.kind, afterK);
+      expect(after.window.status, SleepWindowStatus.past);
+      expect(result.extraSleeps.single.window.status, SleepWindowStatus.past);
+    });
+
+    test('21. 記録があれば W（6:30）で、ふだんの夜が 30 分早くなる', () {
+      final early = baselineWith(wakeTime: const CircularTimeMean(minuteOfDay: 6 * 60 + 30, concentration: 0.9));
+      final days = plan(t(17, 5), shiftsOf({16: nightNt, 18: dayD}), baseline: early)!.days;
+      expect(days[1].sleeps.single.window.sleepAt, t(18, 23, 30));
+      expect(days[1].sleeps.single.window.wakeAt, t(19, 6, 30));
+    });
+  });
+
+  group('仮眠の状態（D36・D37）と無料の仮眠', () {
+    test('22. 0:00 出勤で 23:30 に開くと、仮眠は「過ぎた」', () {
+      final nap = plan(t(16, 23, 30), shiftsOf({16: nightN}))?.preShiftNap;
+      expect(nap?.sleepAt, t(16, 21, 30));
+      expect(nap?.status, SleepWindowStatus.past);
+    });
+
+    test('23. 22:00 に開いて寝ていないと 22:00〜23:00。22:40 なら残り 20 分なので「過ぎた」', () {
+      final at2200 = plan(t(16, 22), shiftsOf({16: nightN}))?.preShiftNap;
+      expect(at2200?.sleepAt, t(16, 22));
+      expect(at2200?.wakeAt, t(16, 23));
+      expect(at2200?.shortened, isTrue);
+      expect(at2200?.status, SleepWindowStatus.ongoing);
+
+      final at2240 = plan(t(16, 22, 40), shiftsOf({16: nightN}))?.preShiftNap;
+      expect(at2240?.sleepAt, t(16, 21, 30));
+      expect(at2240?.status, SleepWindowStatus.past);
+    });
+
+    test('24. 仮眠の途中で寝ていると、寝る目安は実際の入眠', () {
+      final nap = plan(t(16, 22), shiftsOf({16: nightN}), sleepingSince: t(16, 21, 40))?.preShiftNap;
+      expect(nap?.sleepAt, t(16, 21, 40));
+      expect(nap?.wakeAt, t(16, 23));
+      expect(nap?.status, SleepWindowStatus.ongoing);
+    });
+
+    test('25. 夜勤前で main が過ぎたとき、preShiftNap と extraSleeps の preNightNap は同じもの', () {
+      final result = plan(t(16, 12), shiftsOf({16: nightN}));
+      final extra = result!.extraSleeps.singleWhere((s) => s.kind == napK).window;
+      expect(result.preShiftNap, same(extra));
+      expect(result.preShiftNap?.sleepAt, extra.sleepAt);
+      expect(result.preShiftNap?.status, extra.status);
+    });
+
+    test('26. 日勤前では preShiftNap も preNightNap もない', () {
+      final result = plan(t(17, 7, 30), shiftsOf({16: dayD, 17: dayD}));
+      expect(result?.preShiftNap, isNull);
+      expect(result?.extraSleeps.where((s) => s.kind == napK), isEmpty);
+    });
+  });
 }
