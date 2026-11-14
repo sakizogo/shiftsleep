@@ -1,8 +1,10 @@
 // 次のシフトに合わせた睡眠プラン（A-2）
 //
 // 1/4：場面の分け方（SleepScene）と、寝方のタイプ（帰ってすぐ寝る／出勤ギリギリまで寝る）の決め方
-// 目安の時刻（buildSleepPlan）・文言・設定の保存は 2/4〜4/4 で作る
+// 2/4：次のシフト 1 回分の寝る・起きる目安（main。無料）と、夜勤前の仮眠（main が過ぎたとき。無料）
+// 理由・3 日分・プレミアムの仮眠・文言・設定の保存は 3/4・4/4 で作る
 // DB・アラームには依存しない
+import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:shiftsleep/services/next_shift.dart';
 import 'package:shiftsleep/services/sleep_baseline.dart';
 
@@ -170,4 +172,296 @@ Duration? _median(List<Duration> values) {
       if (detected != null) return (style: detected, source: SleepStyleSource.records);
       return (style: defaultSleepStyle, source: SleepStyleSource.fallback);
   }
+}
+
+// ===== A-2 2/4：次のシフト 1 回分の目安 =====
+
+/// D23：ベースラインに起床の円周平均がないときの、ふつうの起床（7:00。app_settings の wakeUpTime の既定と同じ）
+const TimeOfDay defaultWakeTime = TimeOfDay(hour: 7, minute: 0);
+
+/// D5：前置き（出勤前の分数）が 0（無効）のときの前置き
+const Duration defaultLeadTime = Duration(minutes: 60);
+
+/// S2・S3：夜勤明けの睡眠の長さ
+const Duration afterNightSleepLength = Duration(hours: 4);
+
+/// S4：日勤→夜勤の切り替えで、前夜の睡眠を遅らせる時間
+const Duration dayToNightDelay = Duration(hours: 1);
+
+/// S9：準夜勤前に、ふつうの起床より遅くしてよい上限
+const Duration eveningWakeMaxDelay = Duration(hours: 1);
+
+/// S1：夜勤前の仮眠の長さ
+const Duration preNightNapLength = Duration(minutes: 90);
+
+/// D18・D21：目安として出す睡眠の最短の長さ（これ未満なら出さない・過ぎたとする）
+const Duration minPlanSleepLength = Duration(minutes: 30);
+
+/// 目安の状態（now から見て）
+enum SleepWindowStatus {
+  /// これから（now < 寝る目安）
+  upcoming,
+
+  /// 中にいる（寝る目安 <= now < 起きる目安）
+  ongoing,
+
+  /// 過ぎた（起きる目安 <= now）
+  past,
+}
+
+/// 寝る・起きる目安 1 回分
+class SleepWindow {
+  /// 寝る目安
+  final DateTime sleepAt;
+
+  /// 起きる目安
+  final DateTime wakeAt;
+
+  /// 予定の長さ（平均の睡眠時間・明けの 4 時間・仮眠の 90 分）より短い
+  final bool shortened;
+
+  /// now から見た状態
+  final SleepWindowStatus status;
+
+  const SleepWindow({
+    required this.sleepAt,
+    required this.wakeAt,
+    required this.shortened,
+    required this.status,
+  });
+
+  /// 寝る目安から起きる目安までの長さ
+  Duration get length => wakeAt.difference(sleepAt);
+
+  @override
+  String toString() => 'SleepWindow($sleepAt〜$wakeAt, shortened: $shortened, status: $status)';
+}
+
+/// 目安を出すための設定
+class SleepPlanOptions {
+  /// 出勤前アラームの分数（app_settings の alarmTimeBeforeShift。0 以下は無効）
+  final int alarmMinutesBefore;
+
+  /// 通勤の時間（A-4 で任意の設定にする予定）
+  final Duration? commute;
+
+  /// 身支度の時間（A-4 で任意の設定にする予定）
+  final Duration? prep;
+
+  const SleepPlanOptions({required this.alarmMinutesBefore, this.commute, this.prep});
+
+  /// 前置き L（起きてから出勤までに要る時間）
+  /// - 通勤・身支度のどちらかがあれば、その合計（ないほうは 0）
+  /// - どちらもなければ出勤前アラームの分数（出勤前アラームと同じ時刻に起きる）。0 以下なら 60 分
+  Duration get leadTime {
+    if (commute != null || prep != null) return (commute ?? Duration.zero) + (prep ?? Duration.zero);
+    return alarmMinutesBefore > 0 ? Duration(minutes: alarmMinutesBefore) : defaultLeadTime;
+  }
+
+  /// 帰る時間 H（勤務の終わりから寝られるまで）。通勤があればそれ、なければ前置き L（D20）
+  Duration get homeTime => commute ?? leadTime;
+}
+
+/// 次のシフトに合わせた睡眠の目安
+class SleepPlan {
+  /// 場面
+  final SleepScene scene;
+
+  /// 前の勤務（now の 24 時間前〜now に終わった勤務。なければ null）
+  final WorkShift? previous;
+
+  /// 次の勤務（now から 48 時間以内に始まる勤務。夜勤明け→休みでは null）
+  final WorkShift? next;
+
+  /// 寝方のタイプと、どこから決めたか
+  final SleepStyle style;
+  final SleepStyleSource styleSource;
+
+  /// 無料：次のシフト 1 回分の寝る・起きる目安（使える時間が 30 分未満なら null）
+  final SleepWindow? main;
+
+  /// 無料（D25 B）：main が過ぎていて、次が夜勤（夜勤前・日勤→夜勤）のときの出勤前の仮眠（90 分）
+  final SleepWindow? preShiftNap;
+
+  const SleepPlan({
+    required this.scene,
+    required this.previous,
+    required this.next,
+    required this.style,
+    required this.styleSource,
+    required this.main,
+    required this.preShiftNap,
+  });
+}
+
+DateTime _atMinuteOfDay(DateTime day, int minuteOfDay) =>
+    DateTime(day.year, day.month, day.day, minuteOfDay ~/ 60, minuteOfDay % 60);
+
+/// limit 以前でいちばん遅い「その時刻」（limit ちょうどを含む）
+DateTime _latestAtOrBefore(DateTime limit, int minuteOfDay) {
+  final sameDay = _atMinuteOfDay(limit, minuteOfDay);
+  if (!sameDay.isAfter(limit)) return sameDay;
+  return _atMinuteOfDay(DateTime(limit.year, limit.month, limit.day - 1), minuteOfDay);
+}
+
+DateTime _earlier(DateTime a, DateTime b) => a.isBefore(b) ? a : b;
+
+SleepWindowStatus _statusOf(DateTime sleepAt, DateTime wakeAt, DateTime now) {
+  if (now.isBefore(sleepAt)) return SleepWindowStatus.upcoming;
+  if (now.isBefore(wakeAt)) return SleepWindowStatus.ongoing;
+  return SleepWindowStatus.past;
+}
+
+/// 次のシフトに合わせた睡眠の目安を出す（勤務なしの場面なら null）
+/// - 前置き L：SleepPlanOptions.leadTime、帰る時間 H：homeTime、平均 A：baseline.averageAsleep
+/// - ふつうの起床 W：baseline.wakeTime（なければ 7:00）。ふつうの入眠は W − A
+/// - 使える時間：前の勤務の終わり + H 〜 次の開始 − L
+/// - 場面ごとの決め方：
+///   日勤前・休み明け・夜勤→日勤（次が日勤）：起きる＝開始 − L、寝る＝起きる − A
+///   準夜勤前：起きる＝その日の W + 1 時間と「開始 − L」の早いほう、寝る＝起きる − A
+///   夜勤前：起きる＝「開始 − L」以前でいちばん遅い W、寝る＝起きる − A
+///   日勤→夜勤：起きる＝「開始 − L」以前でいちばん遅い W + 1 時間、寝る＝起きる − A
+///   連続夜勤・間が短い・夜勤→日勤（次が準夜勤）：帰ってすぐ寝る＝前の終わり + H から A、
+///     出勤ギリギリまで寝る＝開始 − L に起きて A
+///   夜勤明け→休み：前の終わり + H から 4 時間
+/// - 共通の調整：寝るが「前の終わり + H」より前なら、そこまでずらして起きるも同じだけ遅くする（長さを保つ。D19）
+///   起きるは「開始 − L」を超えない。予定の長さより短くなったら shortened
+/// - 30 分未満になったら main は null（D21）
+/// - now が中にいて寝ていない：寝るを now にする。入眠で決まる場面（帰ってすぐ寝る・明けの 4 時間）は
+///   起きるも now から数え直す（使える時間の終わりまで）。残りが 30 分未満なら過ぎたとする（D16・D18）
+/// - 寝ている（sleepingSince あり）で中にいる：寝るを実際の入眠にし、入眠で決まる場面は起きるも数え直す（D17）
+/// - main が過ぎて、次が夜勤（夜勤前・日勤→夜勤）なら、開始 − L に終わる 90 分の仮眠を preShiftNap に入れる（D25 B）
+SleepPlan? buildSleepPlan({
+  required DateTime now,
+  required List<WorkShift> shifts,
+  required SleepBaseline baseline,
+  required SleepStylePreference preference,
+  required SleepPlanOptions options,
+  DateTime? sleepingSince,
+}) {
+  final scene = classifySleepScene(now: now, shifts: shifts);
+  if (scene == SleepScene.noShift) return null;
+
+  final next = nextWorkShift(now, shifts);
+  final previous = previousWorkShift(now, shifts, lookback: sleepScenePreviousLookback);
+  final resolved = resolveSleepStyle(preference, baseline);
+  final style = resolved.style;
+
+  final average = baseline.averageAsleep;
+  final wakeMinute = baseline.wakeTime?.minuteOfDay ?? defaultWakeTime.hour * 60 + defaultWakeTime.minute;
+  final windowStart = previous?.endAt.add(options.homeTime);
+  final windowEnd = next?.startAt.subtract(options.leadTime);
+
+  // 場面ごとの予定（寝る・起きる）と、予定の長さ・入眠で決まるか
+  late DateTime sleepAt;
+  late DateTime wakeAt;
+  var intended = average;
+  var sleepAnchored = false;
+
+  void fromWake(DateTime wake) {
+    wakeAt = wake;
+    sleepAt = wake.subtract(average);
+  }
+
+  void byStyle() {
+    if (style == SleepStyle.immediate) {
+      sleepAt = windowStart!;
+      wakeAt = sleepAt.add(average);
+      sleepAnchored = true;
+    } else {
+      fromWake(windowEnd!);
+    }
+  }
+
+  switch (scene) {
+    case SleepScene.beforeDay:
+    case SleepScene.afterRest:
+      fromWake(windowEnd!);
+    case SleepScene.nightToDay:
+      if (next!.kind == ShiftKind.evening) {
+        byStyle();  // D22
+      } else {
+        fromWake(windowEnd!);
+      }
+    case SleepScene.beforeEvening:
+      final delayed = _atMinuteOfDay(windowEnd!, (wakeMinute + eveningWakeMaxDelay.inMinutes) % (24 * 60));
+      fromWake(_earlier(delayed, windowEnd));
+    case SleepScene.beforeNight:
+      fromWake(_latestAtOrBefore(windowEnd!, wakeMinute));
+    case SleepScene.dayToNight:
+      fromWake(_latestAtOrBefore(windowEnd!, (wakeMinute + dayToNightDelay.inMinutes) % (24 * 60)));
+    case SleepScene.betweenNights:
+    case SleepScene.quickReturn:
+      byStyle();
+    case SleepScene.nightToOff:
+      sleepAt = windowStart!;
+      wakeAt = sleepAt.add(afterNightSleepLength);
+      intended = afterNightSleepLength;
+      sleepAnchored = true;
+    case SleepScene.noShift:
+      return null;
+  }
+
+  // 共通の調整（D19）
+  if (windowStart != null && sleepAt.isBefore(windowStart)) {
+    wakeAt = wakeAt.add(windowStart.difference(sleepAt));
+    sleepAt = windowStart;
+  }
+  if (windowEnd != null && wakeAt.isAfter(windowEnd)) wakeAt = windowEnd;
+
+  SleepWindow? main;
+  if (wakeAt.difference(sleepAt) >= minPlanSleepLength) {
+    var status = _statusOf(sleepAt, wakeAt, now);
+    if (status == SleepWindowStatus.ongoing) {
+      // D16・D17：寝ていれば実際の入眠、寝ていなければ now から
+      final start = sleepingSince ?? now;
+      var end = wakeAt;
+      if (sleepAnchored) {
+        end = start.add(intended);
+        if (windowEnd != null && end.isAfter(windowEnd)) end = windowEnd;
+      }
+      if (sleepingSince == null && end.difference(now) < minPlanSleepLength) {
+        status = SleepWindowStatus.past;  // D18：残りが短いので、予定の時刻のまま過ぎたとする
+      } else {
+        sleepAt = start;
+        wakeAt = end;
+        status = _statusOf(sleepAt, wakeAt, now) == SleepWindowStatus.past
+            ? SleepWindowStatus.past
+            : SleepWindowStatus.ongoing;
+      }
+    }
+    main = SleepWindow(
+      sleepAt: sleepAt,
+      wakeAt: wakeAt,
+      shortened: wakeAt.difference(sleepAt) < intended,
+      status: status,
+    );
+  }
+
+  // D25 B：夜勤前・日勤→夜勤で main が過ぎたら、出勤前の仮眠
+  SleepWindow? nap;
+  if (main?.status == SleepWindowStatus.past &&
+      (scene == SleepScene.beforeNight || scene == SleepScene.dayToNight)) {
+    final napEnd = windowEnd!;
+    var napStart = napEnd.subtract(preNightNapLength);
+    if (windowStart != null && napStart.isBefore(windowStart)) napStart = windowStart;
+    if (napEnd.difference(napStart) >= minPlanSleepLength) {
+      nap = SleepWindow(
+        sleepAt: napStart,
+        wakeAt: napEnd,
+        shortened: napEnd.difference(napStart) < preNightNapLength,
+        status: _statusOf(napStart, napEnd, now),
+      );
+    }
+  }
+
+  return SleepPlan(
+    scene: scene,
+    previous: previous,
+    next: next,
+    style: style,
+    styleSource: resolved.source,
+    main: main,
+    preShiftNap: nap,
+  );
 }
