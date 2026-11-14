@@ -47,6 +47,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> _allAdvice = [];    // 生成されたアドバイス（全て）
   List<SleepAdvice> _displayedAdvice = []; // 表示対象のアドバイス
   bool _isPremiumUser = false;          // 有料ユーザーフラグ
+  bool? _debugPremiumOverride;  // A-3 3/3 F6：デバッグ版でテスト用ボタンが切り替えた値（もう一度押すまで保つ）
   bool _advicePromoVisible = true;
   // ================================================
 
@@ -368,7 +369,7 @@ class SleepProvider extends ChangeNotifier {
       print('[SleepProvider] 💳 PremiumService から有料版ステータスを読み込み中...');
       try {
         final isPremium = await _premiumService.loadPremiumStatusFromDatabase('test_user');
-        _isPremiumUser = isPremium;
+        _isPremiumUser = _withDebugPremiumOverride(isPremium);
         print('[SleepProvider] ✅ 有料版ステータス読み込み完了: $_isPremiumUser');
       } catch (e) {
         print('[SleepProvider] ⚠️  PremiumService エラー（アドバイス生成は続行）: $e');
@@ -680,7 +681,7 @@ class SleepProvider extends ChangeNotifier {
       print('[SleepProvider] 💳 RevenueCat からプレミアムステータスを同期中...');
       
       final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
-      _isPremiumUser = isPremium;
+      _isPremiumUser = _withDebugPremiumOverride(isPremium);
       
       // アドバイスを再生成（プレミアム判定を反映）
       _generateAdvice();
@@ -795,8 +796,17 @@ class SleepProvider extends ChangeNotifier {
   
   // ================================================================
   // ========== Week 7 Phase 3 追加: テスト用プレミアム状態切り替えメソッド ==========
+  /// A-3 3/3 F6：デバッグ版でテスト用ボタンを押していたら、その値を使う（リリース版は value のまま）
+  bool _withDebugPremiumOverride(bool value) {
+    final override = _debugPremiumOverride;
+    return kDebugMode && override != null ? override : value;
+  }
+
+  /// テスト用：プレミアムの表示を切り替える
+  /// A-3 3/3 F6：デバッグ版では、もう一度押すまで loadAllSleepData などで PremiumService の値に戻らない
   void togglePremiumStatusForTest() {
     _isPremiumUser = !_isPremiumUser;
+    if (kDebugMode) _debugPremiumOverride = _isPremiumUser;
     print('[SleepProvider] 🧪 テスト用プレミアム状態切り替え: $_isPremiumUser');
     _generateAdvice();
     notifyListeners();

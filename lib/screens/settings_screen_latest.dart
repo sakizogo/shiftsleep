@@ -24,6 +24,7 @@ import 'package:shiftsleep/services/wake_alarm_choice.dart';  // N19
 import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N19
 import 'package:shiftsleep/services/wake_time_change.dart';  // N166
 import '../services/manual_wake_service.dart';
+import 'package:shiftsleep/widgets/premium_debug_toggle.dart';  // A-3 3/3
 
 class SettingsScreen extends StatefulWidget {
   final String userId;
@@ -732,6 +733,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                         ),
+                      // A-3 3/3：デバッグ版だけ、プレミアム表示を切り替える（リリース版では何も出さない）
+                      const PremiumDebugToggleButton(),
                       Text(
                         '💡 改善アドバイス表示設定',
                         style: AppTextStyles.bodyTextStyle.copyWith(
