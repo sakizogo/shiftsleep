@@ -41,6 +41,7 @@ class SleepProvider extends ChangeNotifier {
   
   bool _isLoading = false;
   String? _errorMessage;
+  bool _sleepDataLoadFailed = false;  // A-3 2/3：最後の loadAllSleepData で記録を読めなかったか
 
   // ========== Week 7 A 追加: アドバイス関連 ==========
   List<SleepAdvice> _allAdvice = [];    // 生成されたアドバイス（全て）
@@ -91,6 +92,9 @@ class SleepProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+
+  /// A-3 2/3：最後の loadAllSleepData で睡眠記録を読めなかったか（睡眠プランのカードが 7 時間で計算する）
+  bool get sleepDataLoadFailed => _sleepDataLoadFailed;
 
   // ========== Week 7 Phase 3 追加: 睡眠中フラグの Getter ==========
   bool get isSleepingNow => _isSleepingNow;
@@ -357,6 +361,7 @@ class SleepProvider extends ChangeNotifier {
     try {
       _isLoading = true;
       _errorMessage = null;
+      _sleepDataLoadFailed = false;
       notifyListeners();
 
       // ========== Week 7 Phase 3: PremiumService から有料版ステータスを読み込み ==========
@@ -413,6 +418,7 @@ class SleepProvider extends ChangeNotifier {
       print('  - Last 30 days: ${_last30DaysRecords.length} records');
     } catch (e) {
       _errorMessage = 'Failed to load sleep data: $e';
+      _sleepDataLoadFailed = true;
       print('[SleepProvider] Error: $_errorMessage');
     } finally {
       _isLoading = false;

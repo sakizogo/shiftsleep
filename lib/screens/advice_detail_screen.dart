@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/widgets/premium_lock_dialog.dart';  // A-3 2/3
+
+/// 有料版限定のアドバイスの 🔒 の案内の文
+const String adviceLockedMessage = 'プレミアム版に登録すると、\n詳細な改善アドバイスが\n すべて見られます';
 
 /// ========== Week 7 Phase 3 修正: actionTip を有料版限定に ==========
 /// 
@@ -101,11 +105,21 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
     bool isPremiumUser,
     bool advicePromoVisible,
   ) {
+    // 有料版ロック表示（アドバイス自体が有料版限定の場合）。A-3 2/3：ダイアログはカードと共通の関数
+    final isAdviceLocked = advice.isPremiumOnly && !isPremiumUser && advicePromoVisible;
+    if (isAdviceLocked) {
+      showPremiumLockDialog(
+        context,
+        title: advice.title,
+        description: advice.description,
+        message: adviceLockedMessage,
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) {
-        // 有料版ロック表示（アドバイス自体が有料版限定の場合）
-        final isAdviceLocked = advice.isPremiumOnly && !isPremiumUser && advicePromoVisible;
         
         // ========== Week 7 Phase 3 修正: actionTip のロック判定 ==========
         // actionTip は、有料版ユーザーか、無料版でも isPremiumOnly でない場合のみ表示
@@ -122,47 +136,8 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 説明文
-                isAdviceLocked
-                    ? Column(
-                        children: [
-                          const Icon(Icons.lock, size: 48, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          Text(
-                            advice.description,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              border: Border.all(color: Colors.blue.shade200),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Column(
-                              children: [
-                                Icon(Icons.star, color: Colors.blue),
-                                SizedBox(height: 8),
-                                Text(
-                                  'プレミアム版に登録すると、\n詳細な改善アドバイスが\n すべて見られます',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
+                // 説明文（ロックのときは showPremiumLockDialog）
+                Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
@@ -241,19 +216,6 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('閉じる'),
             ),
-            if (isAdviceLocked)
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('準備中です')),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                ),
-                child: const Text('プレミアム版に登録', style: TextStyle(color: Colors.white)),
-              ),
           ],
         );
       },
