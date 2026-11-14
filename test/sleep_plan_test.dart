@@ -768,4 +768,31 @@ void main() {
       expect(result?.extraSleeps.where((s) => s.kind == napK), isEmpty);
     });
   });
+
+  // ===== A-2 4/4：D40（勤務中に開いたとき） =====
+  group('D40：勤務中に開いたとき', () {
+    test('16. 2 交代の連続夜勤の 2 回目の勤務中（火 22:00）は、明け（水 5:00）の時点の目安になる', () {
+      final result = plan(t(17, 22), shiftsOf({16: nightNt, 17: nightNt}));
+      expect(result?.currentShift?.startAt, t(17, 20));
+      expectMain(result, SleepScene.nightToOff, t(18, 6), t(18, 10));
+    });
+
+    test('17. 日勤の勤務中で、そのあと勤務がなければ null', () {
+      expect(plan(t(17, 10), shiftsOf({17: dayD})), isNull);
+    });
+
+    test('18. 勤務の終わりちょうどは勤務中に入らない', () {
+      final result = plan(t(17, 5), shiftsOf({16: nightNt}));
+      expect(result?.currentShift, isNull);
+      expectMain(result, SleepScene.nightToOff, t(17, 6), t(17, 10));
+    });
+
+    test('19. 勤務中に開いても、3 日分は勤務の終わりで作ったものと同じ', () {
+      expectDays((plan(t(17, 22), shiftsOf({16: nightNt, 17: nightNt}))), [
+        (t(17, 0), [t(17, 20)], <(PlannedSleepKind, DateTime, DateTime)>[]),
+        (t(18, 0), <DateTime>[], [(mainK, t(18, 6), t(18, 10)), (followK, t(19, 0), t(19, 7))]),
+        (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
+      ]);
+    });
+  });
 }

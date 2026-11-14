@@ -375,7 +375,11 @@ class SleepPlan {
   /// プレミアム：今日・明日・あさっての 3 日分（D32〜D35・D39）
   final List<DayPlan> days;
 
+  /// D40：勤務中に開いたときの、その勤務（目安はこの勤務の終わりの時点で作る）。勤務中でなければ null
+  final WorkShift? currentShift;
+
   const SleepPlan({
+    required this.currentShift,
     required this.scene,
     required this.previous,
     required this.next,
@@ -429,6 +433,8 @@ SleepWindowStatus _statusOf(DateTime sleepAt, DateTime wakeAt, DateTime now) {
 /// - プレミアム（3/4）：理由（reasons）・仮眠など（extraSleeps）・3 日分（days）。画面で 🔒 にする（D10）
 ///   仮眠も、中にいるときは main と同じく寝る目安を now か実際の入眠にする（D37）
 /// - 3 日分のため、呼び出し側は 5 日先までの勤務を渡す（3 日目の夜の次の勤務まで見るため）
+/// - D40：勤務中（開始 <= now < 終わり）なら、その勤務の終わりの時点で場面と目安を作る（状態は now から見る）
+///   その時点で勤務なしの場面なら null。勤務の終わりちょうどは勤務中に入らない
 SleepPlan? buildSleepPlan({
   required DateTime now,
   required List<WorkShift> shifts,
@@ -437,8 +443,15 @@ SleepPlan? buildSleepPlan({
   required SleepPlanOptions options,
   DateTime? sleepingSince,
 }) {
+  // D40：勤務中の勤務（複数あれば終わりがいちばん遅いもの）
+  WorkShift? currentShift;
+  for (final shift in shifts) {
+    if (shift.startAt.isAfter(now) || !now.isBefore(shift.endAt)) continue;
+    if (currentShift == null || shift.endAt.isAfter(currentShift.endAt)) currentShift = shift;
+  }
+
   final core = _buildCore(
-    planNow: now,
+    planNow: currentShift?.endAt ?? now,
     statusNow: now,
     shifts: shifts,
     baseline: baseline,
@@ -449,6 +462,7 @@ SleepPlan? buildSleepPlan({
   if (core == null) return null;
 
   return SleepPlan(
+    currentShift: currentShift,
     scene: core.scene,
     previous: core.previous,
     next: core.next,
@@ -754,7 +768,7 @@ _PlanCore? _buildCore({
 }
 
 /// 3 日分（今日・明日・あさって）を作る（D32〜D35・D39）
-/// - 本当の now（勤務中でなければ）と、範囲の中の勤務の終わりの時点ごとに _buildCore を呼び、main と追加の睡眠を集める
+/// - 本当の now（勤務中ならその勤務の終わり。D40）と、範囲の中の勤務の終わりの時点ごとに _buildCore を呼び、main と追加の睡眠を集める
 ///   （先に集めたものと重なるものは足さない）
 /// - 勤務のない夜には、ふだんの夜（W − A 〜 翌日の W）を足す。集めた睡眠や、勤務（開始 − L 〜 終わり + H）と重なれば足さない
 /// - 入眠 − 5:00 の日の欄に入れる（0:00〜4:59 に寝る睡眠は前日の夜。D33）。状態は本当の now から見たもの
@@ -786,9 +800,8 @@ List<DayPlan> _buildDays({
     }
   }
 
-  // 勤務中に呼ばれたときの now の目安は勤務と重なりうるので、3 日分には使わない（勤務の終わりの時点で作り直す）
-  final inShift = shifts.any((s) => !s.startAt.isAfter(now) && now.isBefore(s.endAt));
-  if (!inShift) addFrom(realCore);
+  // 勤務中なら realCore は勤務の終わりの時点で作ったもの（D40）。下の同じ時点のものとは重なるので二重にならない
+  addFrom(realCore);
 
   final ends = {
     for (final shift in shifts)
