@@ -7,6 +7,7 @@ import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/services/sleep_preference_service.dart';  // ========== Week 8 Phase 4 追加 ==========
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：メイン・補助を長さで決める
 
 /// 睡眠データの状態を一元管理する Provider
 /// 
@@ -238,103 +239,26 @@ class SleepProvider extends ChangeNotifier {
 
   // ========== Week 7 A 追加: 分割睡眠関連の Getter ==========
   
-  /// 昨日のメイン睡眠時間（時間:分 形式）
+  /// N184：直近 24 時間に終わったメイン睡眠の合計（なければ --:--）
   String get lastPrimarySleepFormatted {
-    if (_latestRecord == null) return '--:--';
-    
-    // 最新レコードがメイン睡眠か確認
-    if (_latestRecord!.sleepRole != SleepRole.primary) {
-      return '--:--';
-    }
-    
-    final duration = _latestRecord!.wakeTime.difference(_latestRecord!.bedtime);
-    if (duration.isNegative) {
-      final adjustedDuration = duration + Duration(days: 1);
-      return '${adjustedDuration.inHours}h ${adjustedDuration.inMinutes % 60}m';
-    }
-    
-    return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    final main = recentSleepBreakdown(_last7DaysRecords, DateTime.now()).main;
+    return main == null ? '--:--' : formatSleepDuration(main);
   }
 
-  /// 昨日の補助睡眠時間（昼寝など）の合計（時間:分 形式）
-  String get lastSupplementarySleepFormatted {
-    if (_last7DaysRecords.isEmpty) return '--:--';
-    
-    // 昨日のレコードを抽出
-    final yesterday = DateTime.now().subtract(Duration(days: 1));
-    final yesterdayRecords = _last7DaysRecords
-        .where((record) => 
-          record.sleepDate.year == yesterday.year &&
-          record.sleepDate.month == yesterday.month &&
-          record.sleepDate.day == yesterday.day &&
-          record.sleepRole == SleepRole.supplementary
-        )
-        .toList();
-    
-    if (yesterdayRecords.isEmpty) return '0h 0m';
-    
-    int totalMinutes = 0;
-    for (final record in yesterdayRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes;
-      }
-    }
-    
-    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
-  }
+  /// N184：直近 24 時間に終わった補助睡眠（昼寝・仮眠）の合計（なければ 0h 0m）
+  String get lastSupplementarySleepFormatted =>
+      formatSleepDuration(recentSleepBreakdown(_last7DaysRecords, DateTime.now()).naps);
 
-  /// 昨日の総睡眠時間（メイン + 補助）の合計（時間:分 形式）
-  String get lastTotalSleepFormatted {
-    if (_last7DaysRecords.isEmpty && _latestRecord == null) return '--:--';
-    
-    // 昨日のレコードを抽出（すべての SleepRole）
-    final yesterday = DateTime.now().subtract(Duration(days: 1));
-    final yesterdayRecords = _last7DaysRecords
-        .where((record) => 
-          record.sleepDate.year == yesterday.year &&
-          record.sleepDate.month == yesterday.month &&
-          record.sleepDate.day == yesterday.day
-        )
-        .toList();
-    
-    if (yesterdayRecords.isEmpty) return '--:--';
-    
-    int totalMinutes = 0;
-    for (final record in yesterdayRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes;
-      }
-    }
-    
-    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
-  }
+  /// N184：直近 24 時間の合計（いつもメイン＋補助）
+  String get lastTotalSleepFormatted =>
+      formatSleepDuration(recentSleepBreakdown(_last7DaysRecords, DateTime.now()).total);
 
-  /// 過去7日間の平均睡眠時間（メイン睡眠のみ）
+  /// 過去7日間の平均睡眠時間（N184：長さが 5 時間以上の記録のみ。記録中は除く）
   String get averagePrimarySleepFormatted {
-    final primaryRecords = _last7DaysRecords
-        .where((record) => record.sleepRole == SleepRole.primary)
-        .toList();
-    
+    final primaryRecords = _last7DaysRecords.where(isMainSleepRecord).toList();
     if (primaryRecords.isEmpty) return '--:--';
-    
-    int totalMinutes = 0;
-    for (final record in primaryRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes;
-      }
-    }
-    
-    final averageMinutes = totalMinutes ~/ primaryRecords.length;
-    return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
+    final total = primaryRecords.fold(Duration.zero, (sum, r) => sum + sleepRecordLength(r));
+    return formatSleepDuration(total ~/ primaryRecords.length);
   }
 
   /// 理想睡眠時間の推奨（固定値: 7時間）
@@ -417,7 +341,6 @@ class SleepProvider extends ChangeNotifier {
 
       print('[SleepProvider] Data loaded successfully');
       print('  - Latest: ${_latestRecord?.bedtime ?? "none"}');
-      print('  - Latest sleepRole: ${_latestRecord?.sleepRole.jsonValue ?? "none"}');
       print('  - Last 7 days: ${_last7DaysRecords.length} records');
       print('  - Last 30 days: ${_last30DaysRecords.length} records');
     } catch (e) {
@@ -715,7 +638,7 @@ class SleepProvider extends ChangeNotifier {
   /// SJL・SRI・睡眠負債を計算
   void _calculateMetrics() {
     // SJL 計算（過去7日以上のデータが必要）
-    if (_last7DaysRecords.length >= 5) {
+    if (_last7DaysRecords.where(isMainSleepRecord).length >= 5) {  // N184：メイン睡眠の件数で数える
       _sjl = SJLSRICalculator.calculateSJL(_last7DaysRecords);
     } else {
       _sjl = null;  // N183：記録が少ないときも計算できない扱い

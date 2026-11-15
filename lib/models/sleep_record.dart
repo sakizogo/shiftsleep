@@ -181,21 +181,5 @@ class SleepRecord {
     return toJson();
   }
 
-  // ========== Week 7 A 追加: sleepRole 自動判定メソッド ==========
-  /// 睡眠時間（durationMinutes）から sleepRole を自動判定
-  /// 
-  /// ロジック:
-  /// - 5時間以上: primary（メイン睡眠）
-  /// - 30分～5時間: supplementary（補助睡眠）
-  /// - 30分未満: split_segment（分割睡眠）
-  static SleepRole determineSleepRole(int durationMinutes) {
-    if (durationMinutes >= 300) {  // 5時間以上
-      return SleepRole.primary;
-    } else if (durationMinutes >= 30) {  // 30分～5時間
-      return SleepRole.supplementary;
-    } else {
-      return SleepRole.split_segment;  // 30分未満
-    }
-  }
-  // ========================================================================
+  // N184：determineSleepRole は消した（メインかどうかは sleep_record_kind.dart で長さから決める）
 }

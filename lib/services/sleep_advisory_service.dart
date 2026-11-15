@@ -1,4 +1,5 @@
 import 'package:shiftsleep/models/sleep_record.dart';
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isNapSleepRecord
 
 /// ========== Week 7 A 追加: 睡眠改善アドバイスエンジン ==========
 /// 
@@ -235,30 +236,27 @@ class SleepAdvisoryService {
 
   /// ========== 分割睡眠の活用アドバイスを生成（有料版機能）==========
   /// 
-  /// メイン睡眠と補助睡眠のバランスから、ポリファシック睡眠の導入を提案
+  /// N184：昼寝・仮眠（5 時間未満。記録中は除く）を取った日が 3 日以上あれば出す
   static SleepAdvice? _generatePolyphasicAdvice(
     List<SleepRecord> last7DaysRecords,
   ) {
     if (last7DaysRecords.isEmpty) return null;
 
-    // メイン睡眠と補助睡眠の日数を集計
-    final primaryCount = last7DaysRecords
-        .where((r) => r.sleepRole == SleepRole.primary)
-        .length;
-    final supplementaryCount = last7DaysRecords
-        .where((r) => r.sleepRole == SleepRole.supplementary)
+    // 昼寝・仮眠を取った日数（入眠の日付で数える。1 日に 2 回でも 1 日）
+    final napDays = last7DaysRecords
+        .where(isNapSleepRecord)
+        .map((r) => DateTime(r.sleepStartTime.year, r.sleepStartTime.month, r.sleepStartTime.day))
+        .toSet()
         .length;
 
-    // 補助睡眠がある場合、ポリファシック睡眠の改善アドバイスを生成
-    if (supplementaryCount >= 3) {
+    if (napDays >= 3) {
       return SleepAdvice(
-        title: 'ポリファシック睡眠が効果を発揮しています',
-        description: '過去7日間で補助睡眠が ${supplementaryCount}日 記録されています。'
-            '分割睡眠により、シフト勤務での睡眠効率が向上しています。'
-            '現在の昼寝タイミングを最適化することで、さらに体調管理の質を高められます。',
+        title: '仮眠を上手に取り入れています',
+        description: '過去7日間のうち $napDays日、5時間未満の睡眠（昼寝・仮眠）を取っています。'
+            'シフトの合間の短い仮眠は、眠気や疲れをやわらげるのに役立ちます。',
         category: 'debt',
         priority: 2,
-        actionTip: '毎日 14:00～14:30 に 30分の昼寝を設定してみてください',
+        actionTip: '仮眠は 20〜30 分ほどにすると、起きたあとのだるさが出にくくなります',
         isPremiumOnly: true,
       );
     }

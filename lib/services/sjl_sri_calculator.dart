@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sleep_baseline.dart';  // N183：circularMeanOfMinutes
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSleepRecord
 
 /// SJL（Social Jetlag / ソーシャル・ジェットラグ）と
 /// SRI（Sleep Regularity Index / 睡眠規則正しさ指数）を計算するエンジン
@@ -293,10 +294,10 @@ class SJLSRICalculator {
   /// 補助睡眠（supplementary）や分割睡眠（split_segment）は除外
   /// 
   /// Returns:
-  ///   SleepRole が 'primary' の記録リスト
+  ///   N184：長さが 5 時間以上の記録リスト（SleepRole は見ない。記録中は除く）
   static List<SleepRecord> _filterPrimaryRecords(List<SleepRecord> records) {
     return records
-        .where((record) => record.sleepRole == SleepRole.primary)
+        .where(isMainSleepRecord)
         .toList();
   }
   // ========================================================================

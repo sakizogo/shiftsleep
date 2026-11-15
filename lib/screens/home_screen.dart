@@ -1222,7 +1222,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         const SizedBox(width: AppDimensions.paddingSmall),
                         Text(
-                          '睡眠の内訳',
+                          '睡眠の内訳（直近24時間）',  // N184
                           style: AppTextStyles.sectionTitleStyle,
                         ),
                       ],
