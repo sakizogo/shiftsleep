@@ -27,6 +27,32 @@ class SleepAdvice {
   });
 }
 
+/// N186：実行ヒント（actionTip）の出し方
+enum ActionTipView {
+  /// 出さない（actionTip がない／無料で 🔒 の案内が OFF）
+  hidden,
+
+  /// 🔒 の案内だけ出す（無料で 🔒 の案内が ON）
+  locked,
+
+  /// 中身を出す（プレミアム）
+  shown,
+}
+
+/// N186：無料のときに実行ヒントの代わりに出す 🔒 の案内（詳細画面と同じ文言）
+const String actionTipLockedLabel = '💡 実行ヒント（プレミアム版で解放）';
+
+/// N186：実行ヒントをどう出すか（ホームと改善アドバイスの詳細で共通）
+ActionTipView actionTipView(
+  SleepAdvice advice, {
+  required bool isPremium,
+  required bool promoVisible,
+}) {
+  if (advice.actionTip == null) return ActionTipView.hidden;
+  if (isPremium) return ActionTipView.shown;
+  return promoVisible ? ActionTipView.locked : ActionTipView.hidden;
+}
+
 class SleepAdvisoryService {
   /// 実データから改善アドバイスを生成
   /// 

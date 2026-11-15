@@ -12,6 +12,7 @@ import 'package:shiftsleep/services/manual_wake_service.dart';
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/shift_draft.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
+import 'package:shiftsleep/services/sleep_advisory_service.dart';  // N186
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -1485,8 +1486,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 ),
                               ),
 
-                              // アクションTip
-                              if (sleepProvider.topAdvice!.actionTip != null)
+                              // アクションTip（N186：無料は 🔒 の案内だけ。案内が OFF なら出さない）
+                              if (actionTipView(
+                                    sleepProvider.topAdvice!,
+                                    isPremium: sleepProvider.isPremiumUser,
+                                    promoVisible:
+                                        sleepProvider.advicePromoVisible,
+                                  ) ==
+                                  ActionTipView.shown)
                                 Column(
                                   children: [
                                     const SizedBox(
@@ -1526,11 +1533,57 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       ),
                                     ),
                                   ],
+                                )
+                              else if (actionTipView(
+                                    sleepProvider.topAdvice!,
+                                    isPremium: sleepProvider.isPremiumUser,
+                                    promoVisible:
+                                        sleepProvider.advicePromoVisible,
+                                  ) ==
+                                  ActionTipView.locked)
+                                Column(
+                                  children: [
+                                    const SizedBox(
+                                      height: AppDimensions.paddingMedium,
+                                    ),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(
+                                        AppDimensions.paddingSmall,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.7),
+                                        borderRadius: BorderRadius.circular(
+                                          AppDimensions.borderRadiusSmall,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.lock,
+                                            size: 16,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                          const SizedBox(width: 4.0),
+                                          Expanded(
+                                            child: Text(
+                                              actionTipLockedLabel,
+                                              style: AppTextStyles
+                                                  .descriptionStyle
+                                                  .copyWith(
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                             ],
                           ),
                         ),
-                      
+
 // ========== 「全てのアドバイスを見る」ボタン ==========
                       if (sleepProvider.hasAdvice)
                         Padding(
