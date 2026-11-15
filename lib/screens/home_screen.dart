@@ -1131,7 +1131,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 ),
                                 const SizedBox(height: 4.0),
                                 Text(
-                                  sleepProvider.sri.toStringAsFixed(0),
+                                  sleepProvider.sri == null
+                                      ? '—'  // N197：計算できない
+                                      : sleepProvider.sri!.toStringAsFixed(0),
                                   style: AppTextStyles.statNumberStyle,
                                 ),
                                 const SizedBox(height: 4.0),
@@ -1177,7 +1179,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 6.0),
                           Text(
-                            sleepProvider.sjl == null
+                            sleepProvider.sjl == null || sleepProvider.sri == null  // N197：どちらかが計算できない
                                 ? '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレを計算できません。'  // N183
                                 : sleepProvider.sjl! >= 2
                                 ? 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。'
@@ -1381,7 +1383,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // ========== Week 7 A 追加: 睡眠改善アドバイスセクション ==========
               // 無料版：最優先アドバイス 1個
               // 有料版：優先度1,2のアドバイス 最大5個
-              if (sleepProvider.hasAdvice)
+              // N197：アドバイスが 1 件も作られなかったときも、案内の 1 行を出すために残す
+              if (sleepProvider.hasAdvice || sleepProvider.allAdvice.isEmpty)
                 Container(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.symmetric(
@@ -1438,6 +1441,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ],
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
+
+                      // N197：アドバイスが 0 件なら案内の 1 行だけ
+                      if (sleepProvider.allAdvice.isEmpty)
+                        Text(
+                          '睡眠の記録がたまると、改善アドバイスが表示されます',
+                          style: AppTextStyles.descriptionStyle.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
 
                       // ========== メインアドバイス（優先度1） ==========
                       if (sleepProvider.topAdvice != null)
@@ -1773,6 +1785,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
+                    // N197：計算できないときは理由を出す
+                    if (sleepProvider.sleepDebt == null)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: AppDimensions.paddingSmall,
+                        ),
+                        child: Text(
+                          '直近4週間の記録がないため、睡眠負債を計算できません。',
+                          style: AppTextStyles.descriptionStyle.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
                     Row(

@@ -68,8 +68,8 @@ class SleepAdvisoryService {
   ///   優先度順に並んだ SleepAdvice リスト
   static List<SleepAdvice> generateAdvice({
     required double? sjl,  // N183：null なら SJL のアドバイスは出さない
-    required double sri,
-    required Duration sleepDebt,
+    required double? sri,  // N197：null なら SRI のアドバイスは出さない
+    required Duration? sleepDebt,  // N197：null なら睡眠負債のアドバイスは出さない
     required List<SleepRecord> last7DaysRecords,
     bool isPremiumUser = false,
   }) {
@@ -118,7 +118,9 @@ class SleepAdvisoryService {
     }
 
     // ========== SRI ベースのアドバイス ==========
-    if (sri < 40) {
+    if (sri == null) {
+      // N197：計算できないときは出さない
+    } else if (sri < 40) {
       advices.add(
         SleepAdvice(
           title: '睡眠時刻を安定させて体調を整える',
@@ -168,7 +170,9 @@ class SleepAdvisoryService {
     }
 
     // ========== 睡眠負債 ベースのアドバイス ==========
-    if (sleepDebt.isNegative) {
+    if (sleepDebt == null) {
+      // N197：計算できないときは出さない
+    } else if (sleepDebt.isNegative) {
       final debtHours = sleepDebt.inHours.abs();
       
       if (debtHours >= 10) {

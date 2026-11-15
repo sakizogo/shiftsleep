@@ -14,6 +14,9 @@ import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSl
 /// - SJL: 休日と平日の睡眠中点（中央時刻）の差
 /// - SRI: 24時間を細かい時間単位に分割し、連続2日間の一致度を算出
 class SJLSRICalculator {
+  /// N197：SJL・SRI を計算するのに必要なメイン睡眠の件数（過去 7 日）
+  static const int minMainRecordsForRhythm = 5;
+
   // ========================
   // SJL（社会的時差）計算
   // ========================
@@ -141,28 +144,26 @@ class SJLSRICalculator {
   /// 連続する2日間ペアで睡眠/覚醒の一致度を計算
   ///
   /// Parameters:
-  ///   - records: 過去7日間の睡眠記録（最低2日分必要）
+  ///   - records: 過去7日間の睡眠記録（N197：メイン睡眠が minMainRecordsForRhythm 件以上必要）
   ///   - hourIntervals: 時間単位（デフォルト: 1時間）
   ///
   /// Returns:
-  ///   -100 ～ 100 の SRI スコア
+  ///   -100 ～ 100 の SRI スコア（N197：計算できなければ null）
   ///   - 100に近い: 毎日同じ時刻に規則正しく寝起き
   ///   - 0近辺: 不規則（時刻がバラバラ）
   ///   - マイナス: 大きく乱れている
-  static double calculateSRI(
+  static double? calculateSRI(
     List<SleepRecord> records, {
     int hourIntervals = 1,
   }) {
-    if (records.length < 2) return 0.0;
-
     // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
     final primaryRecords = _filterPrimaryRecords(records);
-    
-    if (primaryRecords.length < 2) {
-      print('[SJLSRICalculator] Not enough primary sleep records for SRI calculation');
-      return 0.0;
+
+    if (primaryRecords.length < minMainRecordsForRhythm) {
+      debugPrint('[SJLSRICalculator] N197：SRI を計算できません（メイン睡眠 ${primaryRecords.length} 件。$minMainRecordsForRhythm 件以上が必要）');
+      return null;
     }
-    print('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records for SRI');
+    debugPrint('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records for SRI');
     // ====================================================================
 
     // 日付でソート（古い順）
@@ -182,7 +183,7 @@ class SJLSRICalculator {
       print('[SRI] Pair ($i → ${i + 1}): ${pairScore.toStringAsFixed(1)}%');
     }
 
-    if (pairScores.isEmpty) return 0.0;
+    if (pairScores.isEmpty) return null;  // N197：計算できない（メインが 5 件以上なら通らない）
 
     // 全ペアの平均スコア
     final sri = pairScores.fold(0.0, (a, b) => a + b) / pairScores.length;
@@ -258,14 +259,16 @@ class SJLSRICalculator {
   /// Returns:
   ///   累積睡眠不足（Duration）
   ///   負の値 = 不足、正の値 = 余剰
-  static Duration calculateSleepDebt(
+  ///   N197：記録のある日が 0 日なら null（計算できない）
+  static Duration? calculateSleepDebt(
     List<SleepRecord> records, {
     double targetDailyHours = 7.0,
     DateTime? now,
   }) {
     final totals = recentDailySleepTotals(records, now ?? DateTime.now());
+    if (totals.isEmpty) return null;
     final target = Duration(minutes: (targetDailyHours * 60).round());
-    return totals.values.fold(Duration.zero, (debt, total) => debt + total - target);
+    return totals.values.fold<Duration>(Duration.zero, (debt, total) => debt + total - target);
   }
 
   // ========== Week 7 A 追加: メイン睡眠のみをフィルタリングするメソッド ==========

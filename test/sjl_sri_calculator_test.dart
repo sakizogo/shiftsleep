@@ -126,8 +126,9 @@ void main() {
   });
 
   group('calculateSRI（N184）', () {
+    // N197：メイン 5 件以上が必要なので 5 件にした
     final mains = [
-      for (var day = 2; day <= 5; day++) rec('d$day', t(day, 23, 0)),
+      for (var day = 2; day <= 6; day++) rec('d$day', t(day, 23, 0)),
     ];
 
     test('毎日 23:00〜7:00 なら 100', () {
@@ -144,9 +145,36 @@ void main() {
     });
   });
 
+  group('calculateSRI（N197：計算できなければ null）', () {
+    test('メインが 4 件なら null、5 件なら値を出す', () {
+      final four = [for (var day = 2; day <= 5; day++) rec('d$day', t(day, 23, 0))];
+      expect(SJLSRICalculator.calculateSRI(four), isNull);
+      expect(SJLSRICalculator.calculateSRI([...four, rec('d6', t(6, 23, 0))]), 100.0);
+    });
+
+    test('昼寝だけ・記録中だけなら null', () {
+      final naps = [
+        for (var day = 2; day <= 8; day++) rec('n$day', t(day, 13, 0), length: const Duration(hours: 1)),
+      ];
+      final recordings = [
+        for (var day = 2; day <= 8; day++) rec('r$day', t(day, 23, 0)).copyWith(durationMinutes: 0),
+      ];
+      expect(SJLSRICalculator.calculateSRI(naps), isNull);
+      expect(SJLSRICalculator.calculateSRI(recordings), isNull);
+    });
+
+    test('記録がなければ null', () {
+      expect(SJLSRICalculator.calculateSRI(const []), isNull);
+    });
+
+    test('件数の下限は 5', () {
+      expect(SJLSRICalculator.minMainRecordsForRhythm, 5);
+    });
+  });
+
   group('calculateSleepDebt（N184 2/2：1 日ごと）', () {
     final now = t(20, 12);
-    Duration debt(List<SleepRecord> records) =>
+    Duration? debt(List<SleepRecord> records) =>
         SJLSRICalculator.calculateSleepDebt(records, now: now);
 
     test('6h の日が 2 日なら -2h', () {
@@ -184,8 +212,56 @@ void main() {
       ]), const Duration(hours: -1));
     });
 
-    test('記録がなければ 0', () {
-      expect(debt(const []), Duration.zero);
+    test('N197：記録がなければ null', () {
+      expect(debt(const []), isNull);
+    });
+
+    test('N197：4 週間の外にしか記録がなければ null', () {
+      expect(debt([rec('out', DateTime(2026, 10, 23, 0))]), isNull);
+    });
+
+    test('N197：記録中だけなら null', () {
+      expect(debt([rec('recording', t(19, 23)).copyWith(durationMinutes: 0)]), isNull);
+    });
+
+    test('N197：1 日でもあれば値を出す（昼寝だけの日も）', () {
+      expect(debt([rec('nap', t(19, 13), length: const Duration(hours: 1))]), const Duration(hours: -6));
+    });
+  });
+
+  group('generateAdvice の SRI・睡眠負債（N197）', () {
+    List<SleepAdvice> advice({double? sri, Duration? sleepDebt, List<SleepRecord> records = const [], bool premium = false}) =>
+        SleepAdvisoryService.generateAdvice(
+          sjl: null,
+          sri: sri,
+          sleepDebt: sleepDebt,
+          last7DaysRecords: records,
+          isPremiumUser: premium,
+        );
+
+    test('sri が null なら SRI のアドバイスを出さない', () {
+      expect(advice(sri: null, sleepDebt: Duration.zero).where((a) => a.category == 'sri'), isEmpty);
+      expect(advice(sri: 30, sleepDebt: Duration.zero).where((a) => a.category == 'sri').single.priority, 1);
+    });
+
+    test('sleepDebt が null なら睡眠負債のアドバイスを出さない', () {
+      expect(advice(sri: 90, sleepDebt: null).where((a) => a.category == 'debt'), isEmpty);
+      expect(
+        advice(sri: 90, sleepDebt: const Duration(hours: -12)).where((a) => a.category == 'debt').single.priority,
+        1,
+      );
+    });
+
+    test('すべて null ならアドバイスは 0 件', () {
+      expect(advice(), isEmpty);
+    });
+
+    test('分割睡眠のアドバイスは sleepDebt が null でも出る', () {
+      final records = [
+        for (var day = 2; day <= 4; day++) rec('n$day', t(day, 13, 0), length: const Duration(minutes: 30)),
+      ];
+      final titles = advice(records: records, premium: true).map((a) => a.title);
+      expect(titles, contains('仮眠を上手に取り入れています'));
     });
   });
 

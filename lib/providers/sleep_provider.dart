@@ -37,8 +37,8 @@ class SleepProvider extends ChangeNotifier {
   List<SleepRecord> _last30DaysRecords = []; // 過去30日のレコード
 
   double? _sjl;                         // Social Jetlag (時間)。N183：計算できなければ null
-  double _sri = 0.0;                    // Sleep Regularity Index (%)
-  Duration _sleepDebt = Duration.zero;  // 睡眠負債
+  double? _sri;                         // Sleep Regularity Index (%)。N197：計算できなければ null
+  Duration? _sleepDebt;                 // 睡眠負債。N197：計算できなければ null
   
   bool _isLoading = false;
   String? _errorMessage;
@@ -89,8 +89,8 @@ class SleepProvider extends ChangeNotifier {
   List<SleepRecord> get last30DaysRecords => _last30DaysRecords;
 
   double? get sjl => _sjl;
-  double get sri => _sri;
-  Duration get sleepDebt => _sleepDebt;
+  double? get sri => _sri;
+  Duration? get sleepDebt => _sleepDebt;
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -200,13 +200,16 @@ class SleepProvider extends ChangeNotifier {
 
   /// SRI の評価テキスト
   String get sriEvaluation {
-    if (_sri >= 80) {
+    final sri = _sri;
+    if (sri == null) {
+      return '判定できません';  // N197
+    } else if (sri >= 80) {
       return '非常に規則正しい';
-    } else if (_sri >= 60) {
+    } else if (sri >= 60) {
       return '規則正しい';
-    } else if (_sri >= 40) {
+    } else if (sri >= 40) {
       return 'やや不規則';
-    } else if (_sri >= 0) {
+    } else if (sri >= 0) {
       return '不規則';
     } else {
       return '大きく乱れている';
@@ -214,13 +217,18 @@ class SleepProvider extends ChangeNotifier {
   }
 
   /// 睡眠負債のフォーマット（-14h 30m 形式）
-  String get sleepDebtFormatted => formatSignedSleepDuration(_sleepDebt);  // N184
+  String get sleepDebtFormatted {
+    final debt = _sleepDebt;
+    return debt == null ? '—' : formatSignedSleepDuration(debt);  // N184・N197：計算できなければ —
+  }
 
   /// 睡眠負債の評価テキスト
   String get sleepDebtEvaluation {
-    final hours = _sleepDebt.inHours.abs();
-    
-    if (_sleepDebt.isNegative) {
+    final debt = _sleepDebt;
+    if (debt == null) return '判定できません';  // N197
+    final hours = debt.inHours.abs();
+
+    if (debt.isNegative) {
       if (hours >= 10) return '要注意（10時間以上不足）';
       if (hours >= 5) return '改善推奨（5時間以上不足）';
       return '軽度の不足';
@@ -630,30 +638,26 @@ class SleepProvider extends ChangeNotifier {
   /// SJL・SRI・睡眠負債を計算
   void _calculateMetrics() {
     // SJL 計算（過去7日以上のデータが必要）
-    if (_last7DaysRecords.where(isMainSleepRecord).length >= 5) {  // N184：メイン睡眠の件数で数える
+    if (_last7DaysRecords.where(isMainSleepRecord).length >= SJLSRICalculator.minMainRecordsForRhythm) {  // N184：メイン睡眠の件数で数える
       _sjl = SJLSRICalculator.calculateSJL(_last7DaysRecords);
     } else {
       _sjl = null;  // N183：記録が少ないときも計算できない扱い
     }
 
-    // SRI 計算（過去2日以上のデータが必要）
-    if (_last7DaysRecords.length >= 2) {
+    // SRI 計算（N197：過去 7 日のメイン睡眠が minMainRecordsForRhythm 件以上必要。少なければ null）
+    if (_last7DaysRecords.where(isMainSleepRecord).length >= SJLSRICalculator.minMainRecordsForRhythm) {
       _sri = SJLSRICalculator.calculateSRI(_last7DaysRecords);
     } else {
-      _sri = 0.0;
+      _sri = null;
     }
 
-    // 睡眠負債計算
-    if (_last30DaysRecords.isNotEmpty) {
-      _sleepDebt = SJLSRICalculator.calculateSleepDebt(_last30DaysRecords);
-    } else {
-      _sleepDebt = Duration.zero;
-    }
+    // 睡眠負債計算（N197：直近 4 週間に記録のある日がなければ null）
+    _sleepDebt = SJLSRICalculator.calculateSleepDebt(_last30DaysRecords);
 
     print('[SleepProvider] Metrics calculated:');
     print('  - SJL: ${_sjl ?? '-'} h (${sjlEvaluation})');
-    print('  - SRI: $_sri (${sriEvaluation})');
-    debugPrint('  - Debt: ${formatSignedSleepDuration(_sleepDebt)}');  // N184：マイナスも正しく出す
+    debugPrint('  - SRI: ${_sri ?? '-'} ($sriEvaluation)');  // N197
+    debugPrint('  - Debt: $sleepDebtFormatted');  // N184：マイナスも正しく出す。N197：計算できなければ —
   }
 
   /// ========== Week 7 A 追加: アドバイスを生成 ==========
