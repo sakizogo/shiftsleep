@@ -1085,7 +1085,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 ),
                                 const SizedBox(height: 4.0),
                                 Text(
-                                  '${sleepProvider.sjl.toStringAsFixed(1)}h',
+                                  sleepProvider.sjl == null
+                                      ? '—'  // N183：計算できない
+                                      : '${sleepProvider.sjl!.toStringAsFixed(1)}h',
                                   style: AppTextStyles.statNumberStyle,
                                 ),
                                 const SizedBox(height: 4.0),
@@ -1175,9 +1177,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 6.0),
                           Text(
-                            sleepProvider.sjl >= 2
+                            sleepProvider.sjl == null
+                                ? '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレを計算できません。'  // N183
+                                : sleepProvider.sjl! >= 2
                                 ? 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。'
-                                : sleepProvider.sjl >= 1
+                                : sleepProvider.sjl! >= 1
                                     ? 'SJLが1時間以上あるため、体内時計がやや乱れています。'
                                     : '体内時計は正常範囲です。良好な睡眠リズムを維持してください。',
                             style: AppTextStyles.descriptionStyle.copyWith(

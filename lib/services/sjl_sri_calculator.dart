@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
+import 'package:shiftsleep/services/sleep_baseline.dart';  // N183：circularMeanOfMinutes
 
 /// SJL（Social Jetlag / ソーシャル・ジェットラグ）と
 /// SRI（Sleep Regularity Index / 睡眠規則正しさ指数）を計算するエンジン
@@ -27,20 +29,22 @@ class SJLSRICalculator {
   ///   - 0 ～ 1時間  : 正常範囲
   ///   - 1 ～ 2時間  : やや乱れている
   ///   - 2時間以上   : 大きく乱れている
-  static double calculateSJL(
+  ///   N183：計算できないときは null（記録がない・平日か休日が 0 件・中点がばらばらで円周平均が出せない）
+  ///   中点は円周平均（circularMeanOfMinutes）、差は 0:00 をまたいで短いほう（最大 12 時間）
+  static double? calculateSJL(
     List<SleepRecord> records, {
     int weekdayCount = 5,
     int weekendCount = 2,
   }) {
-    if (records.isEmpty) return 0.0;
+    if (records.isEmpty) return null;
 
     // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
     // 補助睡眠（nap）や分割睡眠（split_segment）を除外
     final primaryRecords = _filterPrimaryRecords(records);
-    
+
     if (primaryRecords.isEmpty) {
       print('[SJLSRICalculator] No primary sleep records found');
-      return 0.0;
+      return null;
     }
     print('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records');
     // ====================================================================
@@ -63,21 +67,32 @@ class SJLSRICalculator {
     final weekdayMidpoint = _calculateAverageSleepMidpoint(weekdayRecords);
     final weekendMidpoint = _calculateAverageSleepMidpoint(weekendRecords);
 
-    // 睡眠中点の差（絶対値）= SJL
+    // 睡眠中点の差（0:00 をまたいで短いほう）= SJL
     if (weekdayMidpoint == null || weekendMidpoint == null) {
-      return 0.0;
+      debugPrint('[SJLSRICalculator] N183：SJL を計算できません'
+          '（平日 ${weekdayRecords.length} 件・休日 ${weekendRecords.length} 件。0 件か、中点がばらばら）');
+      return null;
     }
 
-    final sjl = (weekdayMidpoint.difference(weekendMidpoint).inMinutes.abs() / 60);
+    final sjl = circularMinuteDistance(weekdayMidpoint, weekendMidpoint) / 60;
 
-    print('[SJLSRICalculator] SJL = $sjl h');
-    print('  - Weekday records: ${weekdayRecords.length}');
-    print('  - Weekend records: ${weekendRecords.length}');
-    print('  - Weekday midpoint: ${weekdayMidpoint.hour}:${weekdayMidpoint.minute.toString().padLeft(2, '0')}');
-    print('  - Weekend midpoint: ${weekendMidpoint.hour}:${weekendMidpoint.minute.toString().padLeft(2, '0')}');
+    debugPrint('[SJLSRICalculator] SJL = $sjl h'
+        '（平日 ${weekdayRecords.length} 件・中点 ${_formatMinuteOfDay(weekdayMidpoint)}、'
+        '休日 ${weekendRecords.length} 件・中点 ${_formatMinuteOfDay(weekendMidpoint)}）');
 
     return sjl;
   }
+
+  /// N183：時刻（0:00 からの分）どうしの差。0:00 をまたいで短いほう（0〜720）
+  /// - 例：23:30 と 0:30 は 60 分（23 時間ではない）
+  static int circularMinuteDistance(int a, int b) {
+    const minutesPerDay = 24 * 60;
+    final d = (a - b).abs() % minutesPerDay;
+    return d <= minutesPerDay - d ? d : minutesPerDay - d;
+  }
+
+  static String _formatMinuteOfDay(int minutes) =>
+      '${minutes ~/ 60}:${(minutes % 60).toString().padLeft(2, '0')}';
 
   /// 単一記録の睡眠中点（中央時刻）を計算
   ///
@@ -105,28 +120,14 @@ class SJLSRICalculator {
   }
 
   /// 複数記録から平均的な睡眠中点を計算
-  static DateTime? _calculateAverageSleepMidpoint(List<SleepRecord> records) {
-    if (records.isEmpty) return null;
-
+  /// N183：時刻（0:00 からの分）の円周平均。記録がない・ばらばら（R が 0.1 未満）なら null
+  static int? _calculateAverageSleepMidpoint(List<SleepRecord> records) {
     final midpoints = records
         .map(_getSleepMidpoint)
         .whereType<DateTime>()
-        .toList();
+        .map((time) => time.hour * 60 + time.minute);
 
-    if (midpoints.isEmpty) return null;
-
-    // 時刻のみを抽出（日付を無視）して平均化
-    final totalMinutes = midpoints.fold<int>(
-      0,
-      (sum, time) => sum + (time.hour * 60 + time.minute),
-    );
-
-    final averageMinutes = totalMinutes ~/ midpoints.length;
-    final averageHours = averageMinutes ~/ 60;
-    final averageMins = averageMinutes % 60;
-
-    // 基準日として2000-01-01を使用（日付は意味を持たない）
-    return DateTime(2000, 1, 1, averageHours, averageMins);
+    return circularMeanOfMinutes(midpoints)?.minuteOfDay;
   }
 
   // ========================

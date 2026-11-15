@@ -35,7 +35,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepRecord> _last7DaysRecords = []; // 過去7日のレコード
   List<SleepRecord> _last30DaysRecords = []; // 過去30日のレコード
 
-  double _sjl = 0.0;                    // Social Jetlag (時間)
+  double? _sjl;                         // Social Jetlag (時間)。N183：計算できなければ null
   double _sri = 0.0;                    // Sleep Regularity Index (%)
   Duration _sleepDebt = Duration.zero;  // 睡眠負債
   
@@ -87,7 +87,7 @@ class SleepProvider extends ChangeNotifier {
   List<SleepRecord> get last7DaysRecords => _last7DaysRecords;
   List<SleepRecord> get last30DaysRecords => _last30DaysRecords;
 
-  double get sjl => _sjl;
+  double? get sjl => _sjl;
   double get sri => _sri;
   Duration get sleepDebt => _sleepDebt;
 
@@ -185,9 +185,12 @@ class SleepProvider extends ChangeNotifier {
 
   /// SJL の評価テキスト
   String get sjlEvaluation {
-    if (_sjl < 1.0) {
+    final sjl = _sjl;
+    if (sjl == null) {
+      return '判定できません';  // N183
+    } else if (sjl < 1.0) {
       return '正常範囲';
-    } else if (_sjl < 2.0) {
+    } else if (sjl < 2.0) {
       return 'やや乱れている';
     } else {
       return '大きく乱れている';
@@ -715,7 +718,7 @@ class SleepProvider extends ChangeNotifier {
     if (_last7DaysRecords.length >= 5) {
       _sjl = SJLSRICalculator.calculateSJL(_last7DaysRecords);
     } else {
-      _sjl = 0.0;
+      _sjl = null;  // N183：記録が少ないときも計算できない扱い
     }
 
     // SRI 計算（過去2日以上のデータが必要）
@@ -733,7 +736,7 @@ class SleepProvider extends ChangeNotifier {
     }
 
     print('[SleepProvider] Metrics calculated:');
-    print('  - SJL: $_sjl h (${sjlEvaluation})');
+    print('  - SJL: ${_sjl ?? '-'} h (${sjlEvaluation})');
     print('  - SRI: $_sri (${sriEvaluation})');
     print('  - Debt: ${_sleepDebt.inHours}h ${_sleepDebt.inMinutes % 60}m');
   }

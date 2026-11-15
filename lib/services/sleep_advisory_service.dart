@@ -66,7 +66,7 @@ class SleepAdvisoryService {
   /// Returns:
   ///   優先度順に並んだ SleepAdvice リスト
   static List<SleepAdvice> generateAdvice({
-    required double sjl,
+    required double? sjl,  // N183：null なら SJL のアドバイスは出さない
     required double sri,
     required Duration sleepDebt,
     required List<SleepRecord> last7DaysRecords,
@@ -77,7 +77,9 @@ class SleepAdvisoryService {
     // ========== SJL ベースのアドバイス ==========
     // シフトワーカー向け: 体内時計の乱れは仕事の性質上避けられない
     // その中で「改善できることに焦点を当てる」という方針
-    if (sjl >= 2.0) {
+    if (sjl == null) {
+      // N183：計算できないときは、priority 1 も 3 も出さない
+    } else if (sjl >= 2.0) {
       advices.add(
         SleepAdvice(
           title: 'シフト勤務での体内時計ズレを最小化',
