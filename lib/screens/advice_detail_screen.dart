@@ -121,10 +121,12 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
       context: context,
       builder: (context) {
         
-        // ========== Week 7 Phase 3 修正: actionTip のロック判定 ==========
-        // actionTip は、有料版ユーザーか、無料版でも isPremiumOnly でない場合のみ表示
-        final isActionTipLocked = advice.actionTip != null && !isPremiumUser;
-        // ====================================================================
+        // N186：actionTip の出し方はホームと共通（無料は 🔒 の案内だけ。案内が OFF なら出さない）
+        final tipView = actionTipView(
+          advice,
+          isPremium: isPremiumUser,
+          promoVisible: advicePromoVisible,
+        );
 
         return AlertDialog(
           title: Text(
@@ -146,9 +148,9 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                           ),
                           
                           // ========== Week 7 Phase 3 修正: actionTip をロック化 ==========
-                          if (advice.actionTip != null) ...[
+                          if (tipView != ActionTipView.hidden) ...[
                             const SizedBox(height: 16),
-                            isActionTipLocked
+                            tipView == ActionTipView.locked
                                 ? Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
@@ -159,13 +161,26 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          '💡 実行ヒント（プレミアム版で解放）',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.amber,
-                                          ),
+                                        // N186：ホームと同じく 🔒 のアイコン＋文言
+                                        const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.lock,
+                                              size: 16,
+                                              color: Colors.amber,
+                                            ),
+                                            SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                actionTipLockedLabel,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.amber,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                         const SizedBox(height: 8),
                                         Text(

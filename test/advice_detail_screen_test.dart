@@ -17,13 +17,14 @@ class _TestProvider extends SleepProvider {
 
   final List<SleepAdvice> advices;
   bool premium = false;
+  bool promoVisible = true;  // N186
 
   @override
   List<SleepAdvice> get displayedAdvice => advices;
   @override
   bool get isPremiumUser => premium;
   @override
-  bool get advicePromoVisible => true;
+  bool get advicePromoVisible => promoVisible;
 }
 
 void main() {
@@ -44,8 +45,10 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  Future<_TestProvider> pumpScreen(WidgetTester tester, {bool premium = false}) async {
-    final provider = _TestProvider([locked, open])..premium = premium;
+  Future<_TestProvider> pumpScreen(WidgetTester tester, {bool premium = false, bool promoVisible = true}) async {
+    final provider = _TestProvider([locked, open])
+      ..premium = premium
+      ..promoVisible = promoVisible;
     await tester.pumpWidget(
       ChangeNotifierProvider<SleepProvider>.value(
         value: provider,
@@ -82,13 +85,28 @@ void main() {
 
     final dialog = find.byType(AlertDialog);
     expect(find.descendant(of: dialog, matching: find.text('ふつうの説明')), findsOneWidget);
-    expect(find.descendant(of: dialog, matching: find.text('💡 実行ヒント（プレミアム版で解放）')), findsOneWidget);
+    // N186：実行ヒントは 🔒 のアイコン＋文言（中身は出さない）
+    expect(find.descendant(of: dialog, matching: find.text(actionTipLockedLabel)), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('ヒントの中身')), findsNothing);
     expect(find.descendant(of: dialog, matching: find.text('プレミアム版に登録')), findsNothing);
-    expect(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)), findsNothing);
 
     await tester.tap(find.text('閉じる'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('N186：無料で案内が OFF なら、実行ヒントは 🔒 の案内も中身も出さない', (tester) async {
+    await pumpScreen(tester, promoVisible: false);
+    await tester.tap(find.text('ふつうのアドバイス'));
+    await tester.pumpAndSettle();
+
+    final dialog = find.byType(AlertDialog);
+    expect(find.descendant(of: dialog, matching: find.text('ふつうの説明')), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text(actionTipLockedLabel)), findsNothing);
+    expect(find.descendant(of: dialog, matching: find.text('💡 実行ヒント')), findsNothing);
+    expect(find.descendant(of: dialog, matching: find.text('ヒントの中身')), findsNothing);
+    expect(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)), findsNothing);
   });
 
   testWidgets('プレミアムではロックされず、実行ヒントの中身が見える', (tester) async {
@@ -102,5 +120,6 @@ void main() {
     await tester.tap(find.text('ふつうのアドバイス'));
     await tester.pumpAndSettle();
     expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('ヒントの中身')), findsOneWidget);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text(actionTipLockedLabel)), findsNothing);
   });
 }

@@ -47,8 +47,8 @@ void main() {
       expect(actionTipView(withTip, isPremium: false, promoVisible: false), ActionTipView.hidden);
     });
 
-    test('🔒 の案内の文言は詳細画面と同じ', () {
-      expect(actionTipLockedLabel, '💡 実行ヒント（プレミアム版で解放）');
+    test('🔒 の案内の文言（💡 はつけない。🔒 のアイコンと重ねない）', () {
+      expect(actionTipLockedLabel, '実行ヒント（プレミアム版で解放）');
     });
   });
 

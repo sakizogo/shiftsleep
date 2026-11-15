@@ -40,7 +40,7 @@ enum ActionTipView {
 }
 
 /// N186：無料のときに実行ヒントの代わりに出す 🔒 の案内（詳細画面と同じ文言）
-const String actionTipLockedLabel = '💡 実行ヒント（プレミアム版で解放）';
+const String actionTipLockedLabel = '実行ヒント（プレミアム版で解放）';
 
 /// N186：実行ヒントをどう出すか（ホームと改善アドバイスの詳細で共通）
 ActionTipView actionTipView(
