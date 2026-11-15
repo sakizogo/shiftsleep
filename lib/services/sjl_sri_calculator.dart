@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sleep_baseline.dart';  // N183：circularMeanOfMinutes
-import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSleepRecord
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSleepRecord・recentDailySleepTotals
 
 /// SJL（Social Jetlag / ソーシャル・ジェットラグ）と
 /// SRI（Sleep Regularity Index / 睡眠規則正しさ指数）を計算するエンジン
@@ -246,11 +246,14 @@ class SJLSRICalculator {
 
   /// 睡眠負債を計算（目標睡眠時間との差分）
   ///
-  /// Week 7 A 修正: メイン睡眠のみを対象
+  /// N184 2/2：1 日ごと（起床の日付）に「その日の合計 − 目標」を出し、直近 4 週間ぶん足す
+  /// - その日の合計はメイン＋昼寝（記録中は除く）
+  /// - 記録のない日は数えない
   ///
   /// Parameters:
-  ///   - records: 過去30日間の睡眠記録
+  ///   - records: 睡眠記録（直近 4 週間＝today − 27 〜 today の日だけ使う）
   ///   - targetDailyHours: 目標睡眠時間（デフォルト: 7時間）
+  ///   - now: 今の時刻（省略すると DateTime.now()）
   ///
   /// Returns:
   ///   累積睡眠不足（Duration）
@@ -258,34 +261,11 @@ class SJLSRICalculator {
   static Duration calculateSleepDebt(
     List<SleepRecord> records, {
     double targetDailyHours = 7.0,
+    DateTime? now,
   }) {
-    if (records.isEmpty) return Duration.zero;
-
-    // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
-    final primaryRecords = _filterPrimaryRecords(records);
-    
-    if (primaryRecords.isEmpty) {
-      return Duration.zero;
-    }
-    // ====================================================================
-
-    int totalDebtMinutes = 0;
-
-    for (final record in primaryRecords) {
-      final sleepDuration = record.wakeTime.difference(record.bedtime);
-      
-      // 翌日にまたがる場合の処理
-      if (sleepDuration.isNegative) {
-        totalDebtMinutes += (sleepDuration.inMinutes + 24 * 60);
-      } else {
-        totalDebtMinutes += sleepDuration.inMinutes;
-      }
-    }
-
-    final targetTotalMinutes = (targetDailyHours * 60 * primaryRecords.length).toInt();
-    final debtMinutes = totalDebtMinutes - targetTotalMinutes;
-
-    return Duration(minutes: debtMinutes);
+    final totals = recentDailySleepTotals(records, now ?? DateTime.now());
+    final target = Duration(minutes: (targetDailyHours * 60).round());
+    return totals.values.fold(Duration.zero, (debt, total) => debt + total - target);
   }
 
   // ========== Week 7 A 追加: メイン睡眠のみをフィルタリングするメソッド ==========

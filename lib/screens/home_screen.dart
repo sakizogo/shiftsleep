@@ -1782,12 +1782,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '今月平均',
+                              '1日平均（直近4週間）',  // N184
                               style: AppTextStyles.bodyTextStyle,
                             ),
                             const SizedBox(height: 4.0),
                             Text(
-                              _calculateMonthlyAverage(sleepProvider),
+                              sleepProvider.recentDailyAverageSleepFormatted,
                               style: AppTextStyles.statNumberStyle,
                             ),
                           ],
@@ -2136,25 +2136,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (hours >= 5) return 3;
     if (hours >= 4) return 2;
     return 1;
-  }
-
-  String _calculateMonthlyAverage(SleepProvider provider) {
-    if (provider.last30DaysRecords.isEmpty) {
-      return '--:--';
-    }
-
-    int totalMinutes = 0;
-    for (final record in provider.last30DaysRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes.toInt() + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes.toInt();
-      }
-    }
-
-    final averageMinutes = totalMinutes ~/ provider.last30DaysRecords.length;
-    return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
   }
 
   String _getCurrentTime() {

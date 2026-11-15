@@ -144,6 +144,51 @@ void main() {
     });
   });
 
+  group('calculateSleepDebt（N184 2/2：1 日ごと）', () {
+    final now = t(20, 12);
+    Duration debt(List<SleepRecord> records) =>
+        SJLSRICalculator.calculateSleepDebt(records, now: now);
+
+    test('6h の日が 2 日なら -2h', () {
+      expect(debt([
+        rec('a', t(10, 0), length: const Duration(hours: 6)),
+        rec('b', t(11, 0), length: const Duration(hours: 6)),
+      ]), const Duration(hours: -2));
+    });
+
+    test('メイン 5h と昼寝 2h の日は 0（昼寝も 1 日の合計に入る）', () {
+      expect(debt([
+        rec('main', t(10, 0), length: const Duration(hours: 5)),
+        rec('nap', t(10, 13), length: const Duration(hours: 2)),
+      ]), Duration.zero);
+    });
+
+    test('1 日に 2 件あっても 7h は 1 回だけ引く', () {
+      expect(debt([
+        rec('m1', t(10, 0), length: const Duration(hours: 5)),
+        rec('m2', t(10, 14), length: const Duration(hours: 5)),
+      ]), const Duration(hours: 3));
+    });
+
+    test('記録のない日は数えない・記録中は入れない', () {
+      expect(debt([
+        rec('a', t(10, 0), length: const Duration(hours: 6)),
+        rec('recording', t(15, 23)).copyWith(durationMinutes: 0),
+      ]), const Duration(hours: -1));
+    });
+
+    test('直近 4 週間（today − 27 〜 today）の外の日は入らない', () {
+      expect(debt([
+        rec('in', DateTime(2026, 10, 24, 0), length: const Duration(hours: 6)), // today − 27
+        rec('out', DateTime(2026, 10, 23, 0), length: const Duration(hours: 6)), // today − 28
+      ]), const Duration(hours: -1));
+    });
+
+    test('記録がなければ 0', () {
+      expect(debt(const []), Duration.zero);
+    });
+  });
+
   group('circularMinuteDistance', () {
     test('0:00 をまたぐときは短いほう', () {
       expect(SJLSRICalculator.circularMinuteDistance(23 * 60 + 30, 30), 60);

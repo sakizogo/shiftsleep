@@ -214,15 +214,7 @@ class SleepProvider extends ChangeNotifier {
   }
 
   /// 睡眠負債のフォーマット（-14h 30m 形式）
-  String get sleepDebtFormatted {
-    final isNegative = _sleepDebt.isNegative;
-    final absDuration = isNegative 
-        ? _sleepDebt.abs() 
-        : _sleepDebt;
-    
-    final sign = isNegative ? '-' : '+';
-    return '$sign${absDuration.inHours}h ${absDuration.inMinutes % 60}m';
-  }
+  String get sleepDebtFormatted => formatSignedSleepDuration(_sleepDebt);  // N184
 
   /// 睡眠負債の評価テキスト
   String get sleepDebtEvaluation {
@@ -661,7 +653,7 @@ class SleepProvider extends ChangeNotifier {
     print('[SleepProvider] Metrics calculated:');
     print('  - SJL: ${_sjl ?? '-'} h (${sjlEvaluation})');
     print('  - SRI: $_sri (${sriEvaluation})');
-    print('  - Debt: ${_sleepDebt.inHours}h ${_sleepDebt.inMinutes % 60}m');
+    debugPrint('  - Debt: ${formatSignedSleepDuration(_sleepDebt)}');  // N184：マイナスも正しく出す
   }
 
   /// ========== Week 7 A 追加: アドバイスを生成 ==========
@@ -766,6 +758,7 @@ class SleepProvider extends ChangeNotifier {
     Duration total = Duration.zero;
 
     for (final record in _last7DaysRecords) {
+      if (isUnfinishedSleepRecord(record)) continue;  // N184：記録中・途中で終わった記録は含めない
       // 睡眠中の記録は含めない
       if (_isSleepingNow &&
           (record.id == _currentSleepRecordIdNow ||
@@ -814,11 +807,12 @@ class SleepProvider extends ChangeNotifier {
     final weekRecords = _last7DaysRecords
         .where((record) {
           final recordDate = record.sleepDate;
-          return !recordDate.isBefore(weekStart) &&
+          return !isUnfinishedSleepRecord(record) &&  // N184：記録中は含めない
+                 !recordDate.isBefore(weekStart) &&
                  !recordDate.isAfter(weekEnd);
         })
         .toList();
-    
+
     if (weekRecords.isEmpty) return '0h 0m';
     
     int totalMinutes = 0;
@@ -834,34 +828,16 @@ class SleepProvider extends ChangeNotifier {
     return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
   }
 
-  /// 今月の平均睡眠時間（時間:分 形式）
+  /// N184：今月（暦の 1 日〜今日）の 1 日あたりの平均（起床の日付で足す。昼寝を含む・記録中は除く）
   String get thisMonthAverageSleepFormatted {
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month, 1);
-    final monthEnd = DateTime(now.year, now.month + 1, 0);
-    
-    final monthRecords = _last30DaysRecords
-        .where((record) {
-          final recordDate = record.sleepDate;
-          return !recordDate.isBefore(monthStart) &&
-                 !recordDate.isAfter(monthEnd);
-        })
-        .toList();
-    
-    if (monthRecords.isEmpty) return '--:--';
-    
-    int totalMinutes = 0;
-    for (final record in monthRecords) {
-      final duration = record.wakeTime.difference(record.bedtime);
-      if (duration.isNegative) {
-        totalMinutes += (duration.inMinutes + 24 * 60);
-      } else {
-        totalMinutes += duration.inMinutes;
-      }
-    }
-    
-    final averageMinutes = totalMinutes ~/ monthRecords.length;
-    return '${averageMinutes ~/ 60}h ${averageMinutes % 60}m';
+    final average = averageDailySleep(thisMonthDailySleepTotals(_last30DaysRecords, DateTime.now()));
+    return average == null ? '--:--' : formatSleepDuration(average);
+  }
+
+  /// N184：直近 4 週間の 1 日あたりの平均（睡眠負債と同じ日で出す）
+  String get recentDailyAverageSleepFormatted {
+    final average = averageDailySleep(recentDailySleepTotals(_last30DaysRecords, DateTime.now()));
+    return average == null ? '--:--' : formatSleepDuration(average);
   }
   // ================================================================
   // ========== Week 8 追加: SharedPreferences 連携 ==========

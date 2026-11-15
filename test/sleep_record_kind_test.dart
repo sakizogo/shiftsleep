@@ -124,4 +124,95 @@ void main() {
     expect(formatSleepDuration(const Duration(hours: 7, minutes: 5)), '7h 5m');
     expect(formatSleepDuration(Duration.zero), '0h 0m');
   });
+
+  test('N184 2/2：formatSleepDuration はマイナスに対応（-2 分が 0h 58m にならない）', () {
+    expect(formatSleepDuration(const Duration(minutes: -2)), '-0h 2m');
+    expect(formatSleepDuration(const Duration(hours: -1, minutes: -5)), '-1h 5m');
+  });
+
+  test('N184 2/2：formatSignedSleepDuration', () {
+    expect(formatSignedSleepDuration(const Duration(minutes: -2)), '-0h 2m');
+    expect(formatSignedSleepDuration(Duration.zero), '+0h 0m');
+    expect(formatSignedSleepDuration(const Duration(hours: 2, minutes: 30)), '+2h 30m');
+  });
+
+  group('N184 2/2：dailySleepTotals（起床の日付で 1 日ごと）', () {
+    final first = DateTime(2026, 11, 1);
+    final last = DateTime(2026, 11, 30);
+
+    test('夜勤明けの朝寝・0:00 をまたぐ睡眠・0:00 後の入眠・昼寝は、どれも起きた日に入る', () {
+      final records = [
+        rec('daySleep', t(10, 9), length: const Duration(hours: 6)), // 9:00〜15:00
+        rec('overnight', t(9, 23), length: const Duration(hours: 8)), // 11/9 23:00〜11/10 7:00
+        rec('afterMidnight', t(10, 0, 30), length: const Duration(hours: 7, minutes: 30)), // 0:30〜8:00
+        rec('nap', t(10, 13), length: const Duration(minutes: 30)),
+      ];
+      final totals = dailySleepTotals(records, firstDay: first, lastDay: last);
+      expect(totals.keys, [DateTime(2026, 11, 10)]);
+      expect(totals[DateTime(2026, 11, 10)], const Duration(hours: 22));
+    });
+
+    test('19:00〜0:10 は次の日に入る', () {
+      final totals = dailySleepTotals(
+        [rec('a', t(9, 19), length: const Duration(hours: 5, minutes: 10))],
+        firstDay: first,
+        lastDay: last,
+      );
+      expect(totals.keys, [DateTime(2026, 11, 10)]);
+    });
+
+    test('終わりが始まりより前の記録は +1 日にして起床の日付を出す', () {
+      final wrapped = rec('a', t(9, 23)).copyWith(sleepEndTime: t(9, 7));
+      expect(sleepRecordWakeDay(wrapped), DateTime(2026, 11, 10));
+    });
+
+    test('記録中は入れない・記録のない日は入らない・期間の外も入らない', () {
+      final records = [
+        rec('recording', t(11, 23), unfinished: true),
+        rec('in', t(12, 23)), // 起床 11/13
+        rec('before', DateTime(2026, 10, 31, 23)), // 起床 11/1
+        rec('out', t(30, 23)), // 起床 12/1
+      ];
+      final totals = dailySleepTotals(records, firstDay: DateTime(2026, 11, 2), lastDay: last);
+      expect(totals.keys, [DateTime(2026, 11, 13)]);
+    });
+  });
+
+  group('N184 2/2：直近 4 週間・今月・平均', () {
+    test('直近 4 週間は today − 27 〜 today（両端を含む）', () {
+      final now = t(30, 12);
+      final records = [
+        rec('first', t(2, 23)), // 起床 11/3 = today − 27
+        rec('tooOld', t(1, 23)), // 起床 11/2 = today − 28
+        rec('today', t(29, 23)), // 起床 11/30
+      ];
+      final totals = recentDailySleepTotals(records, now);
+      expect(totals.keys.toSet(), {DateTime(2026, 11, 3), DateTime(2026, 11, 30)});
+    });
+
+    test('今月は暦の 1 日〜今日（前の月に起きた分は入らない）', () {
+      final now = t(3, 12);
+      final records = [
+        rec('lastMonth', DateTime(2026, 10, 30, 23)), // 起床 10/31
+        rec('first', DateTime(2026, 10, 31, 23)), // 起床 11/1
+        rec('second', t(1, 23)), // 起床 11/2
+      ];
+      final totals = thisMonthDailySleepTotals(records, now);
+      expect(totals.keys.toSet(), {DateTime(2026, 11, 1), DateTime(2026, 11, 2)});
+    });
+
+    test('平均は 1 日あたりの合計の平均（昼寝を含む）。日がなければ null', () {
+      final totals = dailySleepTotals(
+        [
+          rec('m1', t(9, 23), length: const Duration(hours: 5)), // 11/10
+          rec('nap1', t(10, 13), length: const Duration(hours: 1)), // 11/10
+          rec('m2', t(10, 23), length: const Duration(hours: 8)), // 11/11
+        ],
+        firstDay: DateTime(2026, 11, 1),
+        lastDay: DateTime(2026, 11, 30),
+      );
+      expect(averageDailySleep(totals), const Duration(hours: 7));
+      expect(averageDailySleep(const {}), isNull);
+    });
+  });
 }
