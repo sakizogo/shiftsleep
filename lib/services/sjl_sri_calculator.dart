@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sleep_baseline.dart';  // N183：circularMeanOfMinutes
+import 'package:shiftsleep/services/sleep_debt.dart';  // N198：recentSleepDebt
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSleepRecord・recentDailySleepTotals
 
 /// SJL（Social Jetlag / ソーシャル・ジェットラグ）と
@@ -250,25 +251,19 @@ class SJLSRICalculator {
   /// N184 2/2：1 日ごと（起床の日付）に「その日の合計 − 目標」を出し、直近 4 週間ぶん足す
   /// - その日の合計はメイン＋昼寝（記録中は除く）
   /// - 記録のない日は数えない
+  /// N198：寝すぎた日の余りは 1 日 +1 時間まで。1 日平均の差で評価する（sleep_debt.dart の recentSleepDebt）
   ///
   /// Parameters:
   ///   - records: 睡眠記録（直近 4 週間＝today − 27 〜 today の日だけ使う）
-  ///   - targetDailyHours: 目標睡眠時間（デフォルト: 7時間）
   ///   - now: 今の時刻（省略すると DateTime.now()）
   ///
   /// Returns:
-  ///   累積睡眠不足（Duration）
-  ///   負の値 = 不足、正の値 = 余剰
-  ///   N197：記録のある日が 0 日なら null（計算できない）
-  static Duration? calculateSleepDebt(
+  ///   N198：記録のある日が 7 日未満なら null（計算できない）
+  static SleepDebtSummary? calculateSleepDebt(
     List<SleepRecord> records, {
-    double targetDailyHours = 7.0,
     DateTime? now,
   }) {
-    final totals = recentDailySleepTotals(records, now ?? DateTime.now());
-    if (totals.isEmpty) return null;
-    final target = Duration(minutes: (targetDailyHours * 60).round());
-    return totals.values.fold<Duration>(Duration.zero, (debt, total) => debt + total - target);
+    return recentSleepDebt(records, now ?? DateTime.now());
   }
 
   // ========== Week 7 A 追加: メイン睡眠のみをフィルタリングするメソッド ==========

@@ -8,6 +8,7 @@ import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/services/sleep_preference_service.dart';  // ========== Week 8 Phase 4 追加 ==========
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：メイン・補助を長さで決める
+import 'package:shiftsleep/services/sleep_debt.dart';  // N198：睡眠負債を 1 日平均で
 
 /// 睡眠データの状態を一元管理する Provider
 /// 
@@ -38,7 +39,8 @@ class SleepProvider extends ChangeNotifier {
 
   double? _sjl;                         // Social Jetlag (時間)。N183：計算できなければ null
   double? _sri;                         // Sleep Regularity Index (%)。N197：計算できなければ null
-  Duration? _sleepDebt;                 // 睡眠負債。N197：計算できなければ null
+  SleepDebtSummary? _sleepDebt;         // 睡眠負債。N198：記録のある日が 7 日未満なら null
+  int _sleepDebtRecordedDays = 0;       // N198：直近 4 週間の記録のある日の数（計算できない理由に使う）
   
   bool _isLoading = false;
   String? _errorMessage;
@@ -90,7 +92,8 @@ class SleepProvider extends ChangeNotifier {
 
   double? get sjl => _sjl;
   double? get sri => _sri;
-  Duration? get sleepDebt => _sleepDebt;
+  SleepDebtSummary? get sleepDebt => _sleepDebt;
+  int get sleepDebtRecordedDays => _sleepDebtRecordedDays;  // N198
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
@@ -216,26 +219,20 @@ class SleepProvider extends ChangeNotifier {
     }
   }
 
-  /// 睡眠負債のフォーマット（-14h 30m 形式）
+  /// 睡眠負債のフォーマット（N198：1 日平均の差。-1h 5m／日 の形）
   String get sleepDebtFormatted {
     final debt = _sleepDebt;
-    return debt == null ? '—' : formatSignedSleepDuration(debt);  // N184・N197：計算できなければ —
+    return debt == null ? '—' : formatDailySleepDebt(debt.dailyBalance);  // N184・N197：計算できなければ —
   }
 
-  /// 睡眠負債の評価テキスト
-  String get sleepDebtEvaluation {
-    final debt = _sleepDebt;
-    if (debt == null) return '判定できません';  // N197
-    final hours = debt.inHours.abs();
+  /// N198：睡眠負債の評価の段階（計算できなければ notJudgeable）
+  SleepDebtLevel get sleepDebtLevel => _sleepDebt?.level ?? SleepDebtLevel.notJudgeable;
 
-    if (debt.isNegative) {
-      if (hours >= 10) return '要注意（10時間以上不足）';
-      if (hours >= 5) return '改善推奨（5時間以上不足）';
-      return '軽度の不足';
-    } else {
-      return '十分睡眠が取れています';
-    }
-  }
+  /// 睡眠負債の評価テキスト（N198：1 日平均の不足で判定）
+  String get sleepDebtEvaluation => sleepDebtEvaluationText(sleepDebtLevel);
+
+  /// N198：「※寝すぎた日の分は 1 日 1 時間までしか差し引いていません」を出すか
+  bool get showsSleepDebtCapNote => _sleepDebt?.showsSurplusCapNote ?? false;
 
   // ========== Week 7 A 追加: 分割睡眠関連の Getter ==========
   
@@ -651,13 +648,18 @@ class SleepProvider extends ChangeNotifier {
       _sri = null;
     }
 
-    // 睡眠負債計算（N197：直近 4 週間に記録のある日がなければ null）
-    _sleepDebt = SJLSRICalculator.calculateSleepDebt(_last30DaysRecords);
+    // 睡眠負債計算（N198：直近 4 週間に記録のある日が 7 日未満なら null）
+    final now = DateTime.now();
+    _sleepDebt = SJLSRICalculator.calculateSleepDebt(_last30DaysRecords, now: now);
+    _sleepDebtRecordedDays = recentDailySleepTotals(_last30DaysRecords, now).length;
 
     print('[SleepProvider] Metrics calculated:');
     print('  - SJL: ${_sjl ?? '-'} h (${sjlEvaluation})');
     debugPrint('  - SRI: ${_sri ?? '-'} ($sriEvaluation)');  // N197
-    debugPrint('  - Debt: $sleepDebtFormatted');  // N184：マイナスも正しく出す。N197：計算できなければ —
+    debugPrint('  - Debt: $sleepDebtFormatted ($sleepDebtEvaluation)');  // N184：マイナスも正しく出す。N197：計算できなければ —
+    debugPrint('  - Debt detail: 記録のある日 $_sleepDebtRecordedDays 日、'
+        '4 週間の合計 ${_sleepDebt == null ? '—' : formatSignedSleepDuration(_sleepDebt!.cappedTotal)}'
+        '（上限なし ${_sleepDebt == null ? '—' : formatSignedSleepDuration(_sleepDebt!.rawTotal)}）');  // N198：合計はログにだけ残す
   }
 
   /// ========== Week 7 A 追加: アドバイスを生成 ==========

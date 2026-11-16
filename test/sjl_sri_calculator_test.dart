@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/services/sleep_debt.dart';
 
 // N183：SJL の中点を円周平均にし、差を 0:00 をまたいで短いほうにする
 // 2026-11-02 は月曜（11/2〜11/6 が平日、11/7・11/8 が土日）。平日・休日は入眠の曜日で分ける
@@ -28,6 +29,12 @@ SleepRecord rec(String id, DateTime start, {Duration length = const Duration(hou
 
 /// 2026 年 11 月の日時
 DateTime t(int day, int hour, [int minute = 0]) => DateTime(2026, 11, day, hour, minute);
+
+/// N198：不足のない睡眠負債（7 日・1 日平均 7h）
+const noDebt = SleepDebtSummary(days: 7, averageSleep: Duration(hours: 7), rawTotal: Duration.zero, cappedTotal: Duration.zero);
+
+/// N198：1 日平均 2h 不足の睡眠負債（要注意）
+const shortDebt = SleepDebtSummary(days: 7, averageSleep: Duration(hours: 5), rawTotal: Duration(hours: -14), cappedTotal: Duration(hours: -14));
 
 void main() {
   group('calculateSJL', () {
@@ -172,44 +179,28 @@ void main() {
     });
   });
 
-  group('calculateSleepDebt（N184 2/2：1 日ごと）', () {
+  group('calculateSleepDebt（N184 2/2：1 日ごと。N198：1 日平均・7 日以上）', () {
     final now = t(20, 12);
-    Duration? debt(List<SleepRecord> records) =>
+    SleepDebtSummary? debt(List<SleepRecord> records) =>
         SJLSRICalculator.calculateSleepDebt(records, now: now);
+    List<SleepRecord> days(int count, Duration length) => [
+          for (var i = 0; i < count; i++) rec('d$i', t(10 + i, 0), length: length),
+        ];
 
-    test('6h の日が 2 日なら -2h', () {
-      expect(debt([
-        rec('a', t(10, 0), length: const Duration(hours: 6)),
-        rec('b', t(11, 0), length: const Duration(hours: 6)),
-      ]), const Duration(hours: -2));
+    test('6h の日が 7 日なら -1h／日', () {
+      final d = debt(days(7, const Duration(hours: 6)))!;
+      expect(d.days, 7);
+      expect(d.dailyBalance, const Duration(hours: -1));
     });
 
     test('メイン 5h と昼寝 2h の日は 0（昼寝も 1 日の合計に入る）', () {
-      expect(debt([
-        rec('main', t(10, 0), length: const Duration(hours: 5)),
-        rec('nap', t(10, 13), length: const Duration(hours: 2)),
-      ]), Duration.zero);
-    });
-
-    test('1 日に 2 件あっても 7h は 1 回だけ引く', () {
-      expect(debt([
-        rec('m1', t(10, 0), length: const Duration(hours: 5)),
-        rec('m2', t(10, 14), length: const Duration(hours: 5)),
-      ]), const Duration(hours: 3));
-    });
-
-    test('記録のない日は数えない・記録中は入れない', () {
-      expect(debt([
-        rec('a', t(10, 0), length: const Duration(hours: 6)),
-        rec('recording', t(15, 23)).copyWith(durationMinutes: 0),
-      ]), const Duration(hours: -1));
-    });
-
-    test('直近 4 週間（today − 27 〜 today）の外の日は入らない', () {
-      expect(debt([
-        rec('in', DateTime(2026, 10, 24, 0), length: const Duration(hours: 6)), // today − 27
-        rec('out', DateTime(2026, 10, 23, 0), length: const Duration(hours: 6)), // today − 28
-      ]), const Duration(hours: -1));
+      final d = debt([
+        ...days(6, const Duration(hours: 7)),
+        rec('main', t(16, 0), length: const Duration(hours: 5)),
+        rec('nap', t(16, 13), length: const Duration(hours: 2)),
+      ])!;
+      expect(d.days, 7);
+      expect(d.dailyBalance, Duration.zero);
     });
 
     test('N197：記録がなければ null', () {
@@ -224,13 +215,14 @@ void main() {
       expect(debt([rec('recording', t(19, 23)).copyWith(durationMinutes: 0)]), isNull);
     });
 
-    test('N197：1 日でもあれば値を出す（昼寝だけの日も）', () {
-      expect(debt([rec('nap', t(19, 13), length: const Duration(hours: 1))]), const Duration(hours: -6));
+    test('N198：記録のある日が 6 日なら null（昼寝だけの日も 1 日に数える）', () {
+      expect(debt(days(6, const Duration(hours: 1))), isNull);
+      expect(debt(days(7, const Duration(hours: 1))), isNotNull);
     });
   });
 
   group('generateAdvice の SRI・睡眠負債（N197）', () {
-    List<SleepAdvice> advice({double? sri, Duration? sleepDebt, List<SleepRecord> records = const [], bool premium = false}) =>
+    List<SleepAdvice> advice({double? sri, SleepDebtSummary? sleepDebt, List<SleepRecord> records = const [], bool premium = false}) =>
         SleepAdvisoryService.generateAdvice(
           sjl: null,
           sri: sri,
@@ -240,14 +232,14 @@ void main() {
         );
 
     test('sri が null なら SRI のアドバイスを出さない', () {
-      expect(advice(sri: null, sleepDebt: Duration.zero).where((a) => a.category == 'sri'), isEmpty);
-      expect(advice(sri: 30, sleepDebt: Duration.zero).where((a) => a.category == 'sri').single.priority, 1);
+      expect(advice(sri: null, sleepDebt: noDebt).where((a) => a.category == 'sri'), isEmpty);
+      expect(advice(sri: 30, sleepDebt: noDebt).where((a) => a.category == 'sri').single.priority, 1);
     });
 
     test('sleepDebt が null なら睡眠負債のアドバイスを出さない', () {
       expect(advice(sri: 90, sleepDebt: null).where((a) => a.category == 'debt'), isEmpty);
       expect(
-        advice(sri: 90, sleepDebt: const Duration(hours: -12)).where((a) => a.category == 'debt').single.priority,
+        advice(sri: 90, sleepDebt: shortDebt).where((a) => a.category == 'debt').single.priority,
         1,
       );
     });
@@ -282,7 +274,7 @@ void main() {
     List<SleepAdvice> sjlAdvice(double? sjl) => SleepAdvisoryService.generateAdvice(
           sjl: sjl,
           sri: 90,
-          sleepDebt: Duration.zero,
+          sleepDebt: noDebt,
           last7DaysRecords: const [],
         ).where((a) => a.category == 'sjl').toList();
 
@@ -306,7 +298,7 @@ void main() {
       final list = SleepAdvisoryService.generateAdvice(
         sjl: 0.5,
         sri: 90,
-        sleepDebt: Duration.zero,
+        sleepDebt: noDebt,
         last7DaysRecords: records,
         isPremiumUser: premium,
       ).where((a) => a.title == title);

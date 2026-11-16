@@ -1,5 +1,6 @@
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isNapSleepRecord
+import 'package:shiftsleep/services/sleep_debt.dart';  // N198：SleepDebtSummary
 
 /// ========== Week 7 A 追加: 睡眠改善アドバイスエンジン ==========
 /// 
@@ -69,7 +70,7 @@ class SleepAdvisoryService {
   static List<SleepAdvice> generateAdvice({
     required double? sjl,  // N183：null なら SJL のアドバイスは出さない
     required double? sri,  // N197：null なら SRI のアドバイスは出さない
-    required Duration? sleepDebt,  // N197：null なら睡眠負債のアドバイスは出さない
+    required SleepDebtSummary? sleepDebt,  // N197：null なら睡眠負債のアドバイスは出さない（N198：1 日平均の不足で判定）
     required List<SleepRecord> last7DaysRecords,
     bool isPremiumUser = false,
   }) {
@@ -170,58 +171,56 @@ class SleepAdvisoryService {
     }
 
     // ========== 睡眠負債 ベースのアドバイス ==========
-    if (sleepDebt == null) {
-      // N197：計算できないときは出さない
-    } else if (sleepDebt.isNegative) {
-      final debtHours = sleepDebt.inHours.abs();
-      
-      if (debtHours >= 10) {
-        advices.add(
-          SleepAdvice(
-            title: '睡眠不足への対策が必要です',
-            description: '10時間以上の睡眠不足が蓄積しています。'
-                'このままでは心身の回復が間に合いません。'
-                'シフト勤務の合間に昼寝を増やすなど、すぐに対策を取ることが重要です。',
-            category: 'debt',
-            priority: 1,
-            actionTip: '週末に 2時間の追加睡眠を取るか、毎日 30分の昼寝を追加してみてください',
-            isPremiumOnly: false,
-          ),
-        );
-      } else if (debtHours >= 5) {
-        advices.add(
-          SleepAdvice(
-            title: '睡眠時間を増やして回復を促す',
-            description: '5～10時間の睡眠不足が蓄積しています。'
-                '毎日の睡眠時間を 30分～1時間増やすことで、疲労回復が改善します。',
-            category: 'debt',
-            priority: 1,
-            actionTip: '毎日の就寝時刻を 30分早めるか、起床時刻を 30分遅くしてみてください',
-          ),
-        );
-      } else {
-        advices.add(
-          SleepAdvice(
-            title: '軽度の睡眠不足があります',
-            description: '5時間未満の軽度な睡眠不足があります。'
-                '勤務の合間に 20～30分の短い昼寝を加えることで改善できます。',
-            category: 'debt',
-            priority: 2,
-            actionTip: '勤務中に 20分の短い昼寝を取ってみてください',
-          ),
-        );
+    // N198：1 日平均の不足で判定（30 分以上で改善推奨、60 分以上で要注意）
+    if (sleepDebt != null) {
+      final shortage = formatSleepDuration(sleepDebt.shortage);
+      switch (sleepDebt.level) {
+        case SleepDebtLevel.notJudgeable:
+          break;  // N197：計算できないときは出さない
+        case SleepDebtLevel.alert:
+          advices.add(
+            SleepAdvice(
+              title: '睡眠不足が続いています',
+              description: '直近4週間、1日の睡眠が目安（7時間）より平均 $shortage 少なくなっています。'
+                  '不足が続くと、眠気や疲れが抜けにくくなります。'
+                  '勤務の前後や休みの日に、眠る時間を少しずつ増やしてみてください。'
+                  '${sleepDebt.belowNationalGuide ? nationalGuideNote(sleepDebt.averageSleep) : ''}',
+              category: 'debt',
+              priority: 1,
+              actionTip: '夜勤の前に仮眠を取る、勤務明けにまとまって眠れる時間を作るなど、勤務に合わせて眠る時間を確保してみてください',
+            ),
+          );
+        case SleepDebtLevel.improve:
+          advices.add(
+            SleepAdvice(
+              title: '睡眠時間を少し増やしてみましょう',
+              description: '直近4週間、1日の睡眠が目安（7時間）より平均 $shortage 少なめです。'
+                  '1日30分ほど眠る時間を増やすと、疲れが取れやすくなります。',
+              category: 'debt',
+              priority: 1,
+              actionTip: '次の勤務までの時間に合わせて、寝る時刻を30分早めるか、20〜30分の仮眠を足してみてください',
+            ),
+          );
+        case SleepDebtLevel.slight:
+          advices.add(
+            SleepAdvice(
+              title: '睡眠時間はおおむね目安どおりです',
+              description: '直近4週間、1日の睡眠が目安（7時間）より平均 $shortage 少なめですが、30分未満です。'
+                  '今の睡眠時間を保っていきましょう。',
+              category: 'debt',
+              priority: 3,
+            ),
+          );
+        case SleepDebtLevel.enough:
+          advices.add(
+            SleepAdvice(
+              title: '十分な睡眠が取れています',
+              description: '直近4週間の1日平均は目安（7時間）以上です。',
+              category: 'debt',
+              priority: 3,
+            ),
+          );
       }
-    } else {
-      advices.add(
-        SleepAdvice(
-          title: '十分な睡眠が取れています',
-          description: '睡眠負債が解消され、十分な睡眠が取れています。'
-              'あなたのシフトパターンと現在の睡眠習慣は良好なバランスが取れています。',
-          category: 'debt',
-          priority: 3,
-          actionTip: null,
-        ),
-      );
     }
 
     // ========== 分割睡眠ベースのアドバイス（有料版のみ）==========
