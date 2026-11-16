@@ -15,8 +15,14 @@ import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：isMainSl
 /// - SJL: 休日と平日の睡眠中点（中央時刻）の差
 /// - SRI: 24時間を細かい時間単位に分割し、連続2日間の一致度を算出
 class SJLSRICalculator {
-  /// N197：SJL・SRI を計算するのに必要なメイン睡眠の件数（過去 7 日）
-  static const int minMainRecordsForRhythm = 5;
+  /// N197：SJL を計算するのに必要なメイン睡眠の件数（過去 7 日）。N196 A：SJL 専用（SRI は sriMinComparedMinutes）
+  static const int minMainRecordsForSjl = 5;
+
+  /// N196 A：SRI で見る期間（now − 7 日〜now）
+  static const Duration sriWindow = Duration(days: 7);
+
+  /// N196 A：SRI を計算するのに必要な、比べた時間（4 日分。ちょうどを含む）
+  static const int sriMinComparedMinutes = 4 * 24 * 60;
 
   // ========================
   // SJL（社会的時差）計算
@@ -139,107 +145,69 @@ class SJLSRICalculator {
   // SRI（睡眠規則正しさ指数）計算
   // ========================
 
-  /// SRI を計算（Week 7 A 版：メイン睡眠のみ）
+  /// SRI を計算（N196 A：昼寝も含めたすべての睡眠で、24 時間ごとに比べる）
   ///
-  /// 24時間を1時間単位（24区間）に分割し、
-  /// 連続する2日間ペアで睡眠/覚醒の一致度を計算
-  ///
-  /// Parameters:
-  ///   - records: 過去7日間の睡眠記録（N197：メイン睡眠が minMainRecordsForRhythm 件以上必要）
-  ///   - hourIntervals: 時間単位（デフォルト: 1時間）
+  /// - 期間は now − 7 日〜now。記録中の睡眠があれば（recordingStart）、その開始までにする
+  /// - 1 分ごとに「寝ている／起きている」を決め、時刻 t と t + 24 時間を比べる
+  /// - 寝ているかは、記録中・途中で終わった記録を除くすべての睡眠の実際の日時で決める（0:00 をまたいでもよい。重なりは 1 回）
+  /// - 記録のない日（起床の日付に記録がない暦日）が関わる組は比べない（押し忘れの日を「起きていた」と数えない）
+  /// - 比べた時間が sriMinComparedMinutes（4 日分）未満なら null
   ///
   /// Returns:
-  ///   -100 ～ 100 の SRI スコア（N197：計算できなければ null）
+  ///   -100 ～ 100 の SRI スコア（200 × 一致した分 ÷ 比べた分 − 100）
   ///   - 100に近い: 毎日同じ時刻に規則正しく寝起き
   ///   - 0近辺: 不規則（時刻がバラバラ）
   ///   - マイナス: 大きく乱れている
   static double? calculateSRI(
     List<SleepRecord> records, {
-    int hourIntervals = 1,
+    DateTime? now,
+    DateTime? recordingStart,
   }) {
-    // ========== Week 7 A 修正: メイン睡眠のみをフィルタリング ==========
-    final primaryRecords = _filterPrimaryRecords(records);
-
-    if (primaryRecords.length < minMainRecordsForRhythm) {
-      debugPrint('[SJLSRICalculator] N197：SRI を計算できません（メイン睡眠 ${primaryRecords.length} 件。$minMainRecordsForRhythm 件以上が必要）');
-      return null;
+    const minutesPerDay = 24 * 60;
+    final windowEndNow = now ?? DateTime.now();
+    final windowStart = windowEndNow.subtract(sriWindow);
+    var windowEnd = windowEndNow;
+    if (recordingStart != null && recordingStart.isBefore(windowEnd)) {
+      windowEnd = recordingStart.isBefore(windowStart) ? windowStart : recordingStart;
     }
-    debugPrint('[SJLSRICalculator] Filtered ${records.length} records to ${primaryRecords.length} primary records for SRI');
-    // ====================================================================
+    final length = windowEnd.difference(windowStart).inMinutes;
 
-    // 日付でソート（古い順）
-    final sortedRecords = List<SleepRecord>.from(primaryRecords)
-      ..sort((a, b) => a.bedtime.compareTo(b.bedtime));
+    final finished = records.where((r) => !isUnfinishedSleepRecord(r)).toList();
+    final recordedDays = finished.map(sleepRecordWakeDay).toSet();
 
-    // 連続する2日間ペアを作成
-    final List<double> pairScores = [];
-
-    for (int i = 0; i < sortedRecords.length - 1; i++) {
-      final record1 = sortedRecords[i];
-      final record2 = sortedRecords[i + 1];
-
-      final pairScore = _calculatePairConsistency(record1, record2);
-      pairScores.add(pairScore);
-
-      print('[SRI] Pair ($i → ${i + 1}): ${pairScore.toStringAsFixed(1)}%');
-    }
-
-    if (pairScores.isEmpty) return null;  // N197：計算できない（メインが 5 件以上なら通らない）
-
-    // 全ペアの平均スコア
-    final sri = pairScores.fold(0.0, (a, b) => a + b) / pairScores.length;
-
-    // -100 ～ 100 の範囲に正規化
-    final normalizedSRI = (sri * 2) - 100;
-
-    print('[SJLSRICalculator] SRI = ${normalizedSRI.toStringAsFixed(1)}');
-
-    return normalizedSRI.clamp(-100.0, 100.0);
-  }
-
-  /// 2日間ペアの一致度を計算（0～100%）
-  ///
-  /// 24時間を1時間単位に分割し、各時間帯で
-  /// 「両方睡眠」または「両方覚醒」の状態にある確率を算出
-  static double _calculatePairConsistency(
-    SleepRecord record1,
-    SleepRecord record2,
-  ) {
-    int consistentHours = 0;
-    const totalHours = 24;
-
-    for (int hour = 0; hour < totalHours; hour++) {
-      final time = DateTime(2000, 1, 1, hour, 0);
-
-      final isSleeping1 = _isSleepingAtTime(record1, time);
-      final isSleeping2 = _isSleepingAtTime(record2, time);
-
-      // 両方睡眠 または 両方覚醒 → 一致
-      if (isSleeping1 == isSleeping2) {
-        consistentHours++;
+    // 1 分ごとの「寝ている」
+    final asleep = List<bool>.filled(length < 0 ? 0 : length, false);
+    for (final record in finished) {
+      final from = record.sleepStartTime.difference(windowStart).inMinutes;
+      final to = sleepRecordEnd(record).difference(windowStart).inMinutes;
+      for (var i = from < 0 ? 0 : from; i < to && i < asleep.length; i++) {
+        asleep[i] = true;
       }
     }
 
-    return (consistentHours / totalHours) * 100.0;
-  }
+    // 1 分ごとの「記録のある日か」
+    final valid = List<bool>.generate(asleep.length, (i) {
+      final time = windowStart.add(Duration(minutes: i));
+      return recordedDays.contains(DateTime(time.year, time.month, time.day));
+    });
 
-  /// 特定の時刻に睡眠状態にあるかを判定
-  ///
-  /// record: 睡眠記録
-  /// time: 判定対象の時刻（hour:minute）
-  static bool _isSleepingAtTime(SleepRecord record, DateTime time) {
-    final bedtimeOfDay = Duration(hours: record.bedtime.hour, minutes: record.bedtime.minute);
-    final wakeTimeOfDay = Duration(hours: record.wakeTime.hour, minutes: record.wakeTime.minute);
-    final checkTimeOfDay = Duration(hours: time.hour, minutes: time.minute);
-
-    // 睡眠が翌日にまたがるケース（例: 23:00 ～ 07:00）
-    if (wakeTimeOfDay < bedtimeOfDay) {
-      // 入眠～深夜0:00 または 0:00～起床時刻
-      return checkTimeOfDay >= bedtimeOfDay || checkTimeOfDay < wakeTimeOfDay;
-    } else {
-      // 同日内の睡眠
-      return checkTimeOfDay >= bedtimeOfDay && checkTimeOfDay < wakeTimeOfDay;
+    var compared = 0;
+    var matched = 0;
+    for (var i = 0; i + minutesPerDay < asleep.length; i++) {
+      if (!valid[i] || !valid[i + minutesPerDay]) continue;
+      compared++;
+      if (asleep[i] == asleep[i + minutesPerDay]) matched++;
     }
+
+    if (compared < sriMinComparedMinutes) {
+      debugPrint('[SJLSRICalculator] N196 A：SRI を計算できません'
+          '（比べた時間 $compared 分。$sriMinComparedMinutes 分以上が必要）');
+      return null;
+    }
+
+    final sri = 200 * matched / compared - 100;
+    debugPrint('[SJLSRICalculator] SRI = ${sri.toStringAsFixed(1)}（比べた $compared 分・一致 $matched 分）');
+    return sri.clamp(-100.0, 100.0);
   }
 
   // ========================

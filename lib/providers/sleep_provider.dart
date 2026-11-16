@@ -638,21 +638,21 @@ class SleepProvider extends ChangeNotifier {
   /// SJL・SRI・睡眠負債を計算
   void _calculateMetrics() {
     // SJL 計算（過去7日以上のデータが必要）
-    if (_last7DaysRecords.where(isMainSleepRecord).length >= SJLSRICalculator.minMainRecordsForRhythm) {  // N184：メイン睡眠の件数で数える
+    if (_last7DaysRecords.where(isMainSleepRecord).length >= SJLSRICalculator.minMainRecordsForSjl) {  // N184：メイン睡眠の件数で数える
       _sjl = SJLSRICalculator.calculateSJL(_last7DaysRecords);
     } else {
       _sjl = null;  // N183：記録が少ないときも計算できない扱い
     }
 
-    // SRI 計算（N197：過去 7 日のメイン睡眠が minMainRecordsForRhythm 件以上必要。少なければ null）
-    if (_last7DaysRecords.where(isMainSleepRecord).length >= SJLSRICalculator.minMainRecordsForRhythm) {
-      _sri = SJLSRICalculator.calculateSRI(_last7DaysRecords);
-    } else {
-      _sri = null;
-    }
+    // SRI 計算（N196 A：昼寝も含めたすべての睡眠で 24 時間ごとに比べる。比べた時間が 4 日分未満なら null。記録中なら開始まで）
+    final now = DateTime.now();
+    _sri = SJLSRICalculator.calculateSRI(
+      _last7DaysRecords,
+      now: now,
+      recordingStart: _isSleepingNow ? _sleepStartTime : null,
+    );
 
     // 睡眠負債計算（N198：直近 4 週間に記録のある日が 7 日未満なら null）
-    final now = DateTime.now();
     _sleepDebt = SJLSRICalculator.calculateSleepDebt(_last30DaysRecords, now: now);
     _sleepDebtRecordedDays = recentDailySleepTotals(_last30DaysRecords, now).length;
 

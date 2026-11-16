@@ -132,51 +132,103 @@ void main() {
     });
   });
 
-  group('calculateSRI（N184）', () {
-    // N197：メイン 5 件以上が必要なので 5 件にした
-    final mains = [
-      for (var day = 2; day <= 6; day++) rec('d$day', t(day, 23, 0)),
-    ];
+  group('calculateSRI（N196 A：すべての睡眠で 24 時間ごとに比べる）', () {
+    // now は 11/21 0:00。期間は 11/14 0:00〜11/21 0:00 で、11/14〜11/19 の各分を 24 時間後と比べる（最大 6 日分＝8640 分）
+    final now = t(21, 0);
+    double? sri(List<SleepRecord> records, {DateTime? recordingStart}) =>
+        SJLSRICalculator.calculateSRI(records, now: now, recordingStart: recordingStart);
+    Duration h(int hours) => Duration(hours: hours);
+    List<SleepRecord> daily(Iterable<int> days, int hour, Duration length, String prefix) => [
+          for (final day in days) rec('$prefix$day', t(day, hour), length: length),
+        ];
+    final allDays = [for (var d = 14; d <= 20; d++) d];
 
-    test('毎日 23:00〜7:00 なら 100', () {
-      expect(SJLSRICalculator.calculateSRI(mains), 100.0);
+    test('毎日 0:00〜8:00 なら 100', () {
+      expect(sri(daily(allDays, 0, h(8), 'm')), 100.0);
     });
 
-    test('昼寝や記録中の記録をはさんでも変わらない', () {
+    test('昼寝をする日としない日があれば下がる（3 日だけ 13〜14 時 → 約 91.7）', () {
+      final records = [...daily(allDays, 0, h(8), 'm'), ...daily([15, 17, 19], 13, h(1), 'n')];
+      // 合わないのは 6 組 × 60 分 = 360 分。200 × 8280 ÷ 8640 − 100
+      expect(sri(records), closeTo(91.67, 0.01));
+    });
+
+    test('毎日同じ時刻に分けて寝る人（9〜13 時＋20〜23 時）は 100（メインがなくても出す）', () {
+      final records = [...daily(allDays, 9, h(4), 'a'), ...daily(allDays, 20, h(3), 'b')];
+      expect(sri(records), 100.0);
+    });
+
+    test('日勤と夜勤が入れ替わる人（0〜7 時 × 3 日 → 9〜16 時 × 3 日 → 0〜8 時）は約 59.7', () {
       final records = [
-        ...mains,
-        rec('nap', t(3, 13, 0), length: const Duration(hours: 1)),
-        rec('recording', t(5, 15, 0), length: const Duration(hours: 16)).copyWith(durationMinutes: 0),
+        ...daily([14, 15, 16], 0, h(7), 'd'),
+        ...daily([17, 18, 19], 9, h(7), 'n'),
+        ...daily([20], 0, h(8), 'o'),
       ];
-      expect(SJLSRICalculator.calculateSRI(records), 100.0);
+      // 入れ替わる 2 組だけ一致が 10/24・9/24。(4 + 19/24) ÷ 6 × 200 − 100
+      expect(sri(records), closeTo(59.72, 0.01));
+    });
+
+    test('0:00 をまたぐ睡眠（23:00〜7:00）も日時で比べる。記録中なら期間をその開始までにする', () {
+      final records = [
+        ...daily([13, 14, 15, 16, 17, 18, 19], 23, h(8), 'm'),
+        rec('recording', t(20, 23)).copyWith(durationMinutes: 0),
+      ];
+      expect(sri(records, recordingStart: t(20, 23)), 100.0);
+      // 記録中を考えないと、11/20 23:00〜24:00 を「起きていた」と数えて 60 分合わない
+      expect(sri(records), closeTo(200 * 8580 / 8640 - 100, 0.0001));
+    });
+
+    test('重なった記録は 1 回だけ「寝ている」と数える', () {
+      final records = [...daily(allDays, 0, h(8), 'm'), rec('dup', t(16, 2), length: h(2))];
+      expect(sri(records), 100.0);
+    });
+
+    test('記録のない日が関わる組は比べない（押し忘れの日を「起きていた」と数えない）', () {
+      final records = daily(allDays.where((d) => d != 17), 0, h(8), 'm');
+      expect(sri(records), 100.0);
+    });
+
+    test('途中で終わった記録（記録中）は睡眠にも記録のある日にも数えない', () {
+      final records = [
+        ...daily(allDays.where((d) => d != 17), 0, h(8), 'm'),
+        rec('broken', t(17, 0)).copyWith(durationMinutes: 0),
+      ];
+      expect(sri(records), 100.0);
+    });
+
+    test('比べた時間が 4 日分（5760 分）ちょうどなら出す、5759 分なら null', () {
+      final records = daily(allDays.where((d) => d != 17), 0, h(8), 'm');
+      // 11/17 がないので 11/16→17・11/17→18 の 2 組を比べず、4 組＝5760 分
+      expect(sri(records), isNotNull);
+      // 記録中の開始を 11/20 23:59 にすると 1 分減って 5759 分
+      expect(sri(records, recordingStart: t(20, 23, 59)), isNull);
+    });
+
+    test('記録のない日が 2 日あって 2 組しか比べられなければ null', () {
+      expect(sri(daily(allDays.where((d) => d != 17 && d != 19), 0, h(8), 'm')), isNull);
+    });
+
+    test('記録がない・記録中だけなら null', () {
+      expect(sri(const []), isNull);
+      expect(sri(daily(allDays, 0, h(8), 'r').map((r) => r.copyWith(durationMinutes: 0)).toList()), isNull);
+    });
+
+    test('記録中の開始が期間より前なら null', () {
+      expect(sri(daily(allDays, 0, h(8), 'm'), recordingStart: t(13, 0)), isNull);
+    });
+
+    test('昼寝だけでも毎日同じ時刻なら 100', () {
+      expect(sri(daily(allDays, 13, h(1), 'n')), 100.0);
+    });
+
+    test('定数：期間 7 日・4 日分（5760 分）', () {
+      expect(SJLSRICalculator.sriWindow, const Duration(days: 7));
+      expect(SJLSRICalculator.sriMinComparedMinutes, 5760);
     });
   });
 
-  group('calculateSRI（N197：計算できなければ null）', () {
-    test('メインが 4 件なら null、5 件なら値を出す', () {
-      final four = [for (var day = 2; day <= 5; day++) rec('d$day', t(day, 23, 0))];
-      expect(SJLSRICalculator.calculateSRI(four), isNull);
-      expect(SJLSRICalculator.calculateSRI([...four, rec('d6', t(6, 23, 0))]), 100.0);
-    });
-
-    test('昼寝だけ・記録中だけなら null', () {
-      final naps = [
-        for (var day = 2; day <= 8; day++) rec('n$day', t(day, 13, 0), length: const Duration(hours: 1)),
-      ];
-      final recordings = [
-        for (var day = 2; day <= 8; day++) rec('r$day', t(day, 23, 0)).copyWith(durationMinutes: 0),
-      ];
-      expect(SJLSRICalculator.calculateSRI(naps), isNull);
-      expect(SJLSRICalculator.calculateSRI(recordings), isNull);
-    });
-
-    test('記録がなければ null', () {
-      expect(SJLSRICalculator.calculateSRI(const []), isNull);
-    });
-
-    test('件数の下限は 5', () {
-      expect(SJLSRICalculator.minMainRecordsForRhythm, 5);
-    });
+  test('N196 A：SJL のメインの件数の下限は 5（minMainRecordsForSjl）', () {
+    expect(SJLSRICalculator.minMainRecordsForSjl, 5);
   });
 
   group('calculateSleepDebt（N184 2/2：1 日ごと。N198：1 日平均・7 日以上）', () {
