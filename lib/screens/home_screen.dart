@@ -14,6 +14,7 @@ import 'package:shiftsleep/services/shift_draft.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';  // N186
 import 'package:shiftsleep/services/sleep_debt.dart';  // N198 2/2
+import 'package:shiftsleep/services/medical_consult_dismiss_store.dart';  // N202
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -84,6 +85,107 @@ const String sleepDebtCapNote = '※寝すぎた日の分は 1 日 1 時間ま�
 /// N198 2/2：目標の表示（7h 00m の形）
 String formatSleepDebtTarget(Duration target) =>
     '${target.inHours}h ${(target.inMinutes % 60).toString().padLeft(2, '0')}m';
+
+/// N202：医師への相談のすすめの文言（病名は出さない）
+const String medicalConsultMessage =
+    'ここ 2 週間、睡眠が目安（1日7時間）より 1 日平均 1 時間以上少ない状態が続いています。'
+    '眠気や体調の不調が続くときは、産業医やかかりつけの医師に相談してみるのもひとつの方法です。';
+
+/// N202：小さい文字で添える一言
+const String medicalConsultDisclaimer = '※このアプリは病気の診断をするものではありません。';
+
+/// N202：カードの色（青系。Wong 2011 の Blue。赤と緑は使わず、文字は背景との明るさの差を 4.5:1 以上）
+const Color medicalConsultBg = Color(0xFFE3F2FD);
+const Color medicalConsultBorder = Color(0xFF0072B2);
+const Color medicalConsultText = AppColors.textPrimary;
+const Color medicalConsultSubText = Color(0xFF555555);
+const Color medicalConsultAction = Color(0xFF01579B);
+
+/// N202：医師への相談をすすめる小さなカード（睡眠負債のカードのすぐ下）
+/// - 出すかどうか（2 週続けて要注意）は呼び出し側（SleepProvider.suggestsMedicalConsult）
+/// - ［閉じる］で閉じた日時を保存し、14 日間は出さない（MedicalConsultDismissStore）
+class MedicalConsultCard extends StatefulWidget {
+  const MedicalConsultCard({super.key});
+
+  @override
+  State<MedicalConsultCard> createState() => _MedicalConsultCardState();
+}
+
+class _MedicalConsultCardState extends State<MedicalConsultCard> {
+  bool _loaded = false;
+  bool _hidden = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final dismissedAt = await MedicalConsultDismissStore.load();
+    if (!mounted) return;
+    setState(() {
+      _loaded = true;
+      _hidden = isMedicalConsultSnoozed(dismissedAt, DateTime.now());
+    });
+  }
+
+  Future<void> _dismiss() async {
+    setState(() => _hidden = true);
+    await MedicalConsultDismissStore.save(DateTime.now());  // 保存できなくても、この画面では閉じたまま
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded || _hidden) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppDimensions.paddingSmall,
+        horizontal: AppDimensions.sectionPaddingHorizontal,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppDimensions.paddingMedium),
+        decoration: BoxDecoration(
+          color: medicalConsultBg,
+          border: Border.all(color: medicalConsultBorder, width: 2.0),
+          borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline, size: 20, color: medicalConsultBorder),
+                const SizedBox(width: AppDimensions.paddingSmall),
+                Expanded(
+                  child: Text(
+                    medicalConsultMessage,
+                    style: AppTextStyles.bodyTextStyle.copyWith(color: medicalConsultText),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDimensions.paddingSmall),
+            Text(
+              medicalConsultDisclaimer,
+              style: AppTextStyles.descriptionStyle.copyWith(color: medicalConsultSubText),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _dismiss,
+                style: TextButton.styleFrom(foregroundColor: medicalConsultAction),
+                child: const Text('閉じる'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1925,6 +2027,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ],
                 ),
               ),
+              // N202：2 週続けて睡眠負債が要注意なら、医師への相談をすすめる（無料版でも出す。閉じたら 14 日出さない）
+              if (sleepProvider.suggestsMedicalConsult) const MedicalConsultCard(),
                             // ========== Week 9-1 追加: 睡眠集計セクション（当日/今週/今月）==========
                             // Wong 2011 パレット対応（色盲アクセシビリティ）
                             Container(

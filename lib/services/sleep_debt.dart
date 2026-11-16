@@ -118,6 +118,30 @@ SleepDebtSummary? summarizeSleepDebt(
 SleepDebtSummary? recentSleepDebt(Iterable<SleepRecord> records, DateTime now) =>
     summarizeSleepDebt(recentDailySleepTotals(records, now));
 
+/// N202：医師への相談をすすめるのに見る週の数（今日を含む 7 日・その前の 7 日）
+const int medicalConsultWeeks = 2;
+
+/// N202：1 週ごとに判定に必要な、記録のある日の数（ちょうどを含む）
+const int medicalConsultMinDaysPerWeek = 4;
+
+/// N202：直近 2 週を 1 週ずつ（today − 6 〜 today、today − 13 〜 today − 7）summarizeSleepDebt で判定し、
+/// 両方の週とも「要注意」（1 日平均の不足 60 分以上）なら true
+/// - 記録のある日が 4 日未満の週があれば false（出さない）
+/// - SRI・SJL は見ない（交代勤務では構造的に悪い値が出るため）
+bool shouldSuggestMedicalConsult(Iterable<SleepRecord> records, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  for (var week = 0; week < medicalConsultWeeks; week++) {
+    final lastDay = DateTime(today.year, today.month, today.day - 7 * week);
+    final firstDay = DateTime(lastDay.year, lastDay.month, lastDay.day - 6);
+    final summary = summarizeSleepDebt(
+      dailySleepTotals(records, firstDay: firstDay, lastDay: lastDay),
+      minDays: medicalConsultMinDaysPerWeek,
+    );
+    if (summary == null || summary.level != SleepDebtLevel.alert) return false;
+  }
+  return true;
+}
+
 /// 評価の文言
 String sleepDebtEvaluationText(SleepDebtLevel level) {
   switch (level) {

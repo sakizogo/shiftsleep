@@ -234,6 +234,9 @@ class SleepProvider extends ChangeNotifier {
   /// N198：「※寝すぎた日の分は 1 日 1 時間までしか差し引いていません」を出すか
   bool get showsSleepDebtCapNote => _sleepDebt?.showsSurplusCapNote ?? false;
 
+  /// N202：2 週続けて睡眠負債が「要注意」なら、医師への相談をすすめる（閉じたかどうかはカードの側で見る）
+  bool get suggestsMedicalConsult => shouldSuggestMedicalConsult(_last30DaysRecords, DateTime.now());
+
   // ========== Week 7 A 追加: 分割睡眠関連の Getter ==========
   
   /// N184：直近 24 時間に終わったメイン睡眠の合計（なければ --:--）
