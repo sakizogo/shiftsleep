@@ -86,6 +86,18 @@ const String sleepDebtCapNote = '※寝すぎた日の分は 1 日 1 時間ま�
 String formatSleepDebtTarget(Duration target) =>
     '${target.inHours}h ${(target.inMinutes % 60).toString().padLeft(2, '0')}m';
 
+/// N196 A 2/2：「あなたの体内時計」の文（SJL だけで判定。SRI は見ない）
+/// - SJL が null：記録が足りない・時刻がばらばら・5 時間未満に分けて寝ている（メイン睡眠がない）
+String bodyClockMessage(double? sjl) {
+  if (sjl == null) {
+    return '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレ（SJL）を計算できません。'
+        '5時間未満に分けて寝ている場合も計算できません。';
+  }
+  if (sjl >= 2) return 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。';
+  if (sjl >= 1) return 'SJLが1時間以上あるため、体内時計がやや乱れています。';
+  return '体内時計は正常範囲です。良好な睡眠リズムを維持してください。';
+}
+
 /// N202：医師への相談のすすめの文言（病名は出さない）
 const String medicalConsultMessage =
     'ここ 2 週間、睡眠が目安（1日7時間）より 1 日平均 1 時間以上少ない状態が続いています。'
@@ -1331,13 +1343,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 6.0),
                           Text(
-                            sleepProvider.sjl == null || sleepProvider.sri == null  // N197：どちらかが計算できない
-                                ? '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレを計算できません。'  // N183
-                                : sleepProvider.sjl! >= 2
-                                ? 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。'
-                                : sleepProvider.sjl! >= 1
-                                    ? 'SJLが1時間以上あるため、体内時計がやや乱れています。'
-                                    : '体内時計は正常範囲です。良好な睡眠リズムを維持してください。',
+                            bodyClockMessage(sleepProvider.sjl),  // N196 A 2/2：SJL だけで判定
                             style: AppTextStyles.descriptionStyle.copyWith(
                               color: AppColors.textSecondary,
                             ),

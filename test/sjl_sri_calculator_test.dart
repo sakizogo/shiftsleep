@@ -322,6 +322,58 @@ void main() {
     });
   });
 
+  group('generateAdvice の SRI（N196 A 2/2：シフト勤務に合う言い方）', () {
+    SleepAdvice sriAdvice(double sri) => SleepAdvisoryService.generateAdvice(
+          sjl: null,
+          sri: sri,
+          sleepDebt: null,
+          last7DaysRecords: const [],
+        ).where((a) => a.category == 'sri').single;
+
+    test('40 未満：priority 1・actionTip あり', () {
+      final advice = sriAdvice(39.9);
+      expect(advice.title, '睡眠の時間帯が日ごとに大きく変わっています');
+      expect(advice.priority, 1);
+      expect(advice.actionTip, '同じ勤務が続く日は寝る時間帯をそろえ、勤務が切り替わる前後は、無理のない範囲で数時間ずつずらしてみてください');
+    });
+
+    test('40〜60：priority 2・actionTip あり（40 ちょうどを含む）', () {
+      for (final sri in [40.0, 59.9]) {
+        final advice = sriAdvice(sri);
+        expect(advice.title, '睡眠の時間帯をもう少しそろえてみましょう');
+        expect(advice.priority, 2);
+        expect(advice.actionTip, '勤務が変わっても、毎回同じ数時間（例：4 時間ほど）は眠っている時間帯を作ってみてください');
+      }
+    });
+
+    test('60〜80：priority 2・actionTip なし（60 ちょうどを含む）', () {
+      for (final sri in [60.0, 79.9]) {
+        final advice = sriAdvice(sri);
+        expect(advice.title, '睡眠の時間帯はおおむねそろっています');
+        expect(advice.priority, 2);
+        expect(advice.actionTip, isNull);
+      }
+    });
+
+    test('80 以上：priority 3・actionTip なし', () {
+      final advice = sriAdvice(80.0);
+      expect(advice.title, '睡眠の時間帯がよくそろっています');
+      expect(advice.priority, 3);
+      expect(advice.actionTip, isNull);
+    });
+
+    test('「毎日 ±○分」「毎日同じ時刻」「完璧」などの言い方をしない', () {
+      for (final sri in [-20.0, 30.0, 50.0, 70.0, 90.0]) {
+        final advice = sriAdvice(sri);
+        final text = '${advice.title}${advice.description}${advice.actionTip ?? ''}';
+        expect(text, isNot(contains('±')));
+        expect(text, isNot(contains('毎日同じ時刻')));
+        expect(text, isNot(contains('完璧')));
+        expect(text, isNot(contains('素晴らしい')));
+      }
+    });
+  });
+
   group('generateAdvice の SJL', () {
     List<SleepAdvice> sjlAdvice(double? sjl) => SleepAdvisoryService.generateAdvice(
           sjl: sjl,
