@@ -13,6 +13,7 @@ import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
 import 'package:shiftsleep/services/shift_draft.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';  // N186
+import 'package:shiftsleep/services/sleep_debt.dart';  // N198 2/2
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -34,6 +35,55 @@ import 'package:shiftsleep/widgets/sleep_plan_card.dart';  // A-3 3/3
 
 // Week 3 Day 5: シフト管理画面内の詳細状態管理
 enum ShiftManagementView { calendar, details }
+
+/// N198 2/2：睡眠負債のカードの色（背景・枠・文字）
+class SleepDebtCardColors {
+  final Color background;
+  final Color border;
+  final Color text;
+
+  const SleepDebtCardColors({required this.background, required this.border, required this.text});
+}
+
+/// N198 2/2：段階ごとの色。1 型色覚でも区別できるよう赤と緑は使わず、明るさも変える（Wong 2011）
+/// - 要注意：朱色系（枠 #D55E00）、改善推奨：オレンジ系（枠 #E69F00）、少し不足・十分・判定できない：灰色系
+/// - 文字は背景との明るさの差を 4.5:1 以上にする（評価の文字と必ず一緒に出す）
+SleepDebtCardColors sleepDebtCardColors(SleepDebtLevel level) {
+  switch (level) {
+    case SleepDebtLevel.alert:
+      return const SleepDebtCardColors(
+        background: Color(0xFFFDF0E6),
+        border: Color(0xFFD55E00),
+        text: Color(0xFF9A3F00),
+      );
+    case SleepDebtLevel.improve:
+      return const SleepDebtCardColors(
+        background: Color(0xFFFFF7E6),
+        border: Color(0xFFE69F00),
+        text: Color(0xFF7A4F00),
+      );
+    case SleepDebtLevel.slight:
+    case SleepDebtLevel.enough:
+    case SleepDebtLevel.notJudgeable:
+      return const SleepDebtCardColors(
+        background: Color(0xFFF5F5F5),
+        border: Color(0xFF9E9E9E),
+        text: AppColors.textPrimary,
+      );
+  }
+}
+
+/// N198 2/2：睡眠負債を計算できないときの理由（0 日・1〜6 日）
+String sleepDebtUnavailableText(int recordedDays) => recordedDays == 0
+    ? '直近4週間の記録がないため、睡眠負債を計算できません。'
+    : '記録のある日が $sleepDebtMinDays 日以上になると計算できます（いまは $recordedDays 日）。';
+
+/// N198 2/2：上限（1 日 +1 時間）を当てたときの一言
+const String sleepDebtCapNote = '※寝すぎた日の分は 1 日 1 時間までしか差し引いていません';
+
+/// N198 2/2：目標の表示（7h 00m の形）
+String formatSleepDebtTarget(Duration target) =>
+    '${target.inHours}h ${(target.inMinutes % 60).toString().padLeft(2, '0')}m';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1763,36 +1813,60 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: AppDimensions.paddingMedium),
 
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(
-                        AppDimensions.paddingMedium,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.cardBgAlert,
-                        border: Border.all(
-                          color: AppColors.warningRed.withValues(alpha: 0.3),
-                          width: AppDimensions.borderWidthThin,
+                    // N198 2/2：1 日平均の不足を大きく、その下に説明と評価。枠の色は段階ごと（評価の文字と必ず一緒に出す）
+                    Builder(builder: (context) {
+                      final debtColors = sleepDebtCardColors(sleepProvider.sleepDebtLevel);
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(
+                          AppDimensions.paddingMedium,
                         ),
-                        borderRadius: BorderRadius.circular(
-                          AppDimensions.borderRadiusMedium,
+                        decoration: BoxDecoration(
+                          color: debtColors.background,
+                          border: Border.all(
+                            color: debtColors.border,
+                            width: 2.0,
+                          ),
+                          borderRadius: BorderRadius.circular(
+                            AppDimensions.borderRadiusMedium,
+                          ),
                         ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          sleepProvider.sleepDebtFormatted,
-                          style: AppTextStyles.debtNumberStyle,
+                        child: Column(
+                          children: [
+                            Text(
+                              sleepProvider.sleepDebtFormatted,
+                              style: AppTextStyles.debtNumberStyle.copyWith(
+                                color: debtColors.text,
+                              ),
+                            ),
+                            const SizedBox(height: 4.0),
+                            Text(
+                              '1日平均の不足（直近4週間）',
+                              style: AppTextStyles.descriptionStyle.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 4.0),
+                            Text(
+                              sleepProvider.sleepDebtEvaluation,
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                color: debtColors.text,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                    // N197：計算できないときは理由を出す
+                      );
+                    }),
+                    // N197：計算できないときは理由を出す（N198 2/2：記録のある日が 1〜6 日なら日数も）
                     if (sleepProvider.sleepDebt == null)
                       Padding(
                         padding: const EdgeInsets.only(
                           top: AppDimensions.paddingSmall,
                         ),
                         child: Text(
-                          '直近4週間の記録がないため、睡眠負債を計算できません。',
+                          sleepDebtUnavailableText(sleepProvider.sleepDebtRecordedDays),
                           style: AppTextStyles.descriptionStyle.copyWith(
                             color: AppColors.textSecondary,
                           ),
@@ -1826,7 +1900,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             const SizedBox(height: 4.0),
                             Text(
-                              '7h 00m',
+                              formatSleepDebtTarget(sleepDebtTarget),  // N198 2/2：定数から
                               style: AppTextStyles.statNumberStyle.copyWith(
                                 color: AppColors.primaryGradientStart,
                               ),
@@ -1835,6 +1909,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ],
                     ),
+                    // N198 2/2：上限（+1 時間）のために、大きい数字と「目標 − 1日平均」が違うときだけ
+                    if (sleepProvider.showsSleepDebtCapNote)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: AppDimensions.paddingSmall,
+                        ),
+                        child: Text(
+                          sleepDebtCapNote,
+                          style: AppTextStyles.descriptionStyle.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
