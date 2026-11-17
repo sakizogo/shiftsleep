@@ -141,10 +141,10 @@ class SleepProvider extends ChangeNotifier {
   /// 昨夜の睡眠時間（時間:分 形式の文字列）
   String get lastSleepDurationFormatted {
     final duration = lastSleepDuration;  // ✅ 新しい lastSleepDuration を使用
-    return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    return formatSleepDuration(duration);  // N199
   }
 
-  
+
   /// 昨夜の睡眠時間（Duration）- 警告判定用
   Duration get lastSleepDuration {
     if (_last7DaysRecords.isEmpty) {
@@ -239,10 +239,10 @@ class SleepProvider extends ChangeNotifier {
 
   // ========== Week 7 A 追加: 分割睡眠関連の Getter ==========
   
-  /// N184：直近 24 時間に終わったメイン睡眠の合計（なければ --:--）
+  /// N184：直近 24 時間に終わったメイン睡眠の合計（N199：なければ —。時刻の --:-- と分ける）
   String get lastPrimarySleepFormatted {
     final main = recentSleepBreakdown(_last7DaysRecords, DateTime.now()).main;
-    return main == null ? '--:--' : formatSleepDuration(main);
+    return main == null ? '—' : formatSleepDuration(main);
   }
 
   /// N184：直近 24 時間に終わった補助睡眠（昼寝・仮眠）の合計（なければ 0h 0m）
@@ -256,14 +256,14 @@ class SleepProvider extends ChangeNotifier {
   /// 過去7日間の平均睡眠時間（N184：長さが 5 時間以上の記録のみ。記録中は除く）
   String get averagePrimarySleepFormatted {
     final primaryRecords = _last7DaysRecords.where(isMainSleepRecord).toList();
-    if (primaryRecords.isEmpty) return '--:--';
+    if (primaryRecords.isEmpty) return '—';  // N199
     final total = primaryRecords.fold(Duration.zero, (sum, r) => sum + sleepRecordLength(r));
     return formatSleepDuration(total ~/ primaryRecords.length);
   }
 
   /// 理想睡眠時間の推奨（固定値: 7時間）
   String get recommendedSleepFormatted {
-    return '7h 0m';
+    return formatSleepDuration(const Duration(hours: 7));  // N199
   }
   // ========================================================================
 
@@ -803,8 +803,7 @@ class SleepProvider extends ChangeNotifier {
   /// 
   /// メイン睡眠 + 補助睡眠（昼寝など）の合計
   String get todaysSleepDurationFormatted {
-    final totalMinutes = todaysSplitSleepDuration.inMinutes;
-    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
+    return formatSleepDuration(todaysSplitSleepDuration);  // N199
   }
 
   /// 今週（月曜～日曜）の累計睡眠時間（時間:分 形式）
@@ -822,7 +821,7 @@ class SleepProvider extends ChangeNotifier {
         })
         .toList();
 
-    if (weekRecords.isEmpty) return '0h 0m';
+    if (weekRecords.isEmpty) return formatSleepDuration(Duration.zero);  // N199
     
     int totalMinutes = 0;
     for (final record in weekRecords) {
@@ -833,20 +832,20 @@ class SleepProvider extends ChangeNotifier {
         totalMinutes += duration.inMinutes;
       }
     }
-    
-    return '${totalMinutes ~/ 60}h ${totalMinutes % 60}m';
+
+    return formatSleepDuration(Duration(minutes: totalMinutes));  // N199
   }
 
   /// N184：今月（暦の 1 日〜今日）の 1 日あたりの平均（起床の日付で足す。昼寝を含む・記録中は除く）
   String get thisMonthAverageSleepFormatted {
     final average = averageDailySleep(thisMonthDailySleepTotals(_last30DaysRecords, DateTime.now()));
-    return average == null ? '--:--' : formatSleepDuration(average);
+    return average == null ? '—' : formatSleepDuration(average);  // N199
   }
 
   /// N184：直近 4 週間の 1 日あたりの平均（睡眠負債と同じ日で出す）
   String get recentDailyAverageSleepFormatted {
     final average = averageDailySleep(recentDailySleepTotals(_last30DaysRecords, DateTime.now()));
-    return average == null ? '--:--' : formatSleepDuration(average);
+    return average == null ? '—' : formatSleepDuration(average);  // N199
   }
   // ================================================================
   // ========== Week 8 追加: SharedPreferences 連携 ==========

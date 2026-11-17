@@ -120,19 +120,21 @@ void main() {
     });
   });
 
-  test('formatSleepDuration', () {
-    expect(formatSleepDuration(const Duration(hours: 7, minutes: 5)), '7h 5m');
-    expect(formatSleepDuration(Duration.zero), '0h 0m');
+  test('formatSleepDuration（N199：分は 2 桁）', () {
+    expect(formatSleepDuration(const Duration(hours: 7, minutes: 5)), '7h 05m');
+    expect(formatSleepDuration(const Duration(hours: 7)), '7h 00m');
+    expect(formatSleepDuration(const Duration(hours: 7, minutes: 30)), '7h 30m');
+    expect(formatSleepDuration(Duration.zero), '0h 00m');
   });
 
   test('N184 2/2：formatSleepDuration はマイナスに対応（-2 分が 0h 58m にならない）', () {
-    expect(formatSleepDuration(const Duration(minutes: -2)), '-0h 2m');
-    expect(formatSleepDuration(const Duration(hours: -1, minutes: -5)), '-1h 5m');
+    expect(formatSleepDuration(const Duration(minutes: -2)), '-0h 02m');
+    expect(formatSleepDuration(const Duration(hours: -1, minutes: -5)), '-1h 05m');
   });
 
   test('N184 2/2：formatSignedSleepDuration', () {
-    expect(formatSignedSleepDuration(const Duration(minutes: -2)), '-0h 2m');
-    expect(formatSignedSleepDuration(Duration.zero), '+0h 0m');
+    expect(formatSignedSleepDuration(const Duration(minutes: -2)), '-0h 02m');
+    expect(formatSignedSleepDuration(Duration.zero), '+0h 00m');
     expect(formatSignedSleepDuration(const Duration(hours: 2, minutes: 30)), '+2h 30m');
   });
 

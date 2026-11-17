@@ -92,7 +92,7 @@ void main() {
       final d = debt(records)!;
       expect(d.days, 7);
       expect(d.dailyBalance, Duration.zero);
-      expect(formatDailySleepDebt(d.dailyBalance), '+0h 0m／日');
+      expect(formatDailySleepDebt(d.dailyBalance), '+0h 00m／日');
     });
   });
 
@@ -151,8 +151,9 @@ void main() {
       expect(sleepDebtEvaluationText(SleepDebtLevel.alert), '要注意（1日平均60分以上の不足）');
     });
 
-    test('大きい数字の表示（-1h 5m／日・+0h 40m／日）', () {
-      expect(formatDailySleepDebt(const Duration(minutes: -65)), '-1h 5m／日');
+    test('大きい数字の表示（N199：-1h 05m／日・+0h 40m／日・-2h 24m／日）', () {
+      expect(formatDailySleepDebt(const Duration(minutes: -65)), '-1h 05m／日');
+      expect(formatDailySleepDebt(const Duration(minutes: -144)), '-2h 24m／日');
       expect(formatDailySleepDebt(const Duration(minutes: 40)), '+0h 40m／日');
     });
 
@@ -176,7 +177,7 @@ void main() {
     test('要注意：priority 1・不足の時間を文に入れる・actionTip は寝方を決めつけない文', () {
       final advice = debtAdvice(debt(sevenDays(h(6))))!;
       expect(advice.priority, 1);
-      expect(advice.description, contains('平均 1h 0m 少なく'));
+      expect(advice.description, contains('平均 1h 00m 少なく'));
       expect(advice.description, isNot(contains('国の睡眠ガイド')));  // 6h ちょうどは出さない
       expect(
         advice.actionTip,

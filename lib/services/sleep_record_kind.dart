@@ -110,10 +110,10 @@ Duration? averageDailySleep(Map<DateTime, Duration> totals) {
   return sum ~/ totals.length;
 }
 
-/// 睡眠時間の表示（7h 30m の形。マイナスなら -0h 2m）
+/// 睡眠時間の表示（N199：分は 2 桁。7h 05m の形。マイナスなら -0h 02m）
 String formatSleepDuration(Duration duration) {
   if (duration.isNegative) return '-${formatSleepDuration(-duration)}';
-  return '${duration.inHours}h ${duration.inMinutes % 60}m';
+  return '${duration.inHours}h ${(duration.inMinutes % 60).toString().padLeft(2, '0')}m';
 }
 
 /// 睡眠負債の表示（0 以上なら +、マイナスなら -）

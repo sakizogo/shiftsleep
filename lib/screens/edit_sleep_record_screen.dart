@@ -6,6 +6,7 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'package:shiftsleep/services/sleep_record_validation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -502,7 +503,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
 
           // Sleep Duration Number
           Text(
-            '${hours}h ${minutes}m',
+            formatSleepDuration(adjustedDuration),  // N199
             style: AppTextStyles.largeNumberStyle.copyWith(
               fontSize: 40,
               color: isGood

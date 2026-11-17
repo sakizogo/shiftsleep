@@ -14,6 +14,7 @@ import 'package:shiftsleep/services/shift_draft.dart';
 import 'package:shiftsleep/services/sleep_preference_service.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';  // N186
 import 'package:shiftsleep/services/sleep_debt.dart';  // N198 2/2
+import 'package:shiftsleep/services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'package:shiftsleep/services/medical_consult_dismiss_store.dart';  // N202
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
@@ -82,9 +83,8 @@ String sleepDebtUnavailableText(int recordedDays) => recordedDays == 0
 /// N198 2/2：上限（1 日 +1 時間）を当てたときの一言
 const String sleepDebtCapNote = '※寝すぎた日の分は 1 日 1 時間までしか差し引いていません';
 
-/// N198 2/2：目標の表示（7h 00m の形）
-String formatSleepDebtTarget(Duration target) =>
-    '${target.inHours}h ${(target.inMinutes % 60).toString().padLeft(2, '0')}m';
+/// N198 2/2：目標の表示（7h 00m の形。N199：共通の formatSleepDuration）
+String formatSleepDebtTarget(Duration target) => formatSleepDuration(target);
 
 /// N196 A 2/2：「あなたの体内時計」の文（SJL だけで判定。SRI は見ない）
 /// - SJL が null：記録が足りない・時刻がばらばら・5 時間未満に分けて寝ている（メイン睡眠がない）

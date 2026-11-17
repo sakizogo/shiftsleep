@@ -5,6 +5,7 @@ import '../constants/text_styles.dart';
 import '../models/sleep_record.dart';
 import '../providers/sleep_provider.dart';
 import '../repositories/sleep_repository.dart';
+import '../services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'edit_sleep_record_screen.dart';
 
 class SleepRecordsScreen extends StatefulWidget {
@@ -129,9 +130,7 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
             itemCount: records.length,
             itemBuilder: (context, index) {
               final record = records[index];
-              final duration = record.durationMinutes;
-              final hours = duration ~/ 60;
-              final minutes = duration % 60;
+              final duration = Duration(minutes: record.durationMinutes);
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12.0),
@@ -169,7 +168,7 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                           Row(
                             children: [
                               Text(
-                                '${hours}h ${minutes}m',
+                                formatSleepDuration(duration),  // N199
                                 style: AppTextStyles.statNumberStyle.copyWith(
                                   color: AppColors.warningRed,
                                 ),
