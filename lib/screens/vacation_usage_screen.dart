@@ -24,6 +24,8 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   late VacationRepository _repository;
   final ShiftRepository _shiftRepository = ShiftRepository();  // N101
   late TextEditingController _reasonController;
+  // N120：画面全体を 1 つのスクロールに。追加フォームを開いたら一番上へ戻す
+  final ScrollController _scrollController = ScrollController();
 
   DateTime? _selectedUsageDate;
   double? _selectedDaysUsed;  // ========== Week 14 追加：選択された使用日数（1.0 or 0.5） ==========
@@ -50,6 +52,7 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
   @override
   void dispose() {
     _reasonController.dispose();
+    _scrollController.dispose();  // N120
     super.dispose();
   }
 
@@ -297,6 +300,33 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
     _loadData();
   }
 
+  /// N120：追加フォームを開く。履歴を下まで見ていてもフォームが見えるよう、一番上へ戻す
+  void _openAddForm() {
+    setState(() {
+      _showAddForm = true;
+      _selectedUsageDate = null;
+      _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  /// N120（D3）：追加フォームの「閉じる」。今までの ✕ と同じく入力を消してから閉じる
+  void _closeAddForm() {
+    setState(() {
+      _showAddForm = false;
+      _reasonController.clear();
+      _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
+      _selectedUsageDate = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loadState == VacationLoadState.loading) {
@@ -319,9 +349,12 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
         title: const Text('有給使用記録'),
         elevation: 0,
       ),
-      body: Column(
+      // N120：統計・フォーム・履歴をまとめて 1 つのスクロールに。下は「使用記録を追加」とかぶらない余白
+      body: ListView(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(bottom: 96.0),
         children: [
-          // 📊 統計情報（上部固定）
+          // 📊 統計情報
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Card(
@@ -598,6 +631,15 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                           ),
                         ),
                       ),
+                      // N120（D1・D3）：✕ の代わりの「閉じる」。今の ✕ と同じく入力を消してから閉じる
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed: _closeAddForm,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        child: const Text('閉じる'),
+                      ),
                     ],
                   ),
                 ),
@@ -607,147 +649,129 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
           const SizedBox(height: 16),
 
           // 📝 使用履歴一覧
-          Expanded(
-            child: _usageList.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+          // N120：外側の ListView に並べる（記録がないときは上下に余白をつけて出す）
+          if (_usageList.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32.0),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.calendar_today_outlined,
+                    size: 48,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '有給使用記録がありません',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ..._usageList.map((usage) {
+              // N66：今日より後の使用は「予定」。色だけでなく文字でも分かるようにする
+              final now = DateTime.now();
+              final isPlanned = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day)
+                  .isAfter(DateTime(now.year, now.month, now.day));
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Card(
+                  elevation: 1,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListTile(
+                    leading: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Text(
+                          usage.daysUsed == 0.5 ? '🌤️' : '🏖️',
+                          style: const TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    ),
+                    title: Row(
                       children: [
-                        Icon(
-                          Icons.calendar_today_outlined,
-                          size: 48,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
                         Text(
-                          '有給使用記録がありません',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey[600],
-                          ),
+                          DateFormat('M月d日(E)', 'ja_JP')
+                              .format(usage.usageDate),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
+                        if (isPlanned) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade600),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '予定',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    itemCount: _usageList.length,
-                    itemBuilder: (context, index) {
-                      final usage = _usageList[index];
-                      // N66：今日より後の使用は「予定」。色だけでなく文字でも分かるようにする
-                      final now = DateTime.now();
-                      final isPlanned = DateTime(usage.usageDate.year, usage.usageDate.month, usage.usageDate.day)
-                          .isAfter(DateTime(now.year, now.month, now.day));
-                      return Card(
-                        elevation: 1,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ListTile(
-                          leading: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Text(
-                                usage.daysUsed == 0.5 ? '🌤️' : '🏖️',
-                                style: const TextStyle(fontSize: 24),
-                              ),
-                            ),
-                          ),
-                          title: Row(
-                            children: [
-                              Text(
-                                DateFormat('M月d日(E)', 'ja_JP')
-                                    .format(usage.usageDate),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              if (isPlanned) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.grey.shade600),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    '予定',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade800,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text(
-                                isPlanned
-                                    ? '${usage.daysUsed.toStringAsFixed(1)}日使用（予定）'
-                                    : '${usage.daysUsed.toStringAsFixed(1)}日使用',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              if (usage.reason != null &&
-                                  usage.reason!.isNotEmpty)
-                                Text(
-                                  usage.reason!,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline,
-                                color: Colors.red),
-                            onPressed: () =>
-                                _deleteVacationUsage(usage),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(
+                          isPlanned
+                              ? '${usage.daysUsed.toStringAsFixed(1)}日使用（予定）'
+                              : '${usage.daysUsed.toStringAsFixed(1)}日使用',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
                           ),
                         ),
-                      );
-                    },
+                        if (usage.reason != null &&
+                            usage.reason!.isNotEmpty)
+                          Text(
+                            usage.reason!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline,
+                          color: Colors.red),
+                      onPressed: () =>
+                          _deleteVacationUsage(usage),
+                    ),
                   ),
-          ),
+                ),
+              );
+            }),
         ],
       ),
+      // N120：✕ の FAB はやめ、フォームを開いている間はボタンを出さない（閉じるはフォームの中）
       floatingActionButton: !_showAddForm
           ? FloatingActionButton.extended(
-              onPressed: () {
-                setState(() {
-                  _showAddForm = true;
-                  _selectedUsageDate = null;
-                  _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
-                });
-              },
+              onPressed: _openAddForm,
               icon: const Icon(Icons.add),
               label: const Text('使用記録を追加'),
             )
-          : FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  _showAddForm = false;
-                  _reasonController.clear();
-                  _selectedDaysUsed = null;  // ========== Week 14 修正：リセット ==========
-                  _selectedUsageDate = null;
-                });
-              },
-              backgroundColor: Colors.red,
-              child: const Icon(Icons.close),
-            ),
+          : null,
     );
   }
 }
