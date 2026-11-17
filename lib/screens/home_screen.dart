@@ -1764,39 +1764,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                         ),
 
-// ========== 「全てのアドバイスを見る」ボタン ==========
-                      if (sleepProvider.hasAdvice)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            top: AppDimensions.paddingMedium,
-                          ),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        AdviceDetailScreen(),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.arrow_forward),
-                              label: const Text('全てのアドバイスを見る'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    AppColors.primaryGradientStart,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppDimensions.borderRadiusMedium,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        
                       // ========== 追加アドバイス（有料版のみ）==========
                       if (sleepProvider.isPremiumUser &&
                           sleepProvider.displayedAdvice.length > 1)
@@ -1860,6 +1827,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       ),
                                     )),
                           ],
+                        ),
+
+                      // ========== 「全てのアドバイスを見る」ボタン ==========
+                      // N206：アドバイスの間に挟まらないよう、2 件目以降のあと（一番下）に置く
+                      if (sleepProvider.hasAdvice)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: AppDimensions.paddingMedium,
+                          ),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        AdviceDetailScreen(),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.arrow_forward),
+                              label: const Text('全てのアドバイスを見る'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    AppColors.primaryGradientStart,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    AppDimensions.borderRadiusMedium,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                     ],
                   ),

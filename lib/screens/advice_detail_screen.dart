@@ -203,7 +203,7 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                                         ),
                                         const SizedBox(height: 8),
                                         Text(
-                                          'プレミアム版ではここに「${advice.title}」を実行するための具体的な方法が表示されます。\n\n例：毎日のアラーム設定時刻、食事のタイミング、運動の頻度など、すぐに実行できるアクション情報が満載です。',
+                                          'プレミアム版では、このアドバイスを毎日の睡眠に生かすための短いヒントが表示されます。',  // N207：実際の実行ヒント（寝る時刻・仮眠など）に合わせ、言いすぎない
                                           style: AppTextStyles.noteStyle,
                                         ),
                                       ],
