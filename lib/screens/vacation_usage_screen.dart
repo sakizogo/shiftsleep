@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:shiftsleep/constants/colors.dart';  // N86
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
@@ -352,16 +353,17 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('有効な付与日数（持ち越し含む）',
-                                  style: TextStyle(color: Colors.grey)),
+                              // N85：数字を上・ラベルを下に。N86：付与の数字は textPrimary
                               Text(
                                 '${_summary?.totalGranted ?? 0}日',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.green,
+                                  color: AppColors.textPrimary,
                                 ),
                               ),
+                              const Text('有効な付与日数（持ち越し含む）',
+                                  style: TextStyle(color: AppColors.textSecondary)),
                             ],
                           ),
                         ),
@@ -370,16 +372,17 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('うち使用（予定含む）',
-                                  style: TextStyle(color: Colors.grey)),
+                              // N86：ホームの有給統計と同じ色（赤をやめる）
                               Text(
                                 '${_summary?.totalUsed.toStringAsFixed(1) ?? '0'}日',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.red,
+                                  color: AppColors.vacationUsedText,
                                 ),
                               ),
+                              const Text('うち使用（予定含む）',
+                                  style: TextStyle(color: AppColors.textSecondary)),
                             ],
                           ),
                         ),
@@ -388,16 +391,16 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('残日数',
-                                  style: TextStyle(color: Colors.grey)),
                               Text(
                                 '${_totalRemainingDays.toStringAsFixed(1)}日',
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.blue,
+                                  color: AppColors.vacationRemainingText,
                                 ),
                               ),
+                              const Text('残日数',
+                                  style: TextStyle(color: AppColors.textSecondary)),
                             ],
                           ),
                         ),
