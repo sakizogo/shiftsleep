@@ -375,7 +375,7 @@ class DayPlan {
   /// 日付（時刻なし）
   final DateTime date;
 
-  /// その日に始まる勤務（開始の早い順）
+  /// その日に始まる勤務（開始の早い順）。0:00〜4:59 に始まる勤務は前日に入る。終わった勤務は入れない（N205）
   final List<WorkShift> shifts;
 
   /// その日の睡眠（入眠の早い順）。0:00〜4:59 に寝る睡眠は前日の夜として前日に入る（D33）
@@ -829,6 +829,23 @@ _PlanCore? _buildCore({
   );
 }
 
+/// N205：その時刻が入る日（5:00 で日を切る。0:00〜4:59 は前の日の夜）
+/// 3 日分の欄・勤務と睡眠の振り分け・日の呼び方（今夜／明日など）で同じ日の切り方を使う
+DateTime planDayOf(DateTime time) {
+  final shifted = time.subtract(Duration(hours: nextDayStartBoundary.hour, minutes: nextDayStartBoundary.minute));
+  return DateTime(shifted.year, shifted.month, shifted.day);
+}
+
+/// N205：3 日分の欄の日付（最初は planDayOf(now)。0:00〜4:59 なら端末の日付より 1 日前）
+List<DateTime> planDayDates(DateTime now) {
+  final first = planDayOf(now);
+  return [for (var i = 0; i < 3; i++) DateTime(first.year, first.month, first.day + i)];
+}
+
+/// N205：3 日分の一覧に出す勤務か（終わりが今より前の勤務は出さない。ちょうど今終わる・勤務中・これからは出す）
+/// 表示だけの判定。前の勤務・次の勤務などの計算には使わない
+bool planShiftShownInDays(WorkShift shift, {required DateTime now}) => !shift.endAt.isBefore(now);
+
 /// 3 日分（今日・明日・あさって）を作る（D32〜D35・D39）
 /// - 本当の now（勤務中ならその勤務の終わり。D40）と、範囲の中の勤務の終わりの時点ごとに _buildCore を呼び、main と追加の睡眠を集める
 ///   （先に集めたものと重なるものは足さない）
@@ -843,9 +860,10 @@ List<DayPlan> _buildDays({
   required DateTime? sleepingSince,
   required _PlanCore realCore,
 }) {
-  final today = DateTime(now.year, now.month, now.day);
-  final dates = [for (var i = 0; i < 3; i++) DateTime(today.year, today.month, today.day + i)];
-  final horizonEnd = DateTime(today.year, today.month, today.day + 3);
+  // N205：欄は 5:00 で日を切る（見出しの呼び方とそろえる）。終わりはあさっての欄の終わり（その次の日の 5:00）
+  final dates = planDayDates(now);
+  final horizonEnd = DateTime(dates.first.year, dates.first.month, dates.first.day + 3,
+      nextDayStartBoundary.hour, nextDayStartBoundary.minute);
   final collected = <PlannedSleep>[];
 
   bool overlapsCollected(DateTime start, DateTime end) =>
@@ -907,21 +925,16 @@ List<DayPlan> _buildDays({
     if (window != null) collected.add(PlannedSleep(kind: PlannedSleepKind.usualNight, window: window));
   }
 
-  final boundary = Duration(hours: nextDayStartBoundary.hour, minutes: nextDayStartBoundary.minute);
-  DateTime dayOf(DateTime sleepAt) {
-    final shifted = sleepAt.subtract(boundary);
-    return DateTime(shifted.year, shifted.month, shifted.day);
-  }
-
   bool sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   return [
     for (final date in dates)
       DayPlan(
         date: date,
-        shifts: shifts.where((s) => sameDay(s.startAt, date)).toList()
+        // N205：勤務も 5:00 で日を切る（0:00〜4:59 に始まる勤務は前の日の欄。N180 の登録の仕方と同じ）。終わった勤務は出さない
+        shifts: shifts.where((s) => sameDay(planDayOf(s.startAt), date) && planShiftShownInDays(s, now: now)).toList()
           ..sort((a, b) => a.startAt.compareTo(b.startAt)),
-        sleeps: collected.where((s) => sameDay(dayOf(s.window.sleepAt), date)).toList()
+        sleeps: collected.where((s) => sameDay(planDayOf(s.window.sleepAt), date)).toList()
           ..sort((a, b) => a.window.sleepAt.compareTo(b.window.sleepAt)),
       ),
   ];

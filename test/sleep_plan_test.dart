@@ -675,26 +675,28 @@ void main() {
   });
 
   group('3 日分（days）', () {
+    // N205：0:00 開始の深夜（N）は、登録した前の日の欄に入る（N180）
     test('16. 3 交代 ① 夜勤→休み→日勤', () {
       expectDays((plan(t(17, 9), shiftsOf({16: nightN, 18: dayD}))), [
-        (t(17, 0), [t(17, 0)], [(afterK, t(17, 10), t(17, 14)), (mainK, t(18, 0), t(18, 7))]),
+        (t(17, 0), <DateTime>[], [(afterK, t(17, 10), t(17, 14)), (mainK, t(18, 0), t(18, 7))]),
         (t(18, 0), [t(18, 8)], [(usualK, t(19, 0), t(19, 7))]),
         (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
       ]);
     });
 
+    // N205：17:00 に終わった日勤は、18:00 に見ると一覧に出さない
     test('16. 3 交代 ② 日勤→夜勤', () {
       expectDays((plan(t(16, 18), shiftsOf({16: dayD, 17: nightN}))), [
-        (t(16, 0), [t(16, 8)], [(mainK, t(17, 1), t(17, 8))]),
-        (t(17, 0), <DateTime>[], [(napK, t(17, 21, 30), t(17, 23))]),
-        (t(18, 0), [t(18, 0)], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
+        (t(16, 0), <DateTime>[], [(mainK, t(17, 1), t(17, 8))]),
+        (t(17, 0), [t(18, 0)], [(napK, t(17, 21, 30), t(17, 23))]),
+        (t(18, 0), <DateTime>[], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
       ]);
     });
 
     test('16. 3 交代 ③ 連続夜勤', () {
       expectDays((plan(t(17, 9), shiftsOf({16: nightN, 17: nightN}))), [
-        (t(17, 0), [t(17, 0)], [(mainK, t(17, 10), t(17, 17)), (napK, t(17, 21, 30), t(17, 23))]),
-        (t(18, 0), [t(18, 0)], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
+        (t(17, 0), [t(18, 0)], [(mainK, t(17, 10), t(17, 17)), (napK, t(17, 21, 30), t(17, 23))]),
+        (t(18, 0), <DateTime>[], [(mainK, t(18, 10), t(18, 14)), (followK, t(19, 0), t(19, 7))]),
         (t(19, 0), <DateTime>[], [(usualK, t(20, 0), t(20, 7))]),
       ]);
     });
@@ -709,7 +711,7 @@ void main() {
 
     test('16. 2 交代 ② 日勤→夜勤', () {
       expectDays((plan(t(16, 18), shiftsOf({16: dayD, 17: nightNt}))), [
-        (t(16, 0), [t(16, 8)], [(mainK, t(17, 1), t(17, 8))]),
+        (t(16, 0), <DateTime>[], [(mainK, t(17, 1), t(17, 8))]),
         (t(17, 0), [t(17, 20)], [(napK, t(17, 17, 30), t(17, 19))]),
         (t(18, 0), <DateTime>[], [(mainK, t(18, 6), t(18, 10)), (followK, t(19, 0), t(19, 7))]),
       ]);
@@ -761,6 +763,48 @@ void main() {
       final days = plan(t(17, 5), shiftsOf({16: nightNt, 18: dayD}), baseline: early)!.days;
       expect(days[1].sleeps.single.window.sleepAt, t(18, 23, 30));
       expect(days[1].sleeps.single.window.wakeAt, t(19, 6, 30));
+    });
+
+    test('N205-1. 2:47 に見ると欄は前の日から。今夜の睡眠は最初の欄、8:30 の勤務は次の欄', () {
+      final days = plan(t(17, 2, 47), shiftsOf({17: work('T', hm(8, 30), hm(17, 0))}))!.days;
+      expect(days.map((d) => d.date), [t(16, 0), t(17, 0), t(18, 0)]);
+      expect(days[0].shifts, isEmpty);
+      expect(days[0].sleeps.first.kind, mainK);
+      expect(days[0].sleeps.first.window.sleepAt, t(17, 2, 47));
+      expect(days[1].shifts.map((s) => s.startAt), [t(17, 8, 30)]);
+    });
+
+    test('N205-2. N180：0:00〜4:59 に始まる勤務は、登録した（前の日の）欄に出る', () {
+      final n2 = work('N2', hm(2, 0), hm(10, 0));
+      // 水の欄に登録 → 木 2:00 開始。火 12:00 に見ると「明日（水）」の欄
+      final tomorrow = plan(t(17, 12), shiftsOf({18: n2}))!.days;
+      expect(tomorrow[1].shifts.map((s) => s.startAt), [t(19, 2)]);
+      expect(tomorrow[2].shifts, isEmpty);
+      // 木の欄に登録 → 金 2:00 開始。「あさって（木）」の欄の終わり（金 5:00）より前なのでこぼれない
+      // （それだけだと 48 時間より先で勤務なしになるので、水の日勤も入れる）
+      final dayAfter = plan(t(17, 12), shiftsOf({18: dayD, 19: n2}))!.days;
+      expect(dayAfter.map((d) => d.date), [t(17, 0), t(18, 0), t(19, 0)]);
+      expect(dayAfter[1].shifts.map((s) => s.startAt), [t(18, 8)]);
+      expect(dayAfter[2].shifts.map((s) => s.startAt), [t(20, 2)]);
+    });
+
+    test('N205-3. planShiftShownInDays：終わった勤務だけ出さない', () {
+      final shift = shiftsOf({17: dayD}).single;  // 火 8:00〜17:00
+      expect(planShiftShownInDays(shift, now: t(17, 18)), isFalse);  // 終わった
+      expect(planShiftShownInDays(shift, now: t(17, 17)), isTrue);  // 今ちょうど終わる
+      expect(planShiftShownInDays(shift, now: t(17, 12)), isTrue);  // 勤務中
+      expect(planShiftShownInDays(shift, now: t(17, 6)), isTrue);  // これから
+    });
+
+    test('N205-4. 2:47 に見ると、前の日に終わった勤務は一覧に出ない（目安の計算には使う）', () {
+      final testShift = work('T', hm(8, 30), hm(17, 0));
+      final result = plan(t(17, 2, 47), shiftsOf({16: testShift, 17: testShift}))!;
+      expect(result.days[0].date, t(16, 0));
+      expect(result.days[0].shifts, isEmpty);
+      expect(result.days[1].shifts.map((s) => s.startAt), [t(17, 8, 30)]);
+      // 前の勤務（月 17:00 に終わった勤務）は、計算ではそのまま使う
+      expect(result.previous?.endAt, t(16, 17));
+      expect(result.next?.startAt, t(17, 8, 30));
     });
   });
 

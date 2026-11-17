@@ -150,8 +150,8 @@ void main() {
       // 3 日分の行も、その日を基準に書く
       final days = text(t(16, 18), shiftsOf({16: dayD, 17: nightNt})).days;
       expect(days.first.title, '今日 11/16（月）');
-      // N188：3 日分の main は「寝る」「起きる」の 2 行
-      expect(days.first.lines, ['勤務　日勤 8:00〜17:00', '寝る 翌 1:00 ごろ', '起きる 翌 8:00 ごろ（7 時間）']);
+      // N188：3 日分の main は「寝る」「起きる」の 2 行。N205：17:00 に終わった日勤は 18:00 に見ると出さない
+      expect(days.first.lines, ['寝る 翌 1:00 ごろ', '起きる 翌 8:00 ごろ（7 時間）']);
       expect(days[1].title, '明日 11/17（火）');
       expect(days[1].lines, ['仮眠の目安 17:30〜19:00 ごろ（90 分ほど）', '勤務　夜勤 20:00〜翌 5:00']);
       expect(days[2].title, 'あさって 11/18（水）');
@@ -411,6 +411,55 @@ void main() {
         expect(line, isNot(contains('休みの日に')), reason: line);
         expect(line, isNot(contains('次の休みで')), reason: line);
       }
+    });
+  });
+
+  group('N205：3 日分の欄を 5:00 で切る', () {
+    final test830 = work('テスト', hm(8, 30), hm(17, 0));
+
+    test('1. planDayOf：2:47・4:59 は前の日、5:00・12:00 はその日', () {
+      expect(planDayOf(t(17, 2, 47)), t(16, 0));
+      expect(planDayOf(t(17, 4, 59)), t(16, 0));
+      expect(planDayOf(t(17, 5)), t(17, 0));
+      expect(planDayOf(t(17, 12)), t(17, 0));
+    });
+
+    test('2. planDayDates：0:00〜4:59 は最初の欄が端末の日付より 1 日前', () {
+      expect(planDayDates(t(17, 2, 47)), [t(16, 0), t(17, 0), t(18, 0)]);
+      expect(planDayDates(t(17, 4, 59)), [t(16, 0), t(17, 0), t(18, 0)]);
+      expect(planDayDates(t(17, 5)), [t(17, 0), t(18, 0), t(19, 0)]);
+      expect(planDayDates(t(17, 12)), [t(17, 0), t(18, 0), t(19, 0)]);
+    });
+
+    test('3. planDayTitle：0:00〜4:59 の最初の欄だけ夜をまたぐ書き方', () {
+      for (final now in [t(17, 2, 47), t(17, 4, 59)]) {
+        final dates = planDayDates(now);
+        expect([for (var i = 0; i < 3; i++) planDayTitle(i, dates[i], now: now)],
+            ['今夜 11/16（月）〜17（火）', '明日 11/17（火）', 'あさって 11/18（水）'], reason: '$now');
+      }
+      for (final now in [t(17, 5), t(17, 12)]) {
+        final dates = planDayDates(now);
+        expect([for (var i = 0; i < 3; i++) planDayTitle(i, dates[i], now: now)],
+            ['今日 11/17（火）', '明日 11/18（水）', 'あさって 11/19（木）'], reason: '$now');
+      }
+      // 月が変わるときは、終わりの日にも月を書く
+      expect(planDayTitle(0, DateTime(2026, 11, 30), now: DateTime(2026, 12, 1, 2)), '今夜 11/30（月）〜12/1（火）');
+    });
+
+    test('4. 2:47 に 8:30 の勤務：今夜の睡眠は最初の欄、勤務は「明日」の欄（見出しの「明日」とそろう）', () {
+      final result = text(t(17, 2, 47), shiftsOf({17: test830}));
+      expect(result.subline, startsWith('明日 8:30 からの'));
+      expect(result.days[0].title, '今夜 11/16（月）〜17（火）');
+      expect(result.days[0].lines.take(2), ['寝る 翌 2:45 ごろ', '起きる 翌 7:30 ごろ（4 時間 45 分）']);
+      expect(result.days[1].title, '明日 11/17（火）');
+      expect(result.days[1].lines.first, '勤務　テスト 8:30〜17:00');
+    });
+
+    test('5. 12:00 に見ると、同じ勤務の前の睡眠は「今日」の欄に 2 行で出る', () {
+      final days = text(t(17, 12), shiftsOf({18: test830})).days;
+      expect(days[0].title, '今日 11/17（火）');
+      expect(days[0].lines, contains('起きる 翌 7:30 ごろ（7 時間）'));
+      expect(days[1].lines.first, '勤務　テスト 8:30〜17:00');
     });
   });
 }

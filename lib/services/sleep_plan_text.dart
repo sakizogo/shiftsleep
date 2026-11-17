@@ -95,9 +95,8 @@ class SleepPlanText {
 
 DateTime _date(DateTime time) => DateTime(time.year, time.month, time.day);
 
-/// その時刻が属する夜の日（5:00 より前は前日）
-DateTime _nightKey(DateTime time) =>
-    _date(time.subtract(Duration(hours: nextDayStartBoundary.hour, minutes: nextDayStartBoundary.minute)));
+/// その時刻が属する夜の日（5:00 より前は前日）。N205：3 日分の欄と同じ planDayOf を使う
+DateTime _nightKey(DateTime time) => planDayOf(time);
 
 int _daysBetween(DateTime from, DateTime to) =>
     DateTime.utc(to.year, to.month, to.day).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
@@ -119,6 +118,19 @@ String planTime(DateTime time, {required DateTime baseDate, bool sameNight = fal
     return '翌 ${planTimeOfDay(time)}';
   }
   return '${planMonthDay(_date(time))} ${planTimeOfDay(time)}';
+}
+
+/// N205：3 日分の欄の見出し（今日／明日／あさって＋日付）
+/// 0:00〜4:59 は最初の欄が端末の日付より 1 日前になるので、最初の欄だけ夜をまたぐ書き方にする
+/// （「今夜 11/16（月）〜17（火）」。月が変わるなら「今夜 11/30（月）〜12/1（火）」）
+String planDayTitle(int index, DateTime date, {required DateTime now}) {
+  if (index == 0 && date.isBefore(_date(now))) {
+    final next = DateTime(date.year, date.month, date.day + 1);
+    final nextText = next.month == date.month ? '${next.day}（${_weekdays[next.weekday - 1]}）' : planMonthDay(next);
+    return '今夜 ${planMonthDay(date)}〜$nextText';
+  }
+  const dayNames = ['今日', '明日', 'あさって'];
+  return '${index < dayNames.length ? dayNames[index] : ''} ${planMonthDay(date)}'.trim();
 }
 
 /// 18:00〜4:59 に始まるものは夜（D53）
@@ -369,7 +381,6 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
       plan.scene == SleepScene.quickReturn ||
       (plan.scene == SleepScene.nightToDay && next?.kind == ShiftKind.evening);
 
-  const dayNames = ['今日', '明日', 'あさって'];
   final days = <SleepDayText>[];
   for (var i = 0; i < plan.days.length; i++) {
     final day = plan.days[i];
@@ -397,7 +408,7 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
         return byTime != 0 ? byTime : a.order.compareTo(b.order);
       });
     days.add(SleepDayText(
-      title: '${i < dayNames.length ? dayNames[i] : ''} ${planMonthDay(day.date)}'.trim(),
+      title: planDayTitle(i, day.date, now: now),
       lines: [for (final entry in entries) ...entry.lines],
     ));
   }
