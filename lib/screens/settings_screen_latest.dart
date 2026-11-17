@@ -888,7 +888,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         child: CheckboxListTile(
                           title: Text(
-                            '□ この設定を毎日使用する',
+                            'この設定を毎日使用する',  // N194：チェックボックスと重なるので「□」は付けない
                             style: AppTextStyles.bodyTextStyle.copyWith(
                               fontWeight: FontWeight.w600,
                               fontSize: 13,

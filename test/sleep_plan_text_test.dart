@@ -150,7 +150,8 @@ void main() {
       // 3 日分の行も、その日を基準に書く
       final days = text(t(16, 18), shiftsOf({16: dayD, 17: nightNt})).days;
       expect(days.first.title, '今日 11/16（月）');
-      expect(days.first.lines, ['勤務　日勤 8:00〜17:00', '寝る目安 翌 1:00 ごろ → 起きる目安 翌 8:00 ごろ（7 時間）']);
+      // N188：3 日分の main は「寝る」「起きる」の 2 行
+      expect(days.first.lines, ['勤務　日勤 8:00〜17:00', '寝る 翌 1:00 ごろ', '起きる 翌 8:00 ごろ（7 時間）']);
       expect(days[1].title, '明日 11/17（火）');
       expect(days[1].lines, ['仮眠の目安 17:30〜19:00 ごろ（90 分ほど）', '勤務　夜勤 20:00〜翌 5:00']);
       expect(days[2].title, 'あさって 11/18（水）');

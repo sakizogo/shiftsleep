@@ -271,7 +271,7 @@ class _VacationStatsWidgetState extends State<VacationStatsWidget> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '⏰ 有給消滅予定',
+                            '有給消滅予定',  // N194：アイコンと重なるので絵文字は付けない
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,

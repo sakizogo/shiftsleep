@@ -246,6 +246,16 @@ String _mainWindowText(SleepWindow window, DateTime baseDate, {bool sameNight = 
       '起きる目安 ${planTime(end, baseDate: baseDate, sameNight: sameNight)} ごろ（${planDuration(end.difference(start))}）';
 }
 
+/// N188：3 日分の main は 2 行に分ける（「寝る 23:00 ごろ」「起きる 翌 6:00 ごろ（7 時間）」）
+List<String> _mainDayLines(SleepWindow window, DateTime baseDate) {
+  final start = _shownSleepAt(window);
+  final end = _shownWakeAt(window);
+  return [
+    '寝る ${planTime(start, baseDate: baseDate)} ごろ',
+    '起きる ${planTime(end, baseDate: baseDate)} ごろ（${planDuration(end.difference(start))}）',
+  ];
+}
+
 /// 追加の睡眠の書き方：「仮眠の目安 17:30〜19:00 ごろ（90 分ほど）」（「ごろ」は最後に 1 回）
 /// F3：始まりと終わりが同じ日で、始まりが基準の日より後なら、終わりには「翌」や日付を付けない（「翌 0:00〜7:00 ごろ」）
 String _extraWindowText(PlannedSleepKind kind, SleepWindow window, DateTime baseDate, {bool sameNight = false}) {
@@ -363,24 +373,32 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
   final days = <SleepDayText>[];
   for (var i = 0; i < plan.days.length; i++) {
     final day = plan.days[i];
-    final entries = <({DateTime at, String text})>[
+    // N188：main は「寝る」「起きる」の 2 行。同じ時刻の行どうしは lines の順のまま（sort は安定でないため order で決める）
+    final entries = <({DateTime at, int order, List<String> lines})>[
       for (final shift in day.shifts)
         (
           at: shift.startAt,
-          text: '勤務　${shift.pattern.patternName} ${planTime(shift.startAt, baseDate: day.date)}〜'
-              '${planTime(shift.endAt, baseDate: day.date)}',
+          order: 0,
+          lines: [
+            '勤務　${shift.pattern.patternName} ${planTime(shift.startAt, baseDate: day.date)}〜'
+                '${planTime(shift.endAt, baseDate: day.date)}',
+          ],
         ),
       for (final sleep in day.sleeps)
         (
           at: sleep.window.sleepAt,
-          text: sleep.kind == PlannedSleepKind.main
-              ? _mainWindowText(sleep.window, day.date)
-              : _extraWindowText(sleep.kind, sleep.window, day.date),
+          order: 1,
+          lines: sleep.kind == PlannedSleepKind.main
+              ? _mainDayLines(sleep.window, day.date)
+              : [_extraWindowText(sleep.kind, sleep.window, day.date)],
         ),
-    ]..sort((a, b) => a.at.compareTo(b.at));
+    ]..sort((a, b) {
+        final byTime = a.at.compareTo(b.at);
+        return byTime != 0 ? byTime : a.order.compareTo(b.order);
+      });
     days.add(SleepDayText(
       title: '${i < dayNames.length ? dayNames[i] : ''} ${planMonthDay(day.date)}'.trim(),
-      lines: [for (final entry in entries) entry.text],
+      lines: [for (final entry in entries) ...entry.lines],
     ));
   }
 

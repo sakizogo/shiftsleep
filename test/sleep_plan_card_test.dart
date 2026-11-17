@@ -312,7 +312,9 @@ void main() {
 
     await pumpCard(tester, _ScriptedLoader([inputsOf(null)]));
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-    expect(find.textContaining('⚠️'), findsOneWidget);
+    // N194：⚠️ はアイコンだけで出し、文には絵文字を重ねない
+    expect(find.text(sleepPlanShiftsFailedText), findsOneWidget);
+    expect(find.textContaining('⚠️'), findsNothing);
     await unmount(tester);
   });
 

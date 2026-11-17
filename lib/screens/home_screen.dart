@@ -1568,9 +1568,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: AppColors.primaryGradientStart,
                           ),
                           const SizedBox(width: AppDimensions.paddingSmall),
-                          Text(
-                            '💡 改善アドバイス',
-                            style: AppTextStyles.sectionTitleStyle,
+                          // N194：アイコンと重なるので文字の絵文字は付けない。大きい文字でもはみ出さないよう Flexible
+                          Flexible(
+                            child: Text(
+                              '改善アドバイス',
+                              style: AppTextStyles.sectionTitleStyle,
+                            ),
                           ),
                           if (sleepProvider.isPremiumUser)
                             Padding(
@@ -1855,32 +1858,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     )),
                           ],
                         ),
-
-                      // ========== 「もっと見る」ボタン（有料版のみ）==========
-                      if (sleepProvider.isPremiumUser &&
-                          sleepProvider.allAdvice.length >
-                              sleepProvider.displayedAdvice.length)
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            top: AppDimensions.paddingMedium,
-                          ),
-                          child: Center(
-                            child: TextButton(
-                              onPressed: () {
-                                // TODO: 詳細アドバイス画面へ遷移
-                                print(
-                                    'Navigate to detailed advice screen');
-                              },
-                              child: Text(
-                                '全てのアドバイスを見る',
-                                style: AppTextStyles.labelStyle.copyWith(
-                                  color: AppColors.primaryGradientStart,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -2098,13 +2075,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                 textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 6.0),
-                                              Text(
-                                                sleepProvider.todaysSleepDurationFormatted,
-                                                style: AppTextStyles.statNumberStyle.copyWith(
-                                                  fontSize: 16,
-                                                  color: AppColors.summaryTodayText,
+                                              // 大きい文字でも数字が折り返さず枠に収まるよう、縮めて 1 行で出す
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Text(
+                                                  sleepProvider.todaysSleepDurationFormatted,
+                                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                                    fontSize: 16,
+                                                    color: AppColors.summaryTodayText,
+                                                  ),
+                                                  textAlign: TextAlign.center,
                                                 ),
-                                                textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 4.0),
                                               Text(
@@ -2147,13 +2128,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                 textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 6.0),
-                                              Text(
-                                                sleepProvider.thisWeekTotalSleepFormatted,
-                                                style: AppTextStyles.statNumberStyle.copyWith(
-                                                  fontSize: 16,
-                                                  color: AppColors.summaryWeekText,
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Text(
+                                                  sleepProvider.thisWeekTotalSleepFormatted,
+                                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                                    fontSize: 16,
+                                                    color: AppColors.summaryWeekText,
+                                                  ),
+                                                  textAlign: TextAlign.center,
                                                 ),
-                                                textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 4.0),
                                               Text(
@@ -2196,13 +2180,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                                 textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 6.0),
-                                              Text(
-                                                sleepProvider.thisMonthAverageSleepFormatted,
-                                                style: AppTextStyles.statNumberStyle.copyWith(
-                                                  fontSize: 16,
-                                                  color: AppColors.summaryMonthText,
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                child: Text(
+                                                  sleepProvider.thisMonthAverageSleepFormatted,
+                                                  style: AppTextStyles.statNumberStyle.copyWith(
+                                                    fontSize: 16,
+                                                    color: AppColors.summaryMonthText,
+                                                  ),
+                                                  textAlign: TextAlign.center,
                                                 ),
-                                                textAlign: TextAlign.center,
                                               ),
                                               const SizedBox(height: 4.0),
                                               Text(

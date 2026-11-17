@@ -125,6 +125,11 @@ void main() {
     expect(recordsFailed.fewRecordsLine, isNull);
 
     expect(model(t(16, 18), inputsOf(dayToDay)).warnings, isEmpty);
+
+    // N194：カードが ⚠️ のアイコンを出すので、文には絵文字を付けない
+    for (final text in [sleepPlanShiftsFailedText, sleepPlanSettingsFailedText, sleepPlanRecordsFailedText]) {
+      expect(text, isNot(contains('⚠️')));
+    }
   });
 
   test('9. 記録が少ないときだけ、記録が少ない行を出す', () {

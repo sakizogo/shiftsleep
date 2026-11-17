@@ -406,9 +406,11 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
         if (text.styleNote != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Row(
+            // 大きい文字で 1 行に入らないときは、［変える ›］を次の行に回す
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(child: Text(text.styleNote!, style: const TextStyle(fontSize: 12, color: Colors.black54))),
+                Text(text.styleNote!, style: const TextStyle(fontSize: 12, color: Colors.black54)),
                 TextButton(onPressed: _changeStyle, child: const Text('変える ›')),
               ],
             ),

@@ -24,14 +24,14 @@ enum SleepPlanCardState {
   failed,
 }
 
-/// 勤務・パターンを読めなかったときの文
-const String sleepPlanShiftsFailedText = '⚠️ シフトを読み込めなかったため、目安を出せません';
+/// 勤務・パターンを読めなかったときの文（N194：カードが ⚠️ のアイコンを出すので、文には絵文字を付けない）
+const String sleepPlanShiftsFailedText = 'シフトを読み込めなかったため、目安を出せません';
 
 /// 設定を読めなかったときの文
-const String sleepPlanSettingsFailedText = '⚠️ 設定を読めなかったため、出勤 $defaultAlarmMinutesBefore 分前で計算しています';
+const String sleepPlanSettingsFailedText = '設定を読めなかったため、出勤 $defaultAlarmMinutesBefore 分前で計算しています';
 
 /// 睡眠記録を読めなかったときの文
-const String sleepPlanRecordsFailedText = '⚠️ 睡眠の記録を読めなかったため、7 時間の目安です';
+const String sleepPlanRecordsFailedText = '睡眠の記録を読めなかったため、7 時間の目安です';
 
 /// 記録が少ないときの文（D70）
 const String sleepPlanFewRecordsText = 'ℹ️ 記録がまだ少ないため、7 時間・7:00 起きで出しています';
