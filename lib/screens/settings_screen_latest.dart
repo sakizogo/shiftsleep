@@ -584,7 +584,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(
               vertical: AppDimensions.sectionPaddingVertical,
-              horizontal: AppDimensions.sectionPaddingHorizontal,
+              horizontal: AppDimensions.paddingMedium,  // N13：左右の余白を 16px に
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -826,46 +826,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                          Row(
-                            children: [
-                              // ✨ 🆕 追加：Toggle Switch
-                              CupertinoSwitch(
-                                value: _isAlarmEnabled,
-                                // N123：処理中は押せない（null で無効表示）
-                                onChanged: _isAlarmBusy ? null : _onAlarmEnabledChanged,
-                              ),
-                              const SizedBox(width: 12),
-                              
-                              // 時刻表示
-                              Text(
-                                '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
-                                style: isUnsetTonight
-                                    ? AppTextStyles.largeNumberStyle.copyWith(fontSize: 32, color: AppColors.textMuted)
-                                    : AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
-                              ),
-                              const Spacer(),
-                              
-                              // 変更ボタン
-                              // N125：アラームの処理中は押せない
-                              // N118 2/4 2c：設定を読み込めるまでも押せない
-                              ElevatedButton(
-                                onPressed: canEdit ? () => _selectWakeUpTime(context) : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGradientStart,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                              Row(
+                                children: [
+                                  // ✨ 🆕 追加：Toggle Switch
+                                  CupertinoSwitch(
+                                    value: _isAlarmEnabled,
+                                    // N123：処理中は押せない（null で無効表示）
+                                    onChanged: _isAlarmBusy ? null : _onAlarmEnabledChanged,
                                   ),
-                                ),
-                                child: const Text(
-                                  '変更',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
+                                  const SizedBox(width: 12),
+                              
+                                  // 時刻表示
+                                  Text(
+                                    '${displayWakeUpTime.hour.toString().padLeft(2, '0')}:${displayWakeUpTime.minute.toString().padLeft(2, '0')}',
+                                    style: isUnsetTonight
+                                        ? AppTextStyles.largeNumberStyle.copyWith(fontSize: 32, color: AppColors.textMuted)
+                                        : AppTextStyles.largeNumberStyle.copyWith(fontSize: 32),
                                   ),
-                                ),
+                                  const Spacer(),
+                              
+                                  // 変更ボタン
+                                  // N125：アラームの処理中は押せない
+                                  // N118 2/4 2c：設定を読み込めるまでも押せない
+                                  ElevatedButton(
+                                    onPressed: canEdit ? () => _selectWakeUpTime(context) : null,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primaryGradientStart,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusSmall),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '変更',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
                               if (isUnsetTonight)
                                 Text(
                                   '今夜は未設定（「変更」で予約）',
