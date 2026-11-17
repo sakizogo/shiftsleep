@@ -6,6 +6,7 @@ import '../models/sleep_record.dart';
 import '../providers/sleep_provider.dart';
 import '../repositories/sleep_repository.dart';
 import '../services/sleep_record_kind.dart';  // N199：formatSleepDuration
+import '../widgets/sleep_duration_rating_badge.dart';  // N110
 import 'edit_sleep_record_screen.dart';
 
 class SleepRecordsScreen extends StatefulWidget {
@@ -131,6 +132,9 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
             itemBuilder: (context, index) {
               final record = records[index];
               final duration = Duration(minutes: record.durationMinutes);
+              final rating = sleepDurationRating(duration);  // N110：時間の色と札
+              final ratingLabel = rating.listLabel;
+              final wakeUpLabel = wakeUpTypeLabel(record.wakeUpType);  // N112
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12.0),
@@ -158,7 +162,7 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                           // N108：幅が足りないときは日付を「…」で縮める（睡眠時間は縮めない）
                           Expanded(
                             child: Text(
-                              '${record.sleepDate.year}年${record.sleepDate.month}月${record.sleepDate.day}日',
+                              formatSleepRecordListDate(record.sleepDate, DateTime.now()),  // 今年は年を省く（札が出ても日にちが見えるように）
                               style: AppTextStyles.sectionTitleStyle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -167,10 +171,15 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                           const SizedBox(width: 8.0),
                           Row(
                             children: [
+                              // N110：不足・長すぎのときだけ札（補助・良好は札なし）
+                              if (ratingLabel != null) ...[
+                                SleepDurationRatingBadge(rating: rating, label: ratingLabel),
+                                const SizedBox(width: 6.0),
+                              ],
                               Text(
                                 formatSleepDuration(duration),  // N199
                                 style: AppTextStyles.statNumberStyle.copyWith(
-                                  color: AppColors.warningRed,
+                                  color: sleepDurationRatingColor(rating),  // N110
                                 ),
                               ),
                               // N108：✏️ 修正ボタン（compact でタップの範囲は 40×40）
@@ -207,18 +216,21 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                         '起床: ${_formatTime(record.sleepEndTime)}',
                         style: AppTextStyles.bodyTextStyle,
                       ),
-                      const SizedBox(height: 8.0),
-                      Text(
-                        '起床タイプ: ${record.wakeUpType}',
-                        style: AppTextStyles.labelStyle,
-                      ),
+                      // N112：表示名がないとき（空など）は行を出さない
+                      if (wakeUpLabel != null) ...[
+                        const SizedBox(height: 8.0),
+                        Text(
+                          '起床タイプ: $wakeUpLabel',
+                          style: AppTextStyles.labelStyle,
+                        ),
+                      ],
                       if (record.modifiedCount > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0),
                           child: Text(
                             '修正回数: ${record.modifiedCount}',
                             style: AppTextStyles.labelStyle.copyWith(
-                              color: AppColors.warningRed,
+                              color: AppColors.textSecondary,  // 注意の印ではないので、ほかの補足と同じ灰色
                             ),
                           ),
                         ),

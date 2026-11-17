@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/models/sleep_record.dart';
+import 'package:shiftsleep/services/sleep_baseline.dart' show mainSleepMinAsleep;
 import 'package:shiftsleep/services/sleep_record_kind.dart';
 
 // N184：メイン睡眠・補助睡眠を記録 1 件ずつ長さで決める
@@ -216,5 +217,56 @@ void main() {
       expect(averageDailySleep(totals), const Duration(hours: 7));
       expect(averageDailySleep(const {}), isNull);
     });
+  });
+
+  group('N110：sleepDurationRating（補助／不足／良好／長すぎ）', () {
+    Duration hm(int h, [int m = 0]) => Duration(hours: h, minutes: m);
+
+    test('境目：4h59m 補助・5h00m 不足・5h59m 不足・6h00m 良好・20h00m 良好・20h01m 長すぎ', () {
+      expect(sleepDurationRating(hm(4, 59)), SleepDurationRating.supplementary);
+      expect(sleepDurationRating(hm(5)), SleepDurationRating.short);
+      expect(sleepDurationRating(hm(5, 59)), SleepDurationRating.short);
+      expect(sleepDurationRating(hm(6)), SleepDurationRating.good);
+      expect(sleepDurationRating(hm(20)), SleepDurationRating.good);
+      expect(sleepDurationRating(hm(20, 1)), SleepDurationRating.tooLong);
+    });
+
+    test('5h の境目はメイン睡眠と同じ（isMainSleepRecord とそろう）', () {
+      expect(sleepDurationRating(mainSleepMinAsleep), isNot(SleepDurationRating.supplementary));
+      expect(
+        sleepDurationRating(mainSleepMinAsleep - const Duration(minutes: 1)),
+        SleepDurationRating.supplementary,
+      );
+    });
+
+    test('20h ちょうどの 59 秒超は保存のチェックと同じく長すぎにしない（分で比べる）', () {
+      expect(sleepDurationRating(hm(20) + const Duration(seconds: 59)), SleepDurationRating.good);
+    });
+
+    test('札の文字：編集画面は 4 つとも出す、一覧は不足・長すぎだけ', () {
+      expect(SleepDurationRating.supplementary.editLabel, '補助（仮眠など）');
+      expect(SleepDurationRating.short.editLabel, '不足');
+      expect(SleepDurationRating.good.editLabel, '良好');
+      expect(SleepDurationRating.tooLong.editLabel, '長すぎ（保存できません）');
+      expect(SleepDurationRating.supplementary.listLabel, isNull);
+      expect(SleepDurationRating.short.listLabel, '不足');
+      expect(SleepDurationRating.good.listLabel, isNull);
+      expect(SleepDurationRating.tooLong.listLabel, '長すぎ');
+    });
+  });
+
+  test('一覧の日付：今年は年を省く・去年以前と来年は年つき・曜日つき', () {
+    final now = DateTime(2026, 11, 17, 9);
+    expect(formatSleepRecordListDate(DateTime(2026, 11, 11), now), '11月11日（水）');
+    expect(formatSleepRecordListDate(DateTime(2026, 1, 1), now), '1月1日（木）');
+    expect(formatSleepRecordListDate(DateTime(2025, 11, 11), now), '2025年11月11日（火）');
+    expect(formatSleepRecordListDate(DateTime(2025, 12, 31), DateTime(2026, 1, 1)), '2025年12月31日（水）');
+    expect(formatSleepRecordListDate(DateTime(2027, 1, 3), now), '2027年1月3日（日）');
+  });
+
+  test('N112：wakeUpTypeLabel（manual は手入力、空や知らない値は null）', () {
+    expect(wakeUpTypeLabel('manual'), '手入力');
+    expect(wakeUpTypeLabel(''), isNull);
+    expect(wakeUpTypeLabel('alarm'), isNull);
   });
 }

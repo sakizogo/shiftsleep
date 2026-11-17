@@ -8,6 +8,7 @@ import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'package:shiftsleep/services/sleep_record_validation.dart';
+import 'package:shiftsleep/widgets/sleep_duration_rating_badge.dart';  // N110
 import 'package:uuid/uuid.dart';
 
 class EditSleepRecordScreen extends StatefulWidget {
@@ -428,12 +429,11 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
     final adjustedDuration =
         duration.isNegative ? duration + Duration(days: 1) : duration;
 
-    final hours = adjustedDuration.inHours;
-    final minutes = adjustedDuration.inMinutes % 60;
-
-    // 睡眠時間に基づく評価
-    final totalHours = hours + (minutes / 60);
-    final isGood = totalHours >= 6;
+    // N110：補助／不足／良好／長すぎの 4 段（色だけに頼らず札の文字も出す）
+    final rating = sleepDurationRating(adjustedDuration);
+    final isGood = rating == SleepDurationRating.good ||
+        rating == SleepDurationRating.supplementary;
+    final ratingColor = sleepDurationRatingColor(rating);
 
     return Container(
       width: double.infinity,
@@ -473,28 +473,12 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingSmall,
-                  vertical: AppDimensions.paddingXSmall,
-                ),
-                decoration: BoxDecoration(
-                  color: isGood
-                      ? AppColors.primaryGradientStart.withOpacity(0.15)
-                      : AppColors.warningRed.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(
-                    AppDimensions.borderRadiusSmall,
-                  ),
-                ),
-                child: Text(
-                  isGood ? '良好' : '不足',
-                  style: AppTextStyles.captionStyle.copyWith(
-                    color: isGood
-                        ? AppColors.primaryGradientStart
-                        : AppColors.warningRed,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
+              // N110：札は白地（大きい文字でも縮むよう Flexible）
+              const SizedBox(width: AppDimensions.paddingSmall),
+              Flexible(
+                child: SleepDurationRatingBadge(
+                  rating: rating,
+                  label: rating.editLabel,
                 ),
               ),
             ],
@@ -506,9 +490,7 @@ class _EditSleepRecordScreenState extends State<EditSleepRecordScreen> {
             formatSleepDuration(adjustedDuration),  // N199
             style: AppTextStyles.largeNumberStyle.copyWith(
               fontSize: 40,
-              color: isGood
-                  ? AppColors.primaryGradientStart
-                  : AppColors.warningRed,
+              color: ratingColor,  // N110
             ),
           ),
           const SizedBox(height: AppDimensions.paddingSmall),

@@ -6,6 +6,7 @@
 // N184 2/2：睡眠負債・1 日平均は、起床の日付で 1 日ごとに足して出す
 import 'package:shiftsleep/models/sleep_record.dart';
 import 'package:shiftsleep/services/sleep_baseline.dart' show mainSleepMinAsleep;
+import 'package:shiftsleep/services/sleep_record_validation.dart' show SleepRecordValidation;  // N110
 
 /// ホームの「睡眠の内訳」で見る期間（終わりが now − 24 時間〜now の記録）
 const Duration recentSleepWindow = Duration(hours: 24);
@@ -119,3 +120,71 @@ String formatSleepDuration(Duration duration) {
 /// 睡眠負債の表示（0 以上なら +、マイナスなら -）
 String formatSignedSleepDuration(Duration duration) =>
     duration.isNegative ? formatSleepDuration(duration) : '+${formatSleepDuration(duration)}';
+
+/// N110：1 件の睡眠の長さの評価
+enum SleepDurationRating {
+  supplementary,  // 5 時間未満：補助（仮眠など。N184 のメイン睡眠の境目）
+  short,          // 5 時間以上 6 時間未満：不足
+  good,           // 6 時間以上 20 時間以下：良好
+  tooLong,        // 20 時間超：長すぎ（保存できない）
+}
+
+/// N110：これより短いメイン睡眠は「不足」
+const Duration sleepDurationGoodMin = Duration(hours: 6);
+
+/// N110：長さから評価を決める（上限は保存のチェックと同じく分で比べる）
+SleepDurationRating sleepDurationRating(Duration duration) {
+  if (duration.inMinutes > SleepRecordValidation.maxSleepDuration.inMinutes) {
+    return SleepDurationRating.tooLong;
+  }
+  if (duration < mainSleepMinAsleep) return SleepDurationRating.supplementary;
+  if (duration < sleepDurationGoodMin) return SleepDurationRating.short;
+  return SleepDurationRating.good;
+}
+
+extension SleepDurationRatingLabel on SleepDurationRating {
+  /// 編集画面の札
+  String get editLabel {
+    switch (this) {
+      case SleepDurationRating.supplementary:
+        return '補助（仮眠など）';
+      case SleepDurationRating.short:
+        return '不足';
+      case SleepDurationRating.good:
+        return '良好';
+      case SleepDurationRating.tooLong:
+        return '長すぎ（保存できません）';
+    }
+  }
+
+  /// 一覧の札（補助・良好は札なし）
+  String? get listLabel {
+    switch (this) {
+      case SleepDurationRating.short:
+        return '不足';
+      case SleepDurationRating.tooLong:
+        return '長すぎ';
+      case SleepDurationRating.supplementary:
+      case SleepDurationRating.good:
+        return null;
+    }
+  }
+}
+
+const List<String> _listWeekdays = ['月', '火', '水', '木', '金', '土', '日'];
+
+/// 睡眠記録の一覧の日付（今年は「11月11日（火）」、去年以前・来年以降は「2025年11月11日（火）」）
+String formatSleepRecordListDate(DateTime date, DateTime now) {
+  final monthDay = '${date.month}月${date.day}日（${_listWeekdays[date.weekday - 1]}）';
+  return date.year == now.year ? monthDay : '${date.year}年$monthDay';
+}
+
+/// N112：起床タイプの表示名（空や知らない値なら null で、行を出さない）
+String? wakeUpTypeLabel(String wakeUpType) {
+  switch (wakeUpType) {
+    case 'manual':
+      return '手入力';
+    default:
+      return null;
+  }
+}
