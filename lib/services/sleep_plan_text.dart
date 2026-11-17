@@ -316,9 +316,45 @@ String _labeledExtra(PlannedSleepKind kind, SleepWindow window, DateTime now) =>
       _extraWindowText(kind, window, _nightKey(window.sleepAt), sameNight: _isNightStart(window.sleepAt)),
     );
 
+/// N51 A 3/3：早く寝たとみなす、入眠から起きる目安までの長さの上限（ちょうどを含む）
+const Duration sleptEarlyMaxLength = Duration(hours: 12);
+
+/// N51 A 3/3：寝る目安より早く寝ているか（寝方のタイプ・場面は見ない）
+/// 次の 4 つがそろえば true
+/// - 寝ている（sleepingSince がある）
+/// - main がこれから（upcoming）
+/// - ほかの睡眠の枠（明けの睡眠・仮眠など）の中にいない：main より前に始まる、まだ終わっていない枠がない
+///   （明けの睡眠を早めに取っているのを、main を早く寝たと取り違えない）
+/// - 入眠が前の勤務の終わり以後（勤務中・勤務の前の睡眠の続きは入らない）
+/// 取り違えを防ぐため、さらに次の 2 つも見る
+/// - 入眠と main の寝る目安が同じ日（planDayOf。5:00 で区切る）
+/// - 入眠から起きる目安までが sleptEarlyMaxLength 以内（昼寝などを main と取り違えない）
+/// 「ほかの睡眠の枠」には、3 日分にだけある「ふだんの睡眠の目安」の枠も含める
+bool sleepingBeforeMain(SleepPlan plan, {required DateTime? sleepingSince}) {
+  final main = plan.main;
+  if (sleepingSince == null || main == null) return false;
+  if (main.status != SleepWindowStatus.upcoming) return false;
+  if (planDayOf(sleepingSince) != planDayOf(main.sleepAt)) return false;
+  if (main.wakeAt.difference(sleepingSince) > sleptEarlyMaxLength) return false;
+  final others = [
+    for (final sleep in plan.extraSleeps) sleep.window,
+    if (plan.preShiftNap != null) plan.preShiftNap!,
+    for (final day in plan.days)
+      for (final sleep in day.sleeps)
+        if (sleep.kind == PlannedSleepKind.usualNight) sleep.window,
+  ];
+  if (others.any((w) => w.status != SleepWindowStatus.past && w.sleepAt.isBefore(main.sleepAt))) return false;
+  final previousEnd = plan.previous?.endAt;
+  return previousEnd == null || !sleepingSince.isBefore(previousEnd);
+}
+
+/// 早く寝たときに mainLine の代わりに出す 1 行（起きる目安はプランのまま）
+String sleepPlanEarlySleepText(String wake) => '早めにおやすみ中です。起きる目安は $wake ごろです';
+
 /// 文言を作る（plan が null なら勤務なし）
 /// - sleeping：今寝ているか（中にいるときの文が変わる）
-SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleeping = false}) {
+/// - sleepingSince：記録中の入眠時刻（寝る目安より早く寝たかを見る。N51 A 3/3）
+SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleeping = false, DateTime? sleepingSince}) {
   if (plan == null) {
     return SleepPlanText(
       headline: sleepSceneHeadline(SleepScene.noShift),
@@ -343,7 +379,14 @@ SleepPlanText sleepPlanText(SleepPlan? plan, {required DateTime now, bool sleepi
   final nap = plan.preShiftNap;
   final today = _date(now);
 
-  final mainLine = main != null ? _labeledMain(main, now) : null;
+  // N51 A 3/3：寝る目安より早く寝ていれば、「寝る目安 X ごろ」の行は出さず、起きる目安だけの 1 行にする
+  // 起きる目安の書き方は「おやすみ中です」の行と同じ（今日を基準に、次の日なら「翌」）
+  final sleptEarly = sleepingBeforeMain(plan, sleepingSince: sleepingSince);
+  final mainLine = main == null
+      ? null
+      : sleptEarly
+          ? sleepPlanEarlySleepText(planTime(_shownWakeAt(main), baseDate: today))
+          : _labeledMain(main, now);
   final freeNapLine = nap != null ? _labeledExtra(PlannedSleepKind.preNightNap, nap, now) : null;
 
   final statusLines = <String>[

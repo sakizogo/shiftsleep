@@ -131,7 +131,7 @@ SleepPlanCardModel buildSleepPlanCardModel({
     options: inputs.planOptions,  // A-4 1/3：通勤・身支度・いつもの残業
     sleepingSince: sleepingSince,
   );
-  final text = sleepPlanText(plan, now: now, sleeping: sleepingSince != null);
+  final text = sleepPlanText(plan, now: now, sleeping: sleepingSince != null, sleepingSince: sleepingSince);
 
   final warnings = [
     if (inputs.settingsFailed) sleepPlanSettingsFailedText,

@@ -79,11 +79,13 @@ SleepPlanText text(
           sleepingSince: sleepingSince),
       now: now,
       sleeping: sleepingSince != null,
+      sleepingSince: sleepingSince,
     );
 
 /// テストに出てくる場面・状態をひととおり（言い方の確認に使う）
 List<SleepPlanText> allSampleTexts() => [
       text(t(16, 18), shiftsOf({16: dayD, 17: dayD})),
+      text(t(16, 22, 30), shiftsOf({16: dayD, 17: dayD}), sleepingSince: t(16, 22)),  // N51 A 3/3：早く寝た
       text(t(17, 7, 30), shiftsOf({16: dayD, 17: dayD})),
       text(t(17, 1), shiftsOf({16: dayD, 17: dayD})),
       text(t(17, 10), shiftsOf({18: dayD})),
@@ -411,6 +413,92 @@ void main() {
         expect(line, isNot(contains('休みの日に')), reason: line);
         expect(line, isNot(contains('次の休みで')), reason: line);
       }
+    });
+  });
+
+  group('N51 A 3/3：寝る目安より早く寝たとき', () {
+    const early = '早めにおやすみ中です。起きる目安は';
+
+    test('1. 日勤前の夜：22:00 に寝た（寝る目安 0:00）→ 寝る目安の行は出さず、起きる目安はプランのまま', () {
+      final shifts = shiftsOf({16: dayD, 17: dayD});
+      expect(sleepingBeforeMain(plan(t(16, 22, 30), shifts, sleepingSince: t(16, 22))!, sleepingSince: t(16, 22)), isTrue);
+      final result = text(t(16, 22, 30), shifts, sleepingSince: t(16, 22));
+      expect(result.mainLine, '早めにおやすみ中です。起きる目安は 翌 7:00 ごろです');
+      expect(result.allTexts.where((line) => line.contains('寝る目安')), isEmpty);
+      // 寝ていなければ今までどおり
+      expect(text(t(16, 22, 30), shifts).mainLine, '今夜　寝る目安 0:00 ごろ → 起きる目安 翌 7:00 ごろ（7 時間）');
+    });
+
+    test('2. 夜勤前：前の夜に早く寝た → 当てはまる（起きる目安はプランのまま）', () {
+      final result = text(t(16, 22, 30), shiftsOf({17: nightNt}), sleepingSince: t(16, 22));
+      expect(result.mainLine, '早めにおやすみ中です。起きる目安は 翌 7:00 ごろです');
+    });
+
+    test('3. 連続夜勤の出勤ぎりぎりまで寝るタイプ：9:00 に寝た（寝る目安 12:00）→ 起きる目安は出勤の 1 時間前', () {
+      final shifts = shiftsOf({16: nightNt, 17: nightNt});
+      final result = text(t(17, 9, 30), shifts, preference: SleepStylePreference.lastMinute, sleepingSince: t(17, 9));
+      expect(result.mainLine, '早めにおやすみ中です。起きる目安は 19:00 ごろです');
+      // 入眠が前の勤務（5:00 まで）の中なら当てはまらない
+      final fromShift = plan(t(17, 9, 30), shifts, preference: SleepStylePreference.lastMinute, sleepingSince: t(17, 4))!;
+      expect(sleepingBeforeMain(fromShift, sleepingSince: t(17, 4)), isFalse);
+    });
+
+    test('4. 明けの睡眠の中・明けの睡眠の前に寝たときは当てはまらない', () {
+      final shifts = shiftsOf({16: nightNt, 18: dayD});  // 明けの睡眠 6:00〜10:00、main 水 0:00〜7:00
+      for (final (now, since) in [(t(17, 7), t(17, 6, 30)), (t(17, 5, 45), t(17, 5, 30))]) {
+        expect(sleepingBeforeMain(plan(now, shifts, sleepingSince: since)!, sleepingSince: since), isFalse, reason: '$since');
+        expect(text(now, shifts, sleepingSince: since).mainLine, isNot(startsWith(early)), reason: '$since');
+      }
+    });
+
+    test('5. 寝る目安を過ぎてから寝たときは当てはまらず、今までどおり「おやすみ中です」', () {
+      final shifts = shiftsOf({16: dayD, 17: dayD});
+      final result = text(t(17, 1), shifts, sleepingSince: t(17, 0, 30));
+      expect(sleepingBeforeMain(plan(t(17, 1), shifts, sleepingSince: t(17, 0, 30))!, sleepingSince: t(17, 0, 30)), isFalse);
+      expect(result.mainLine, isNot(startsWith(early)));
+      expect(result.statusLines, contains('おやすみ中です。起きる目安は 7:00 ごろです'));
+    });
+
+    test('6. 4:16 に寝て、main の寝る目安が翌日 0:30（違う日）→ 当てはまらず、今までどおりの表示', () {
+      final shifts = shiftsOf({18: work('テスト', hm(8, 30), hm(17, 0))});
+      final now = t(17, 4, 16);
+      expect(sleepingBeforeMain(plan(now, shifts, sleepingSince: now)!, sleepingSince: now), isFalse);
+      expect(text(now, shifts, sleepingSince: now).mainLine, '明日の夜　寝る目安 0:30 ごろ → 起きる目安 翌 7:30 ごろ（7 時間）');
+    });
+
+    test('7. 起きる目安まで 12 時間ちょうどなら当てはまり、それより長い（昼寝など）なら当てはまらない', () {
+      final shifts = shiftsOf({16: dayD, 17: dayD});  // 寝る目安 0:00、起きる目安 火 7:00
+      bool sleptEarly(DateTime since) =>
+          sleepingBeforeMain(plan(since.add(const Duration(minutes: 1)), shifts, sleepingSince: since)!, sleepingSince: since);
+      expect(sleptEarly(t(16, 19)), isTrue);  // 12 時間ちょうど
+      expect(sleptEarly(t(16, 18, 59)), isFalse);  // 12 時間 1 分
+      expect(sleptEarly(t(16, 14)), isFalse);  // 日勤前の日の昼寝（17 時間）← 前の勤務の前なので、ほかの条件でも外れる
+      expect(sleptEarly(t(16, 17, 30)), isFalse);  // 勤務のあとすぐ（13 時間 30 分）
+    });
+
+    test('8. ふだんの睡眠の目安の枠の中で寝ているときは当てはまらない', () {
+      // 同じ日・12 時間以内で、main より前に、まだ終わっていない「ふだんの睡眠の目安」の枠がある形を作る
+      SleepWindow window(DateTime start, DateTime end, SleepWindowStatus status) =>
+          SleepWindow(sleepAt: start, wakeAt: end, shortened: false, status: status);
+      SleepPlan planWith(SleepWindowStatus usualStatus) => SleepPlan(
+            currentShift: null,
+            scene: SleepScene.beforeDay,
+            previous: null,
+            next: null,
+            style: SleepStyle.immediate,
+            styleSource: SleepStyleSource.setting,
+            main: window(t(17, 0), t(17, 7), SleepWindowStatus.upcoming),
+            preShiftNap: null,
+            reasons: const [],
+            extraSleeps: const [],
+            days: [
+              DayPlan(date: t(16, 0), shifts: const [], sleeps: [
+                PlannedSleep(kind: PlannedSleepKind.usualNight, window: window(t(16, 21, 30), t(16, 23, 30), usualStatus)),
+              ]),
+            ],
+          );
+      expect(sleepingBeforeMain(planWith(SleepWindowStatus.ongoing), sleepingSince: t(16, 21, 30)), isFalse);
+      expect(sleepingBeforeMain(planWith(SleepWindowStatus.past), sleepingSince: t(16, 21, 30)), isTrue);
     });
   });
 
