@@ -67,6 +67,14 @@ class AppTextStyles {
     height: 1.5,
   );
 
+  // N189：但し書き（※の一言・寝方のタイプ・記録が少ないときの一言など）。白地で 4.5:1 以上（#666 は約 5.7:1）
+  static const TextStyle noteStyle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textSecondary,
+    height: 1.5,
+  );
+
   // Label (SJLなど)
   static const TextStyle labelStyle = TextStyle(
     fontSize: 12,

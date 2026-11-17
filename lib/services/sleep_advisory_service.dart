@@ -55,6 +55,24 @@ ActionTipView actionTipView(
   return promoVisible ? ActionTipView.locked : ActionTipView.hidden;
 }
 
+/// N197：記録が足りず、アドバイスが 1 件も作れないときの文
+const String adviceNotEnoughRecordsText = '睡眠の記録がたまると、改善アドバイスが表示されます';
+
+/// N203：アドバイスは作れたが、出せるものが 0 件のときの文
+const String adviceNothingToImproveText = '今は大きな改善点はありません';
+
+/// N189：優先度の札の文字（色だけに頼らない）
+String advicePriorityLabel(int priority) {
+  switch (priority) {
+    case 1:
+      return '優先度 高';
+    case 2:
+      return '優先度 中';
+    default:
+      return '優先度 低';
+  }
+}
+
 class SleepAdvisoryService {
   /// 実データから改善アドバイスを生成
   /// 
@@ -278,12 +296,22 @@ class SleepAdvisoryService {
       // 有料版: すべてのアドバイスを表示（最大5個）
       return advices.take(5).toList();
     } else {
-      // 無料版: 優先度1 のアドバイスのみ表示（最大1個）
-      return advices
-          .where((a) => a.priority == 1 && !a.isPremiumOnly)
-          .take(1)
-          .toList();
+      // 無料版：最大 1 個。優先度 1 があればその最初の 1 件、なければ有料版限定でない中でいちばん上の 1 件（N203）
+      final open = advices.where((a) => !a.isPremiumOnly).toList();
+      final top = open.where((a) => a.priority == 1);
+      return [if (top.isNotEmpty) top.first else if (open.isNotEmpty) open.first];
     }
+  }
+
+  /// N203：アドバイスの欄に出すものがないときの 1 行（出すものがあれば null）
+  /// - 記録が足りずアドバイスが 1 件も作れない：N197 の文
+  /// - 作れたのに出せるものが 0 件：大きな改善点はない
+  static String? emptyAdviceMessage({
+    required List<SleepAdvice> all,
+    required List<SleepAdvice> displayed,
+  }) {
+    if (displayed.isNotEmpty) return null;
+    return all.isEmpty ? adviceNotEnoughRecordsText : adviceNothingToImproveText;
   }
 
   /// アドバイスを日本語で人間らしい文体に変換（オプション）

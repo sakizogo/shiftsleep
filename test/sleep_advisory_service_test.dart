@@ -72,9 +72,24 @@ void main() {
       expect(result.map((a) => a.title), ['ふつう']);
     });
 
-    test('無料で優先度 1 がなければ空', () {
-      final advices = [_advice('B', priority: 2), _advice('C', priority: 3)];
+    test('N203：無料で優先度 1 がなければ、有料版限定でない中でいちばん上の 1 件', () {
+      final advices = [
+        _advice('有料版限定', priority: 2, isPremiumOnly: true),
+        _advice('B', priority: 2),
+        _advice('C', priority: 3),
+      ];
+      expect(SleepAdvisoryService.filterAdviceByPlan(advices, isPremiumUser: false).map((a) => a.title), ['B']);
+    });
+
+    test('N203：無料で優先度 1 が後ろにあっても、優先度 1 を選ぶ', () {
+      final advices = [_advice('B', priority: 2), _advice('A', priority: 1)];
+      expect(SleepAdvisoryService.filterAdviceByPlan(advices, isPremiumUser: false).map((a) => a.title), ['A']);
+    });
+
+    test('N203：無料で有料版限定しかなければ空', () {
+      final advices = [_advice('有料版限定', priority: 2, isPremiumOnly: true)];
       expect(SleepAdvisoryService.filterAdviceByPlan(advices, isPremiumUser: false), isEmpty);
+      expect(SleepAdvisoryService.filterAdviceByPlan(const [], isPremiumUser: false), isEmpty);
     });
 
     test('無料でも actionTip は残す（出し方は actionTipView で決める）', () {
@@ -90,5 +105,28 @@ void main() {
       final result = SleepAdvisoryService.filterAdviceByPlan(advices, isPremiumUser: true);
       expect(result.map((a) => a.title), ['1', '2', '3', '4', '5']);
     });
+  });
+
+  group('N203：emptyAdviceMessage', () {
+    final a = _advice('A');
+    final premiumOnly = _advice('有料版限定', isPremiumOnly: true);
+
+    test('出すものがあれば null', () {
+      expect(SleepAdvisoryService.emptyAdviceMessage(all: [a], displayed: [a]), isNull);
+    });
+
+    test('記録が足りず 1 件も作れないときは N197 の文', () {
+      expect(SleepAdvisoryService.emptyAdviceMessage(all: const [], displayed: const []), adviceNotEnoughRecordsText);
+      expect(adviceNotEnoughRecordsText, '睡眠の記録がたまると、改善アドバイスが表示されます');
+    });
+
+    test('作れたのに出せるものが 0 件なら「今は大きな改善点はありません」', () {
+      expect(SleepAdvisoryService.emptyAdviceMessage(all: [premiumOnly], displayed: const []), adviceNothingToImproveText);
+      expect(adviceNothingToImproveText, '今は大きな改善点はありません');
+    });
+  });
+
+  test('N189：優先度の札の文字', () {
+    expect([1, 2, 3].map(advicePriorityLabel), ['優先度 高', '優先度 中', '優先度 低']);
   });
 }

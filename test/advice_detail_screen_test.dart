@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
@@ -13,14 +14,17 @@ class _NoRepository extends SleepRepository {}
 
 /// SleepProvider の偽物（画面が読む値だけを持つ）
 class _TestProvider extends SleepProvider {
-  _TestProvider(this.advices) : super(_NoRepository());
+  _TestProvider(this.advices, {this.all}) : super(_NoRepository());
 
   final List<SleepAdvice> advices;
+  final List<SleepAdvice>? all;  // N203：作れたアドバイス（null なら advices と同じ）
   bool premium = false;
   bool promoVisible = true;  // N186
 
   @override
   List<SleepAdvice> get displayedAdvice => advices;
+  @override
+  List<SleepAdvice> get allAdvice => all ?? advices;
   @override
   bool get isPremiumUser => premium;
   @override
@@ -45,8 +49,14 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  Future<_TestProvider> pumpScreen(WidgetTester tester, {bool premium = false, bool promoVisible = true}) async {
-    final provider = _TestProvider([locked, open])
+  Future<_TestProvider> pumpScreen(
+    WidgetTester tester, {
+    bool premium = false,
+    bool promoVisible = true,
+    List<SleepAdvice>? advices,
+    List<SleepAdvice>? all,
+  }) async {
+    final provider = _TestProvider(advices ?? [locked, open], all: all)
       ..premium = premium
       ..promoVisible = promoVisible;
     await tester.pumpWidget(
@@ -121,5 +131,57 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('ヒントの中身')), findsOneWidget);
     expect(find.descendant(of: find.byType(AlertDialog), matching: find.text(actionTipLockedLabel)), findsNothing);
+  });
+
+  testWidgets('N189：実行ヒントの鍵の枠は白地で、鍵は textSecondary（amber を使わない）', (tester) async {
+    await pumpScreen(tester);
+    await tester.tap(find.text('ふつうのアドバイス'));
+    await tester.pumpAndSettle();
+
+    final dialog = find.byType(AlertDialog);
+    final lock = tester.widget<Icon>(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)));
+    expect(lock.color, AppColors.textSecondary);
+    final box = tester.widget<Container>(
+      find.ancestor(of: find.text(actionTipLockedLabel), matching: find.byType(Container)).first,
+    );
+    expect((box.decoration as BoxDecoration).color, Colors.white);
+  });
+
+  testWidgets('N189：優先度の札は「優先度 高／中／低」の文字つきで、地は白（【重要】は出さない）', (tester) async {
+    SleepAdvice advice(String title, int priority, String category) =>
+        SleepAdvice(title: title, description: '$title の説明', category: category, priority: priority);
+    await pumpScreen(tester, premium: true, advices: [
+      advice('高い', 1, 'debt'),
+      advice('中くらい', 2, 'sjl'),
+      advice('低い', 3, 'sri'),
+    ]);
+
+    expect(find.text('優先度 高・睡眠負債（DEBT）'), findsOneWidget);
+    expect(find.text('優先度 中・体内時計のズレ（SJL）'), findsOneWidget);
+    expect(find.text('優先度 低・睡眠の規則性（SRI）'), findsOneWidget);
+    expect(find.textContaining('【重要】'), findsNothing);
+
+    for (final (label, color) in [
+      ('優先度 高・睡眠負債（DEBT）', advicePriorityColor(1)),
+      ('優先度 中・体内時計のズレ（SJL）', advicePriorityColor(2)),
+      ('優先度 低・睡眠の規則性（SRI）', advicePriorityColor(3)),
+    ]) {
+      expect(tester.widget<Text>(find.text(label)).style?.color, color);
+      final badge = tester.widget<Container>(find.ancestor(of: find.text(label), matching: find.byType(Container)).first);
+      expect((badge.decoration as BoxDecoration).color, Colors.white);
+    }
+    expect([1, 2, 3].map(advicePriorityColor), [Colors.red.shade700, Colors.deepOrange.shade900, Colors.green.shade800]);
+  });
+
+  testWidgets('N203：記録が足りずアドバイスが作れないときは N197 の文', (tester) async {
+    await pumpScreen(tester, advices: const [], all: const []);
+    expect(find.text(adviceNotEnoughRecordsText), findsOneWidget);
+    expect(find.textContaining('蓄積'), findsNothing);
+  });
+
+  testWidgets('N203：作れたのに出せるものが 0 件なら「今は大きな改善点はありません」', (tester) async {
+    await pumpScreen(tester, advices: const [], all: [locked]);
+    expect(find.text(adviceNothingToImproveText), findsOneWidget);
+    expect(find.text(adviceNotEnoughRecordsText), findsNothing);
   });
 }

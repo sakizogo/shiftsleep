@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shiftsleep/constants/text_styles.dart';  // N189：noteStyle
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/sleep_plan.dart';
 import 'package:shiftsleep/services/sleep_plan_card_model.dart';
@@ -410,7 +411,7 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
             child: Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(text.styleNote!, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                Text(text.styleNote!, style: AppTextStyles.noteStyle),  // N189
                 TextButton(onPressed: _changeStyle, child: const Text('変える ›')),
               ],
             ),
@@ -418,7 +419,7 @@ class _SleepPlanCardState extends State<SleepPlanCard> with WidgetsBindingObserv
         if (model.fewRecordsLine != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(model.fewRecordsLine!, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            child: Text(model.fewRecordsLine!, style: AppTextStyles.noteStyle),  // N189
           ),
         Padding(
           padding: const EdgeInsets.only(top: 8),

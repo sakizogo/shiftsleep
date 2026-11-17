@@ -182,7 +182,8 @@ class _MedicalConsultCardState extends State<MedicalConsultCard> {
             const SizedBox(height: AppDimensions.paddingSmall),
             Text(
               medicalConsultDisclaimer,
-              style: AppTextStyles.descriptionStyle.copyWith(color: medicalConsultSubText),
+              // N189：但し書きの形。青い地なので、文字は #666 より濃い medicalConsultSubText のまま
+              style: AppTextStyles.noteStyle.copyWith(color: medicalConsultSubText),
             ),
             Align(
               alignment: Alignment.centerRight,
@@ -1541,9 +1542,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // ========== Week 7 A 追加: 睡眠改善アドバイスセクション ==========
               // 無料版：最優先アドバイス 1個
               // 有料版：優先度1,2のアドバイス 最大5個
-              // N197：アドバイスが 1 件も作られなかったときも、案内の 1 行を出すために残す
-              if (sleepProvider.hasAdvice || sleepProvider.allAdvice.isEmpty)
-                Container(
+              // N197・N203：出すアドバイスがないときも欄は残し、案内の 1 行を出す
+              Container(
                   margin: EdgeInsets.zero,
                   padding: const EdgeInsets.symmetric(
                     vertical: AppDimensions.sectionPaddingVertical,
@@ -1603,10 +1603,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
 
-                      // N197：アドバイスが 0 件なら案内の 1 行だけ
-                      if (sleepProvider.allAdvice.isEmpty)
+                      // N197・N203：出すアドバイスがなければ案内の 1 行だけ（記録不足／大きな改善点なし）
+                      if (SleepAdvisoryService.emptyAdviceMessage(
+                            all: sleepProvider.allAdvice,
+                            displayed: sleepProvider.displayedAdvice,
+                          ) case final message?)
                         Text(
-                          '睡眠の記録がたまると、改善アドバイスが表示されます',
+                          message,
                           style: AppTextStyles.descriptionStyle.copyWith(
                             color: AppColors.textSecondary,
                           ),
@@ -2002,9 +2005,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                         child: Text(
                           sleepDebtCapNote,
-                          style: AppTextStyles.descriptionStyle.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
+                          style: AppTextStyles.noteStyle,  // N189
                         ),
                       ),
                   ],

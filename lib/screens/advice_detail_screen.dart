@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shiftsleep/constants/colors.dart';  // N189
+import 'package:shiftsleep/constants/text_styles.dart';  // N189
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/widgets/premium_lock_dialog.dart';  // A-3 2/3
 
 /// 有料版限定のアドバイスの 🔒 の案内の文
 const String adviceLockedMessage = 'プレミアム版に登録すると、\n詳細な改善アドバイスが\n すべて見られます';
+
+/// N189：優先度の色（白地とのコントラスト：高 red.shade700 約 5.0:1・中 deepOrange.shade900 約 5.6:1・低 green.shade800 約 5.1:1）
+/// 赤と緑は protanopia で見分けにくいので、札には advicePriorityLabel の文字も出す
+Color advicePriorityColor(int priority) {
+  switch (priority) {
+    case 1:
+      return Colors.red.shade700;
+    case 2:
+      return Colors.deepOrange.shade900;
+    case 3:
+      return Colors.green.shade800;
+    default:
+      return Colors.grey.shade700;
+  }
+}
 
 /// ========== Week 7 Phase 3 修正: actionTip を有料版限定に ==========
 /// 
@@ -48,29 +65,31 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
         builder: (context, sleepProvider, child) {
           final advices = sleepProvider.displayedAdvice;
 
-          // アドバイスがない場合
-          if (advices.isEmpty) {
+          // N203：出すアドバイスがない場合は、ホームと同じ分け方の 1 行（記録不足／大きな改善点なし）
+          final emptyMessage = SleepAdvisoryService.emptyAdviceMessage(
+            all: sleepProvider.allAdvice,
+            displayed: advices,
+          );
+          if (emptyMessage != null) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    size: 64,
-                    color: Colors.green.shade300,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'アドバイスはありません',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'あと少し睡眠データを\n蓄積してください',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      sleepProvider.allAdvice.isEmpty ? Icons.hourglass_empty : Icons.check_circle,
+                      size: 64,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      emptyMessage,
+                      style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             );
           }
@@ -151,32 +170,32 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                           if (tipView != ActionTipView.hidden) ...[
                             const SizedBox(height: 16),
                             tipView == ActionTipView.locked
+                                // N189：ホームの鍵の表示と同じ形（白地・鍵と文字は textSecondary）。ダイアログも白地なので細い枠で囲む
                                 ? Container(
+                                    width: double.infinity,
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: Colors.amber.shade50,
-                                      border: Border.all(color: Colors.amber.shade200),
+                                      color: Colors.white,
+                                      border: Border.all(color: AppColors.borderDefault),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         // N186：ホームと同じく 🔒 のアイコン＋文言
-                                        const Row(
+                                        Row(
                                           children: [
-                                            Icon(
+                                            const Icon(
                                               Icons.lock,
                                               size: 16,
-                                              color: Colors.amber,
+                                              color: AppColors.textSecondary,
                                             ),
-                                            SizedBox(width: 4),
+                                            const SizedBox(width: 4),
                                             Expanded(
                                               child: Text(
                                                 actionTipLockedLabel,
-                                                style: TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.amber,
+                                                style: AppTextStyles.descriptionStyle.copyWith(
+                                                  color: AppColors.textSecondary,
                                                 ),
                                               ),
                                             ),
@@ -185,11 +204,7 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                                         const SizedBox(height: 8),
                                         Text(
                                           'プレミアム版ではここに「${advice.title}」を実行するための具体的な方法が表示されます。\n\n例：毎日のアラーム設定時刻、食事のタイミング、運動の頻度など、すぐに実行できるアクション情報が満載です。',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey,
-                                            fontStyle: FontStyle.italic,
-                                          ),
+                                          style: AppTextStyles.noteStyle,
                                         ),
                                       ],
                                     ),
@@ -283,19 +298,8 @@ class _AdviceCard extends StatelessWidget {
       }
     }
 
-    // 優先度の色（赤緑色盲対応）
-    Color priorityColor() {
-      switch (advice.priority) {
-        case 1:
-          return Colors.red.shade600;
-        case 2:
-          return Colors.orange.shade600;
-        case 3:
-          return Colors.green.shade600;
-        default:
-          return Colors.grey;
-      }
-    }
+    // 優先度の色（N189：白地で 4.5:1 以上。色だけに頼らず札に「優先度 高／中／低」の文字も出す）
+    Color priorityColor() => advicePriorityColor(advice.priority);
 
     return GestureDetector(
       onTap: onTap,
@@ -318,39 +322,48 @@ class _AdviceCard extends StatelessWidget {
                 // ヘッダー: 優先度 + カテゴリ
                 Row(
                   children: [
-                    // 優先度 + カテゴリ名バッジ
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: priorityColor().withOpacity(0.1),
-                        border: Border.all(color: priorityColor()),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            categoryIcon(),
-                            size: 16,
-                            color: priorityColor(),
+                    // 優先度 + カテゴリ名バッジ（N189：右の矢印・鍵のぶんを残して左に寄せる）
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '【重要】${categoryLabel()}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: priorityColor(),
-                            ),
+                          // N189：札の地は白。色は枠と文字だけに使う
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: priorityColor()),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                categoryIcon(),
+                                size: 16,
+                                color: priorityColor(),
+                              ),
+                              const SizedBox(width: 6),
+                              // N189：いつも「【重要】」だったのを、優先度に合わせた文字に
+                              // 大きい文字では札の中で折り返す
+                              Flexible(
+                                child: Text(
+                                  '${advicePriorityLabel(advice.priority)}・${categoryLabel()}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: priorityColor(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Spacer(),
 
                     // ロック表示
                     if (isLocked)
