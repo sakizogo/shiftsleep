@@ -39,6 +39,9 @@ class ShiftPatternModel {
         colorIndex = 0,
         isDeleted = true;
 
+  /// N116：カレンダーのマスに出す短い名前（削除済みは「削除」、ほかは名前のまま）
+  String get calendarCellLabel => isDeleted ? '削除' : patternName;
+
   @override
   String toString() {
     return 'ShiftPatternModel(id: $id, name: $patternName, type: $patternType, colorIndex: $colorIndex, isDeleted: $isDeleted)';

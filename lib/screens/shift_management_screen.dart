@@ -1073,7 +1073,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 3.0, vertical: 1.0),
                     child: Text(
-                      shift.pattern?.patternName ?? '',
+                      shift.pattern?.calendarCellLabel ?? '',  // N116：削除済みはマスでだけ「削除」
                       style: TextStyle(
                         fontSize: 9,
                         fontWeight: FontWeight.w600,
