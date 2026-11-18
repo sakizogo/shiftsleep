@@ -747,26 +747,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'プレミアム版案内を表示',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                          // N51 F（L3）：大きい文字でスイッチを押し出さないよう、左だけ幅を譲る（文字は折り返す）
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'プレミアム版案内を表示',
+                                  style: AppTextStyles.bodyTextStyle.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4.0),
-                              Text(
-                                'アドバイス詳細画面で有料版の\nプロモーション表示を ON/OFF',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
+                                const SizedBox(height: 4.0),
+                                Text(
+                                  'アドバイス詳細画面で有料版のプロモーション表示を ON/OFF',
+                                  style: AppTextStyles.bodyTextStyle.copyWith(
+                                    fontSize: 12,
+                                    color: AppColors.textMuted,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: AppDimensions.paddingXSmall),
                           // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない
                           Switch(
                             value: _advicePromoVisible,
