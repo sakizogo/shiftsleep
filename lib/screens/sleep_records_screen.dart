@@ -156,54 +156,53 @@ class _SleepRecordsScreenState extends State<SleepRecordsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // ✅ Phase 5 Step 2: × ボタン追加
+                      // N51 F（L5・D3）：1 行目は日付と ✏️×、2 行目は札と睡眠時間（大きい文字でも日付を省略しない）
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // N108：幅が足りないときは日付を「…」で縮める（睡眠時間は縮めない）
+                          // 入らないときは折り返す（「…」で縮めない）
                           Expanded(
                             child: Text(
-                              formatSleepRecordListDate(record.sleepDate, DateTime.now()),  // 今年は年を省く（札が出ても日にちが見えるように）
+                              formatSleepRecordListDate(record.sleepDate, DateTime.now()),  // 今年は年を省く
                               style: AppTextStyles.sectionTitleStyle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8.0),
-                          Row(
-                            children: [
-                              // N110：不足・長すぎのときだけ札（補助・良好は札なし）
-                              if (ratingLabel != null) ...[
-                                SleepDurationRatingBadge(rating: rating, label: ratingLabel),
-                                const SizedBox(width: 6.0),
-                              ],
-                              Text(
-                                formatSleepDuration(duration),  // N199
-                                style: AppTextStyles.statNumberStyle.copyWith(
-                                  color: sleepDurationRatingColor(rating),  // N110
-                                ),
-                              ),
-                              // N108：✏️ 修正ボタン（compact でタップの範囲は 40×40）
-                              IconButton(
-                                icon: const Icon(Icons.edit),
-                                iconSize: 20.0,
-                                color: AppColors.primaryGradientStart,
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                tooltip: '修正',
-                                onPressed: () => _openEditScreen(record: record),
-                              ),
-                              // × ボタン
-                              IconButton(
-                                icon: const Icon(Icons.close),
-                                iconSize: 20.0,
-                                color: AppColors.warningRed,
-                                padding: EdgeInsets.zero,
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () {
-                                  _showDeleteConfirmDialog(context, record.id);
-                                },
-                              ),
-                            ],
+                          // N108：✏️ 修正ボタン（compact でタップの範囲は 40×40）
+                          IconButton(
+                            icon: const Icon(Icons.edit),
+                            iconSize: 20.0,
+                            color: AppColors.primaryGradientStart,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            tooltip: '修正',
+                            onPressed: () => _openEditScreen(record: record),
+                          ),
+                          // × ボタン
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            iconSize: 20.0,
+                            color: AppColors.warningRed,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () {
+                              _showDeleteConfirmDialog(context, record.id);
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4.0),
+                      Row(
+                        children: [
+                          // N110：不足・長すぎのときだけ札（補助・良好は札なし）
+                          if (ratingLabel != null) ...[
+                            SleepDurationRatingBadge(rating: rating, label: ratingLabel),
+                            const SizedBox(width: 6.0),
+                          ],
+                          Text(
+                            formatSleepDuration(duration),  // N199
+                            style: AppTextStyles.statNumberStyle.copyWith(
+                              color: sleepDurationRatingColor(rating),  // N110
+                            ),
                           ),
                         ],
                       ),
