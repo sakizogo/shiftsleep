@@ -10,6 +10,7 @@ import 'package:shiftsleep/models/calendar_event.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';  // ✅ H3
+import 'package:shiftsleep/services/calendar_cell_layout.dart';  // N51 F
 import 'package:shiftsleep/services/delete_dialog_selection.dart';  // N140 4/4
 import 'package:shiftsleep/services/shift_draft.dart';  // N140
 import 'package:shiftsleep/services/shift_load.dart';  // N118
@@ -648,6 +649,8 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
     );  // N140 2/4・3/4
     // N140 3/4：有休・半休だけが変わった日の行（シフトの行がない日も、ある日も、シフトが未確定でない日は出す）
     final vacationOnlyLines = vacationDraftLines(vacationDraft, exclude: draft.entries.keys.toSet());
+    // N51 F（L2）：文字の倍率。Android 14 以降は大きい字ほど倍率が小さいので、マスの日付（13px）と曜日（14px）の大きさで測る
+    final textScaler = MediaQuery.textScalerOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -666,7 +669,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 child: Icon(Icons.chevron_left, color: AppColors.primaryGradientStart, size: 24),
               ),
               Text(
-                '${_focusedDay.month}月 ${_focusedDay.year}',
+                '${_focusedDay.year}年${_focusedDay.month}月',  // N51 F（L2）：書き方を「2026年11月」に
                 style: AppTextStyles.bodyTextStyle.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
               ),
               GestureDetector(
@@ -690,7 +693,13 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
               borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
             ),
             child: TableCalendar(
-            rowHeight: 75,
+            // N51 F（L2）：1.0 倍は 75 のまま、大きい文字のときだけ伸ばす（マスの中は 1.3 倍まで）
+            rowHeight: calendarRowHeight(textScaler.scale(13) / 13),
+            daysOfWeekHeight: calendarDaysOfWeekHeight(textScaler.scale(14) / 14),
+            // N51 F（L2・D1）：曜日を日本語に（「日 月 火」）
+            locale: 'ja_JP',
+            // N51 F（L2）：見出しは外の「‹ 2026年11月 ›」だけにする（中の見出しと、動かない切り替えボタンは出さない）
+            headerVisible: false,
             firstDay: CalendarRange.firstDayUtc,  // N67
             lastDay: CalendarRange.lastDayUtc,
             focusedDay: _focusedDay,
@@ -818,7 +827,7 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                 ),
               );
             },
-            onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),  // N67：見出しの「○月 ○年」も更新する
+            onPageChanged: (focusedDay) => setState(() => _focusedDay = focusedDay),  // N67：見出しの「○年○月」も更新する
             calendarStyle: CalendarStyle(
               defaultDecoration: BoxDecoration(
                 color: Colors.white,
@@ -859,6 +868,15 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
                   _buildDayCell(date, isSelected: false, isToday: true),
               defaultBuilder: (context, date, focusedDay) =>
                   _buildDayCell(date, isSelected: false, isToday: false),
+              // N51 F（L2・D2）：前後の月の日も、ほかのマスと同じく 1.3 倍まで（見た目は table_calendar の既定と同じ）
+              outsideBuilder: (context, date, focusedDay) => MediaQuery.withClampedTextScaling(
+                maxScaleFactor: calendarCellMaxTextScale,
+                child: Container(
+                  margin: const EdgeInsets.all(6.0),
+                  alignment: Alignment.center,
+                  child: Text('${date.day}', style: const TextStyle(color: Colors.grey)),
+                ),
+              ),
             ),
             ),
           ),
@@ -1113,10 +1131,16 @@ class ShiftManagementScreenState extends State<ShiftManagementScreen> {
       ),
     );
 
+    // N51 F（L2・D2）：マスの中の文字だけ 1.3 倍まで（行の高さは calendarRowHeight で合わせる）
+    final clampedCell = MediaQuery.withClampedTextScaling(
+      maxScaleFactor: calendarCellMaxTextScale,
+      child: cell,
+    );
+
     // 長押しで削除するのは、これまでどおり選んだマスだけ
     return isSelected
-        ? GestureDetector(onLongPress: () => _showDeleteDialog(date), child: cell)
-        : cell;
+        ? GestureDetector(onLongPress: () => _showDeleteDialog(date), child: clampedCell)
+        : clampedCell;
   }
 
   Widget _buildRangeInputMethod(int pendingDays) {
