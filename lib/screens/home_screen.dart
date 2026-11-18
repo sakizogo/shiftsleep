@@ -1005,9 +1005,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: AppColors.primaryGradientStart,
                         ),
                         const SizedBox(width: AppDimensions.paddingSmall),
-                        Text(
-                          '${DateTime.now().month}/${DateTime.now().day} の睡眠（0:00〜）',
-                          style: AppTextStyles.sectionTitleStyle,
+                        // N51 F：大きい文字でもはみ出さないよう Flexible（入らないときは折り返す）
+                        Flexible(
+                          child: Text(
+                            '${DateTime.now().month}/${DateTime.now().day} の睡眠（0:00〜）',
+                            style: AppTextStyles.sectionTitleStyle,
+                          ),
                         ),
                       ],
                     ),
@@ -1387,9 +1390,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: AppColors.primaryGradientStart,
                         ),
                         const SizedBox(width: AppDimensions.paddingSmall),
-                        Text(
-                          '睡眠の内訳（直近24時間）',  // N184
-                          style: AppTextStyles.sectionTitleStyle,
+                        // N51 F（L8）：大きい文字でもはみ出さないよう Flexible（入らないときは折り返す）
+                        Flexible(
+                          child: Text(
+                            '睡眠の内訳（直近24時間）',  // N184
+                            style: AppTextStyles.sectionTitleStyle,
+                          ),
                         ),
                       ],
                     ),
@@ -1971,20 +1977,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '1日平均（直近4週間）',  // N184
-                              style: AppTextStyles.bodyTextStyle,
-                            ),
-                            const SizedBox(height: 4.0),
-                            Text(
-                              sleepProvider.recentDailyAverageSleepFormatted,
-                              style: AppTextStyles.statNumberStyle,
-                            ),
-                          ],
+                        // N51 F：大きい文字で右の「目標」を押し出さないように、左だけ幅を譲る（ラベルは折り返す）
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '1日平均（直近4週間）',  // N184
+                                style: AppTextStyles.bodyTextStyle,
+                              ),
+                              const SizedBox(height: 4.0),
+                              Text(
+                                sleepProvider.recentDailyAverageSleepFormatted,
+                                style: AppTextStyles.statNumberStyle,
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: AppDimensions.paddingXSmall),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [

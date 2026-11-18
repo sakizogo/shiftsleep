@@ -318,29 +318,36 @@ class _SleepButtonState extends State<SleepButton>
                   ),
                 ],
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    isSleeping ? '睡眠中' : '今から寝る',
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.buttonTextStyle.copyWith(
-                      fontSize: isSleeping ? 14 : 16,
-                    ),
-                  ),
-                  if (isSleeping)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Text(
-                        '起きる',
+              // N51 F：大きい文字でも変な所で折り返さず、丸の中に 1 行で収める（入らないときだけ縮める）
+              padding: const EdgeInsets.all(12.0),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isSleeping ? '睡眠中' : '今から寝る',
                         textAlign: TextAlign.center,
                         style: AppTextStyles.buttonTextStyle.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontSize: isSleeping ? 14 : 16,
                         ),
                       ),
-                    ),
-                ],
+                      if (isSleeping)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            '起きる',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.buttonTextStyle.copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
