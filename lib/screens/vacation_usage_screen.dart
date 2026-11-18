@@ -700,15 +700,18 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                         ),
                       ),
                     ),
-                    title: Row(
+                    // N51 F（L4）：大きい文字で「予定」の札が入らないときは次の行に落とす
+                    title: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           DateFormat('M月d日(E)', 'ja_JP')
                               .format(usage.usageDate),
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        if (isPlanned) ...[
-                          const SizedBox(width: 8),
+                        if (isPlanned)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -723,7 +726,6 @@ class _VacationUsageScreenState extends State<VacationUsageScreen> {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                     subtitle: Column(
