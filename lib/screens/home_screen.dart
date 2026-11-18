@@ -16,6 +16,7 @@ import 'package:shiftsleep/services/sleep_advisory_service.dart';  // N186
 import 'package:shiftsleep/services/sleep_debt.dart';  // N198 2/2
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'package:shiftsleep/services/medical_consult_dismiss_store.dart';  // N202
+import 'package:shiftsleep/services/tab_snackbar.dart';  // N190
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -792,6 +793,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
+          // N190：設定タブから離れるときだけ、設定タブで出た SnackBar を消す（移った先のタブが出す SnackBar はこのあとに出る）
+          if (shouldClearSnackBarsOnTabChange(from: _selectedIndex, to: index)) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+          }
           // N140：詳細確認の表示中にタブを押したら、詳細確認での編集を未確定として預ける（下でカレンダー表示に戻るため）
           _captureDetailsDraft();
           setState(() {
