@@ -631,6 +631,25 @@ class SleepProvider extends ChangeNotifier {
   }
   // ================================================================
 
+  /// N193：案内の表示（advicePromoVisible）を DB に保存し、保存できたら値を変えて知らせる
+  /// 保存できなければ値は変えず、notifyListeners もしない（false を返す）
+  /// アドバイスの選び方は案内の表示を見ないので、_generateAdvice は呼ばない
+  /// save はテストで差し替える（既定は ShiftRepository().updateAdvicePromoVisible）
+  Future<bool> setAdvicePromoVisible(
+    bool visible, {
+    Future<void> Function(String userId, bool visible)? save,
+  }) async {
+    try {
+      await (save ?? ShiftRepository().updateAdvicePromoVisible)('test_user', visible);
+    } catch (e) {
+      debugPrint('⚠️ N193: 案内の表示を保存できませんでした: $e');
+      return false;
+    }
+    _advicePromoVisible = visible;
+    notifyListeners();
+    return true;
+  }
+
   // ========================
   // プライベートメソッド
   // ========================

@@ -355,20 +355,25 @@ void main() {
       updatedAt: createdAt,
     );
 
-    test('1. 分数・起床時刻・案内表示だけが変わる', () {
-      final saved = settingsToSave(base, alarmTimeBeforeShift: 60, wakeUpTime: '05:30', advicePromoVisible: false);
+    test('1. 分数・起床時刻だけが変わる', () {
+      final saved = settingsToSave(base, alarmTimeBeforeShift: 60, wakeUpTime: '05:30');
       expect(saved.alarmTimeBeforeShift, 60);
       expect(saved.wakeUpTime, '05:30');
-      expect(saved.advicePromoVisible, false);
     });
 
     test('2. 音・premium・id・userId・createdAt は元のまま', () {
-      final saved = settingsToSave(base, alarmTimeBeforeShift: 0, wakeUpTime: '05:30', advicePromoVisible: false);
+      final saved = settingsToSave(base, alarmTimeBeforeShift: 0, wakeUpTime: '05:30');
       expect(saved.selectedAlarmSound, 'gentle');
       expect(saved.isPremiumUser, true);
       expect(saved.id, 7);
       expect(saved.userId, 'test_user');
       expect(saved.createdAt, createdAt);
+    });
+
+    test('3. N193：案内表示は元のまま（案内のスイッチだけで保存する）', () {
+      expect(settingsToSave(base, alarmTimeBeforeShift: 60, wakeUpTime: '05:30').advicePromoVisible, true);
+      final hidden = base.copyWith(advicePromoVisible: false);
+      expect(settingsToSave(hidden, alarmTimeBeforeShift: 60, wakeUpTime: '05:30').advicePromoVisible, false);
     });
   });
 

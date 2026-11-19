@@ -376,6 +376,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
+    // N193：案内のスイッチ。切り替えたらすぐ、案内の列だけを保存する（まだ保存していないほかの変更は保存しない）
+    //    先にスイッチを動かし、保存できなければ元に戻して ⚠️ で知らせる（アラームの ON/OFF と同じ）
+    //    保存中は _isAlarmBusy を立て、［設定を保存］などの行をまるごと書く処理と重ならないようにする
+    Future<void> _onAdvicePromoChanged(bool value) async {
+      if (!canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy)) return;
+      final messenger = ScaffoldMessenger.of(context);  // await 前に取得
+      final sleepProvider = context.read<SleepProvider>();
+      setState(() {
+        _advicePromoVisible = value;
+        _isAlarmBusy = true;
+      });
+      try {
+        final saved = await sleepProvider.setAdvicePromoVisible(value);
+        if (saved) {
+          // 行がないときに［設定を保存］が元にする値もそろえる
+          if (mounted) setState(() => _currentSettings = _currentSettings?.copyWith(advicePromoVisible: value));
+        } else {
+          if (mounted) setState(() => _advicePromoVisible = !value);
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(advicePromoSaveFailedText),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isAlarmBusy = false);
+      }
+    }
+
     // N123：アラーム ON 時に、DB の今日〜CalendarRange の終わりの出勤日の pre を登録し直す
     //    分数・音は DB の設定（行がなければ確定と同じく 30 分・'default'）。手動起床（main）は戻さない
     Future<void> _rescheduleAlarmsForOn(ScaffoldMessengerState messenger, bool isSleepingNow) async {
@@ -761,7 +793,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                                 const SizedBox(height: 4.0),
                                 Text(
-                                  'アドバイス詳細画面で有料版のプロモーション表示を ON/OFF',
+                                  'ホームと改善アドバイスに、プレミアム版の案内を表示します',
                                   style: AppTextStyles.bodyTextStyle.copyWith(
                                     fontSize: 12,
                                     color: AppColors.textMuted,
@@ -774,13 +806,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           // N118 2/4 2c：読み込めるまでとアラームの処理中は押せない
                           Switch(
                             value: _advicePromoVisible,
-                            onChanged: canEdit
-                                ? (value) {
-                                    setState(() {
-                                      _advicePromoVisible = value;
-                                    });
-                                  }
-                                : null,
+                            onChanged: canEdit ? _onAdvicePromoChanged : null,  // N193：切り替えたらすぐ保存
                             activeThumbColor: AppColors.primaryGradientStart,
                           ),
                         ],
@@ -1573,7 +1599,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // N125：保存の直前に DB を読み直し、分数・起床時刻・案内表示だけを変える（音は「アラーム音の保存」ボタンだけで保存する）
+  // N125：保存の直前に DB を読み直し、分数・起床時刻だけを変える（音は「アラーム音の保存」ボタンだけで保存する）
+  //    N193：案内表示は案内のスイッチだけで保存する（ここでは読み直した値のまま）
   //    分数が変わっていてアラームが ON なら、pre を取り消して新しい分数で登録し直す（0 なら取り消すだけ）
   // N19：画面が閉じられていても最後まで進める（知らせは先に取った messenger で出す）
   Future<void> _saveSettingsSteps(ScaffoldMessengerState messenger, SleepProvider sleepProvider) async {
@@ -1597,7 +1624,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       oldMinutes = currentSettings?.alarmTimeBeforeShift ?? 30;
 
-      // ========== Step 2️⃣：分数・起床時刻・案内表示だけを変える ==========
+      // ========== Step 2️⃣：分数・起床時刻だけを変える ==========
       print('[Settings] 🔄 Step 2️⃣ 新しい AppSettings を構築中...');
       print('[Settings] 📌 起床時刻=${_wakeUpTime.hour}:${_wakeUpTime.minute.toString().padLeft(2, '0')}');
 
@@ -1607,7 +1634,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         base,
         alarmTimeBeforeShift: _alarmTimeBeforeShift,
         wakeUpTime: wakeUpTimeStr,
-        advicePromoVisible: _advicePromoVisible,
       );
 
       print('[Settings] 📤 新しい AppSettings: $savedSettings');

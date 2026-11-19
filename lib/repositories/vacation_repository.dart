@@ -3,6 +3,7 @@ import 'dart:async';  // N165：FutureOr
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:shiftsleep/database/database_helper.dart';
+import 'package:shiftsleep/models/app_settings.dart';  // N193：AppSettings.defaultRow
 import 'package:shiftsleep/models/vacation_model.dart';
 import 'package:shiftsleep/services/vacation_allocation.dart';
 import 'package:shiftsleep/services/in_flight.dart';  // N160
@@ -634,16 +635,9 @@ class VacationRepository {
       await db.insert(
         'app_settings',
         {
-          'user_id': userId,
-          'alarm_time_before_shift': 30,  // デフォルト値
-          'wake_up_time': '07:00',  // デフォルト値
-          'selected_alarm_sound': 'default',  // デフォルト値
-          'advice_promo_visible': 1,  // デフォルト値
-          'is_premium_user': 0,  // デフォルト値
+          ...AppSettings.defaultRow(userId, DateTime.now()),  // N193：既定の行は共通
           'carried_over_days': carriedOverDays,
           'carried_over_base_date': baseDate?.toIso8601String(),
-          'created_at': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -692,16 +686,9 @@ class VacationRepository {
       await db.insert(
         'app_settings',
         {
-          'user_id': userId,
-          'alarm_time_before_shift': 30,
-          'wake_up_time': '07:00',
-          'selected_alarm_sound': 'default',
-          'advice_promo_visible': 1,
-          'is_premium_user': 0,
+          ...AppSettings.defaultRow(userId, now),  // N193：既定の行は共通
           'carried_over_days': 0,
           'first_accrual_date': firstAccrualDate.toIso8601String(),
-          'created_at': now.toIso8601String(),
-          'updated_at': now.toIso8601String(),
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );

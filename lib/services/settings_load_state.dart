@@ -33,6 +33,9 @@ const settingsLoadFailedBody =
     'いまは既定の値（起床 7:00・出勤前 30 分前など）を表示しています。'
     '読み込めるまで、設定の変更と保存はできません（アラームの ON/OFF は使えます）';
 
+/// N193：案内のスイッチを切り替えて保存できなかったときの知らせ（スイッチは元に戻す）
+const advicePromoSaveFailedText = '⚠️ 案内の表示を保存できませんでした。もう一度お試しください';
+
 /// 再読み込みの結果の知らせ（color が null なら既定の色）
 ({String text, Color? color}) settingsReloadMessage({required bool succeeded}) {
   if (succeeded) {

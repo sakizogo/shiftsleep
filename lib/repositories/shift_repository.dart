@@ -552,6 +552,32 @@ class ShiftRepository {
     }
   }
 
+  /// N193：案内の表示（advice_promo_visible）の列だけを更新する
+  /// ほかの列（分数・起床時刻・音・premium）には触らない。行がなければ既定の行（AppSettings.defaultRow）を作る
+  /// 失敗は呼び出し元に上げる
+  Future<void> updateAdvicePromoVisible(String userId, bool visible) async {
+    final db = await _databaseHelper.database;
+    await db.transaction((txn) async {
+      final now = DateTime.now();
+      final updated = await txn.update(
+        'app_settings',
+        {
+          'advice_promo_visible': visible ? 1 : 0,
+          'updated_at': now.toIso8601String(),
+        },
+        where: 'user_id = ?',
+        whereArgs: [userId],
+      );
+      if (updated == 0) {
+        await txn.insert('app_settings', {
+          ...AppSettings.defaultRow(userId, now),
+          'advice_promo_visible': visible ? 1 : 0,
+        });
+      }
+    });
+    debugPrint('✅ N193: 案内の表示を保存: $userId → $visible');
+  }
+
   /// ================================================================
   /// AppSettings を取得
   Future<AppSettings?> getAppSettings(String userId) async {

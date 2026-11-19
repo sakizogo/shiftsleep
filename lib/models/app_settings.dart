@@ -98,6 +98,21 @@ class AppSettings {
     };
   }
 
+  /// N193：app_settings の行がないときに insert する既定の行（ShiftRepository・VacationRepository で共通）
+  /// 値はコンストラクタの既定値と同じ。持ち越し・付与日などは呼び出し元が足す
+  static Map<String, Object?> defaultRow(String userId, DateTime now) {
+    return {
+      'user_id': userId,
+      'alarm_time_before_shift': 30,
+      'wake_up_time': '07:00',
+      'selected_alarm_sound': 'default',
+      'advice_promo_visible': 1,
+      'is_premium_user': 0,
+      'created_at': now.toIso8601String(),
+      'updated_at': now.toIso8601String(),
+    };
+  }
+
   /// AppSettingsをコピーして部分更新（新しいインスタンスを生成）
   AppSettings copyWith({
     bool? isAlarmEnabled,
