@@ -138,18 +138,17 @@ List<({String text, Color? color})> soundSaveMessages({
 }
 
 /// 設定の保存で DB に書く設定（N125）
-/// 元（読み直した設定）に、画面の分数・起床時刻・案内表示だけを入れる
+/// 元（読み直した設定）に、画面の分数・起床時刻だけを入れる
 /// 音・premium・id・createdAt は元のまま（音は「アラーム音の保存」ボタンだけで保存する）
+/// N193：案内表示も元のまま（案内のスイッチを切り替えたときに、その列だけを保存する）
 AppSettings settingsToSave(
   AppSettings base, {
   required int alarmTimeBeforeShift,
   required String wakeUpTime,
-  required bool advicePromoVisible,
 }) {
   return base.copyWith(
     alarmTimeBeforeShift: alarmTimeBeforeShift,
     wakeUpTime: wakeUpTime,
-    advicePromoVisible: advicePromoVisible,
   );
 }
 
