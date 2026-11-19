@@ -29,3 +29,36 @@ List<({String text, Color? color, int seconds})> wakeTimeChangeMessages({
   if (dailyFailed) return [warning(wakeTimeDailySaveFailedText)];
   return const [];
 }
+
+/// N195：起きているときに起床時刻を変えて保存したときの知らせ（起床アラームは「今から寝る」で登録される）
+const awakeNoAlarmText = '⚠️ 起きているあいだは、起床アラームは登録されません。『今から寝る』を押すと登録されます';
+
+/// N195：保存で起床時刻が変わったか
+/// - before：保存の直前に読み直した値（行がなければ画面の元の値）。after：保存する値（"HH:mm"）
+/// - "7:00" と "07:00" は同じとみなす。読めない値は「変わった」とみなす
+/// - chosen：［変更］で時刻を選んで確定した（同じ時刻でも今夜の予約を作り直すので「変わった」とみなす。D11）
+bool wakeTimeChangedOnSave({required String before, required String after, required bool chosen}) {
+  if (chosen) return true;
+  final beforeMinutes = _minutesOfDay(before);
+  final afterMinutes = _minutesOfDay(after);
+  if (beforeMinutes == null || afterMinutes == null) return true;
+  return beforeMinutes != afterMinutes;
+}
+
+/// "H:mm" / "HH:mm" を 0:00 からの分にする（読めなければ null）
+int? _minutesOfDay(String time) {
+  final parts = time.split(':');
+  if (parts.length != 2) return null;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+/// N195：「起きているあいだは…」を出すか（起床時刻が変わった・アラームが ON・起きている、のすべてを満たすとき）
+bool shouldShowAwakeNoAlarmNotice({
+  required bool wakeTimeChanged,
+  required bool alarmEnabled,
+  required bool sleepingNow,
+}) =>
+    wakeTimeChanged && alarmEnabled && !sleepingNow;

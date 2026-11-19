@@ -1521,7 +1521,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (dailyFailed) await _loadDailyWakeUpSetting();
 
       // ========== 🆕 修正：DB 保存 → プロバイダー更新 → アラーム再登録（就寝中の場合） ==========
-      await _saveSettings(messenger: messenger, sleepProvider: sleepProvider);
+      await _saveSettings(messenger: messenger, sleepProvider: sleepProvider, wakeTimeChosen: true);  // N195
       // N166：「毎日」の ⚠️ は _saveSettings の ✅ のあとに出す
       _showWakeTimeChangeMessages(messenger, messages);
     }
@@ -1586,14 +1586,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ========== 🆕 Week 26+ Step 6：完全な _saveSettings() 実装 ==========
   // N125：処理中はスイッチ・音の保存・設定の保存・起床時刻の変更を押せない（_isAlarmBusy）
   // N19：messenger・sleepProvider は await の前に取ったもの（ボタンから呼ぶときは省略でき、ここで取る）
-  Future<void> _saveSettings({ScaffoldMessengerState? messenger, SleepProvider? sleepProvider}) async {
+  // N195：wakeTimeChosen は［変更］で起床時刻を選んで確定したときだけ true（［設定を保存］からは false）
+  Future<void> _saveSettings({
+    ScaffoldMessengerState? messenger,
+    SleepProvider? sleepProvider,
+    bool wakeTimeChosen = false,
+  }) async {
     // N118 2/4 2c：設定を読み込めるまでは保存しない（画面の既定値で DB を上書きしない）
     if (!canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy)) return;
     final resolvedMessenger = messenger ?? ScaffoldMessenger.of(context);
     final resolvedProvider = sleepProvider ?? context.read<SleepProvider>();
     if (mounted) setState(() => _isAlarmBusy = true);
     try {
-      await _saveSettingsSteps(resolvedMessenger, resolvedProvider);
+      await _saveSettingsSteps(resolvedMessenger, resolvedProvider, wakeTimeChosen: wakeTimeChosen);
     } finally {
       if (mounted) setState(() => _isAlarmBusy = false);
     }
@@ -1603,9 +1608,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   //    N193：案内表示は案内のスイッチだけで保存する（ここでは読み直した値のまま）
   //    分数が変わっていてアラームが ON なら、pre を取り消して新しい分数で登録し直す（0 なら取り消すだけ）
   // N19：画面が閉じられていても最後まで進める（知らせは先に取った messenger で出す）
-  Future<void> _saveSettingsSteps(ScaffoldMessengerState messenger, SleepProvider sleepProvider) async {
+  // N195：起きているときの「起床アラームは登録されません」は、起床時刻が変わり、かつアラームが ON のときだけ出す
+  Future<void> _saveSettingsSteps(
+    ScaffoldMessengerState messenger,
+    SleepProvider sleepProvider, {
+    required bool wakeTimeChosen,
+  }) async {
     final AppSettings savedSettings;
     final int oldMinutes;
+    final String previousWakeUpTime;  // N195：保存の直前の起床時刻（変わったかを比べる）
     try {
       // ========== Step 1️⃣：既存の設定を読み直す（行がなければ _currentSettings を元にする） ==========
       print('[Settings] 💾 Step 1️⃣ 既存設定を読み込み中...');
@@ -1623,6 +1634,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
       oldMinutes = currentSettings?.alarmTimeBeforeShift ?? 30;
+      previousWakeUpTime = base.wakeUpTime;
 
       // ========== Step 2️⃣：分数・起床時刻だけを変える ==========
       print('[Settings] 🔄 Step 2️⃣ 新しい AppSettings を構築中...');
@@ -1712,14 +1724,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         print('[Settings] 🛑 起床中のため、アラーム登録をスキップします');
 
-        // 🟠 起床中の警告メッセージを表示
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('⚠️ 起床中のため、アラームは登録されません。今から寝るボタンを押さないとアラームはなりません'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 4),
+        // 🟠 N195：起床時刻が変わり、かつアラームが ON のときだけ知らせる（分数だけ・何も変えない保存では出さない）
+        final showNotice = shouldShowAwakeNoAlarmNotice(
+          wakeTimeChanged: wakeTimeChangedOnSave(
+            before: previousWakeUpTime,
+            after: savedSettings.wakeUpTime,
+            chosen: wakeTimeChosen,
           ),
+          alarmEnabled: await AlarmService.isAlarmEnabled(),
+          sleepingNow: false,
         );
+        if (showNotice) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(awakeNoAlarmText),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+        } else {
+          debugPrint('[Settings] N195：起床時刻が変わっていない・アラーム OFF のため、起床中の知らせは出しません');
+        }
       }
 
     } catch (e) {
