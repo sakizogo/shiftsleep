@@ -25,6 +25,7 @@ import 'package:shiftsleep/services/wake_alarm_choice.dart';  // N19
 import 'package:shiftsleep/services/wake_alarm_registration_service.dart';  // N19
 import 'package:shiftsleep/services/wake_time_change.dart';  // N166
 import '../services/manual_wake_service.dart';
+import 'package:shiftsleep/widgets/about_app_section.dart';  // N210
 import 'package:shiftsleep/widgets/premium_debug_toggle.dart';  // A-3 3/3
 import 'package:shiftsleep/widgets/sleep_plan_settings_section.dart';  // A-4 2/3
 
@@ -1327,6 +1328,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
 
+                const SizedBox(height: AppDimensions.paddingLarge),
+
+                // N210：保存とは関係のない欄なので、［設定を保存］の下に置く（D5 A）
+                const AboutAppSection(),
                 const SizedBox(height: AppDimensions.paddingLarge),
               ],
             ),
