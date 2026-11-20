@@ -578,6 +578,40 @@ class ShiftRepository {
     debugPrint('✅ N193: 案内の表示を保存: $userId → $visible');
   }
 
+  /// 1a：プレミアムの状態（is_premium_user）の列だけを更新する
+  /// ほかの列（分数・起床時刻・音・案内の表示）には触らない。行がなければ既定の行（AppSettings.defaultRow）を作る
+  /// 失敗は呼び出し元に上げる
+  Future<void> updateIsPremiumUser(String userId, bool isPremium) async {
+    final db = await _databaseHelper.database;
+    await db.transaction((txn) => writeIsPremiumUser(txn, userId, isPremium, DateTime.now()));
+    debugPrint('✅ 1a: プレミアムの状態を保存: $userId → $isPremium');
+  }
+
+  /// 1a：updateIsPremiumUser の transaction の中で書く部分（テストでは偽の DatabaseExecutor を渡す）
+  @visibleForTesting
+  static Future<void> writeIsPremiumUser(
+    DatabaseExecutor txn,
+    String userId,
+    bool isPremium,
+    DateTime now,
+  ) async {
+    final updated = await txn.update(
+      'app_settings',
+      {
+        'is_premium_user': isPremium ? 1 : 0,
+        'updated_at': now.toIso8601String(),
+      },
+      where: 'user_id = ?',
+      whereArgs: [userId],
+    );
+    if (updated == 0) {
+      await txn.insert('app_settings', {
+        ...AppSettings.defaultRow(userId, now),
+        'is_premium_user': isPremium ? 1 : 0,
+      });
+    }
+  }
+
   /// ================================================================
   /// AppSettings を取得
   Future<AppSettings?> getAppSettings(String userId) async {
