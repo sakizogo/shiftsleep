@@ -594,33 +594,6 @@ class SleepProvider extends ChangeNotifier {
   }
   // ===================================================================
 
-  /// ========== Week 7 Phase 3 修正: RevenueCat から有料版ステータスを確認して DB に反映 ==========
-  /// 
-  /// 購入フロー完了後に呼び出す
-  /// 処理:
-  /// 1. RevenueCat にユーザーの有料版ステータスを確認
-  /// 2. DB に保存
-  /// 3. SleepProvider のメモリキャッシュを更新
-  /// 4. アドバイス再生成
-  Future<void> syncPremiumStatusFromRevenueCat() async {
-    try {
-      print('[SleepProvider] 💳 RevenueCat からプレミアムステータスを同期中...');
-      
-      final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
-      _isPremiumUser = _withDebugPremiumOverride(isPremium);
-      
-      // アドバイスを再生成（プレミアム判定を反映）
-      _generateAdvice();
-      notifyListeners();
-      
-      print('[SleepProvider] ✅ プレミアムステータス同期完了: $_isPremiumUser');
-    } catch (e) {
-      print('[SleepProvider] ❌ 同期エラー: $e');
-      notifyListeners();
-    }
-  }
-  // =====================================================================
-
   /// ========== Week 7 A 追加: 有料ユーザーフラグを設定 ==========
   /// 
   /// AppSettings から isPremium を取得して設定
@@ -754,20 +727,6 @@ class SleepProvider extends ChangeNotifier {
     _isPremiumUser = !_isPremiumUser;
     if (kDebugMode) _debugPremiumOverride = _isPremiumUser;
     print('[SleepProvider] 🧪 テスト用プレミアム状態切り替え: $_isPremiumUser');
-    _generateAdvice();
-    notifyListeners();
-  }
-
-  void setPremiumForTest() {
-    _isPremiumUser = true;
-    print('[SleepProvider] 🧪 テスト用：プレミアム版に設定: $_isPremiumUser');
-    _generateAdvice();
-    notifyListeners();
-  }
-
-  void setFreeForTest() {
-    _isPremiumUser = false;
-    print('[SleepProvider] 🧪 テスト用：無料版に設定: $_isPremiumUser');
     _generateAdvice();
     notifyListeners();
   }
