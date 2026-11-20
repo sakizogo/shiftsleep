@@ -17,6 +17,7 @@ import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/daily_wake_toggle.dart';  // N147
 import 'package:shiftsleep/services/next_shift.dart';  // N180 3/3
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
+import 'package:shiftsleep/services/premium_check_message.dart';  // N191 3/3
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
 import 'package:shiftsleep/providers/sleep_provider.dart';
@@ -46,7 +47,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _soundVolume = 1.0;
   int _alarmTimeBeforeShift = 30;
   bool _advicePromoVisible = true;
-  bool _isPremiumUser = false;
   bool _isAlarmEnabled = true;  // ✨ 🆕 追加：デフォルト true
   // N123：ON の登録し直し・OFF の取り消しの処理中はスイッチを押せない
   // N124：アラーム音の保存（登録し直し）とも共通の「アラーム処理中」フラグ。立っている間はスイッチと保存ボタンの両方を押せない
@@ -102,9 +102,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<bool> _loadSettings() async {
     try {
       final settings = await _shiftRepository.getAppSettings('test_user');
-      // N26：RevenueCat が configure されていないときは、DB の値によらず無料版として表示する
-      final isPremium = (settings?.isPremiumUser ?? false) &&
-          await _premiumService.isRevenueCatConfigured();
+      // N191 3/3：プレミアムの表示は SleepProvider の値を使う（N26 の configure の判定も PremiumService 側にある）
       // N154：毎日使用フラグと今夜の手動起床の有無も同じ try で読む（読めなければ既定の表示のまま押せなくする）
       final isDaily = await ManualWakeService.isDaily();
       final hasTonight = (await ManualWakeService.getActive()) != null;
@@ -133,7 +131,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _alarmTimeBeforeShift = settings.alarmTimeBeforeShift;
           _selectedAlarmSound = settings.selectedAlarmSound;
           _advicePromoVisible = settings.advicePromoVisible;
-          _isPremiumUser = isPremium;
           // isAlarmEnabled は削除
         }
         _useDailyWakeUpSetting = isDaily;  // N154
@@ -588,6 +585,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     // N118 2/4 2c：読み込めるまで（読み込み中・失敗中）とアラームの処理中は、値を変える・保存する操作を押せない
     final canEdit = canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy);
+    // N191 3/3：プレミアムの表示は SleepProvider の 1 か所から読む（値が変わったときだけ作り直す）
+    final isPremium = context.select<SleepProvider, bool>((provider) => provider.isPremiumUser);
     return Scaffold(
         backgroundColor: AppColors.backgroundLight,
         appBar: AppBar(
@@ -631,11 +630,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Container(
                   padding: const EdgeInsets.all(AppDimensions.paddingMedium),
                   decoration: BoxDecoration(
-                    color: _isPremiumUser
+                    color: isPremium
                         ? Colors.green.withValues(alpha: 0.05)
                         : Colors.grey.withValues(alpha: 0.05),
                     border: Border.all(
-                      color: _isPremiumUser
+                      color: isPremium
                           ? Colors.green
                           : AppColors.borderDefault,
                     ),
@@ -666,13 +665,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   vertical: 4.0,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: _isPremiumUser
+                                  color: isPremium
                                       ? Colors.green
                                       : AppColors.textMuted,
                                   borderRadius: BorderRadius.circular(12.0),
                                 ),
                                 child: Text(
-                                  _isPremiumUser ? 'プレミアム版 ✨' : '無料版',
+                                  isPremium ? 'プレミアム版 ✨' : '無料版',
                                   style: AppTextStyles.bodyTextStyle.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
@@ -683,15 +682,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ],
                           ),
                           Icon(
-                            _isPremiumUser ? Icons.check_circle : Icons.info,
-                            color: _isPremiumUser ? Colors.green : AppColors.textMuted,
+                            isPremium ? Icons.check_circle : Icons.info,
+                            color: isPremium ? Colors.green : AppColors.textMuted,
                             size: 40,
                           ),
                         ],
                       ),
                       const SizedBox(height: AppDimensions.paddingMedium),
 
-                      if (!_isPremiumUser) ...[
+                      if (!isPremium) ...[
                         Text(
                           'プレミアム版でできることは：',
                           style: AppTextStyles.bodyTextStyle.copyWith(
@@ -706,7 +705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: AppDimensions.paddingMedium),
                       ],
 
-                      if (!_isPremiumUser)
+                      if (!isPremium)
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -1365,32 +1364,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[SettingsScreen] ✅ 有料版ステータス確認完了: $isPremium');
 
       if (mounted) {
-        setState(() {
-          _isPremiumUser = isPremium;
-        });
+        // N191 3/3：画面の欄は Provider の値で描くので、ここでは Provider にだけ入れる
+        final sleepProvider = context.read<SleepProvider>();
+        sleepProvider.setPremiumStatus(isPremium);
 
-        if (context.mounted) {
-          final sleepProvider = context.read<SleepProvider>();
-          sleepProvider.setPremiumStatus(isPremium);
-        }
-
-        if (isPremium) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✨ プレミアム版をご利用中です！'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('無料版をご利用中です。プレミアム版でさらに多くの機能をご利用いただけます。'),
-              backgroundColor: Colors.blue,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
+        // N191 3/3 D15 B：欄の表示とそろえるため、setPremiumStatus のあとの Provider の値で出し分ける
+        final message = premiumCheckMessage(sleepProvider.isPremiumUser);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message.text),
+            backgroundColor: message.color,
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     } catch (e) {
       debugPrint('[SettingsScreen] ❌ 有料版確認エラー: $e');
