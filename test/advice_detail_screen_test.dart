@@ -9,6 +9,7 @@ import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/widgets/action_tip_locked_label.dart';  // P1
 
 class _NoRepository extends SleepRepository {}
 
@@ -96,7 +97,7 @@ void main() {
     final dialog = find.byType(AlertDialog);
     expect(find.descendant(of: dialog, matching: find.text('ふつうの説明')), findsOneWidget);
     // N186：実行ヒントは 🔒 のアイコン＋文言（中身は出さない）
-    expect(find.descendant(of: dialog, matching: find.text(actionTipLockedLabel)), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.byType(ActionTipLockedLabel)), findsOneWidget);  // P1
     expect(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)), findsOneWidget);
     expect(find.descendant(of: dialog, matching: find.text('ヒントの中身')), findsNothing);
     expect(find.descendant(of: dialog, matching: find.text('プレミアム版に登録')), findsNothing);
@@ -113,7 +114,7 @@ void main() {
 
     final dialog = find.byType(AlertDialog);
     expect(find.descendant(of: dialog, matching: find.text('ふつうの説明')), findsOneWidget);
-    expect(find.descendant(of: dialog, matching: find.text(actionTipLockedLabel)), findsNothing);
+    expect(find.descendant(of: dialog, matching: find.byType(ActionTipLockedLabel)), findsNothing);  // P1
     expect(find.descendant(of: dialog, matching: find.text('💡 実行ヒント')), findsNothing);
     expect(find.descendant(of: dialog, matching: find.text('ヒントの中身')), findsNothing);
     expect(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)), findsNothing);
@@ -130,7 +131,7 @@ void main() {
     await tester.tap(find.text('ふつうのアドバイス'));
     await tester.pumpAndSettle();
     expect(find.descendant(of: find.byType(AlertDialog), matching: find.text('ヒントの中身')), findsOneWidget);
-    expect(find.descendant(of: find.byType(AlertDialog), matching: find.text(actionTipLockedLabel)), findsNothing);
+    expect(find.descendant(of: find.byType(AlertDialog), matching: find.byType(ActionTipLockedLabel)), findsNothing);  // P1
   });
 
   testWidgets('N189：実行ヒントの鍵の枠は白地で、鍵は textSecondary（amber を使わない）', (tester) async {
@@ -142,7 +143,7 @@ void main() {
     final lock = tester.widget<Icon>(find.descendant(of: dialog, matching: find.byIcon(Icons.lock)));
     expect(lock.color, AppColors.textSecondary);
     final box = tester.widget<Container>(
-      find.ancestor(of: find.text(actionTipLockedLabel), matching: find.byType(Container)).first,
+      find.ancestor(of: find.byType(ActionTipLockedLabel), matching: find.byType(Container)).first,  // P1
     );
     expect((box.decoration as BoxDecoration).color, Colors.white);
   });

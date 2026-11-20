@@ -4,6 +4,7 @@ import 'package:shiftsleep/constants/colors.dart';  // N189
 import 'package:shiftsleep/constants/text_styles.dart';  // N189
 import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/widgets/action_tip_locked_label.dart';  // P1
 import 'package:shiftsleep/widgets/premium_lock_dialog.dart';  // A-3 2/3
 
 /// 有料版限定のアドバイスの 🔒 の案内の文
@@ -182,25 +183,8 @@ class _AdviceDetailScreenState extends State<AdviceDetailScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        // N186：ホームと同じく 🔒 のアイコン＋文言
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.lock,
-                                              size: 16,
-                                              color: AppColors.textSecondary,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                actionTipLockedLabel,
-                                                style: AppTextStyles.descriptionStyle.copyWith(
-                                                  color: AppColors.textSecondary,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                        // N186：ホームと同じく 🔒 のアイコン＋文言（P1：共通の部品）
+                                        const ActionTipLockedLabel(),
                                         const SizedBox(height: 8),
                                         Text(
                                           'プレミアム版では、このアドバイスを毎日の睡眠に生かすための短いヒントが表示されます。',  // N207：実際の実行ヒント（寝る時刻・仮眠など）に合わせ、言いすぎない
