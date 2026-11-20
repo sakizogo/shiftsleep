@@ -26,6 +26,7 @@ dependencies:
   flutter_riverpod: ^3.4.3
   intl: 0.20.3
   vibration: ^3.2.1
+  url_launcher: ^6.3.3  # N210：プライバシーポリシーを外部のブラウザで開く
 dev_dependencies:
   flutter_test:
     sdk: flutter
