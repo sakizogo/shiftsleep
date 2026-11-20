@@ -33,6 +33,7 @@ import 'package:shiftsleep/models/shift_pattern_model.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/vacation_repository.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
+import 'package:shiftsleep/widgets/action_tip_locked_label.dart';  // P1
 import 'package:shiftsleep/widgets/sleep_button.dart';
 import 'package:shiftsleep/widgets/sleep_plan_card.dart';  // A-3 3/3
 
@@ -1748,26 +1749,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           AppDimensions.borderRadiusSmall,
                                         ),
                                       ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.lock,
-                                            size: 16,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          const SizedBox(width: 4.0),
-                                          Expanded(
-                                            child: Text(
-                                              actionTipLockedLabel,
-                                              style: AppTextStyles
-                                                  .descriptionStyle
-                                                  .copyWith(
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                      // P1：🔒 と文言は詳細のダイアログと共通の部品（大きい文字でも「解／放」と割れない）
+                                      child: const ActionTipLockedLabel(),
                                     ),
                                   ],
                                 ),

@@ -42,7 +42,12 @@ enum ActionTipView {
 }
 
 /// N186：無料のときに実行ヒントの代わりに出す 🔒 の案内（詳細画面と同じ文言）
+/// P1：読み上げにはこの 1 つを使う（画面では actionTipLockedParts に分けて出す）
 const String actionTipLockedLabel = '実行ヒント（プレミアム版で解放）';
+
+/// P1：画面では、この区切り（文節）で折り返す。つなげると actionTipLockedLabel と同じ
+/// 大きい文字で「解／放」と割れないようにするため（D17 B）
+const List<String> actionTipLockedParts = ['実行ヒント', '（プレミアム版で', '解放）'];
 
 /// N186：実行ヒントをどう出すか（ホームと改善アドバイスの詳細で共通）
 ActionTipView actionTipView(
