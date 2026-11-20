@@ -596,9 +596,10 @@ class SleepProvider extends ChangeNotifier {
 
   /// ========== Week 7 A 追加: 有料ユーザーフラグを設定 ==========
   /// 
-  /// AppSettings から isPremium を取得して設定
+  /// RevenueCat などで確かめたプレミアムの状態を入れる（設定画面の _showPaywall から呼ぶ）
+  /// N191 2/3：デバッグ版でテスト用ボタンを押していたら、その値を保つ（loadAllSleepData と同じ）
   void setPremiumStatus(bool isPremium) {
-    _isPremiumUser = isPremium;
+    _isPremiumUser = _withDebugPremiumOverride(isPremium);
     _generateAdvice();
     notifyListeners();
   }

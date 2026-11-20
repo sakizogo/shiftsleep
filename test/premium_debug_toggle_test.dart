@@ -1,4 +1,5 @@
 // A-3 3/3：設定画面のプレミアム表示の切り替え（テスト用）のボタン
+// N191 2/3：setPremiumStatus もボタンの値（デバッグの上書き）を保つ
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,6 +74,49 @@ void main() {
     final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
     await tester.runAsync(provider.loadAllSleepData);
     expect(provider.isPremiumUser, isFalse);
+  });
+
+  // N191 2/3：setPremiumStatus もデバッグの上書きを通す
+  testWidgets('N191 2/3：上書きなし（リリース版と同じ道）なら、setPremiumStatus の値をそのまま使う', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    provider.setPremiumStatus(true);
+    expect(provider.isPremiumUser, isTrue);
+    provider.setPremiumStatus(false);
+    expect(provider.isPremiumUser, isFalse);
+  });
+
+  testWidgets('N191 2/3：ボタンでプレミアムにしていたら、setPremiumStatus(false) でもプレミアムのまま', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+
+    provider.setPremiumStatus(false);
+    await tester.pump();
+    expect(provider.isPremiumUser, isTrue);
+    expect(find.text('$premiumDebugToggleLabel　今：プレミアム'), findsOneWidget);
+  });
+
+  testWidgets('N191 2/3：ボタンを 2 回押して無料に戻していたら、setPremiumStatus(true) でも無料のまま（D13 A）', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+
+    provider.setPremiumStatus(true);
+    expect(provider.isPremiumUser, isFalse);
+  });
+
+  testWidgets('N191 2/3：上書きで値が変わらなくても、setPremiumStatus は 1 回知らせる', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    var notified = 0;
+    provider.addListener(() => notified++);
+
+    provider.setPremiumStatus(false);
+    expect(provider.isPremiumUser, isTrue);
+    expect(notified, 1);
   });
 
   testWidgets('visible が false（リリース版と同じ）なら何も出ない', (tester) async {
