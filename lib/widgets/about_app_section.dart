@@ -5,12 +5,13 @@
 // - 「プライバシー」「ポリシー」の区切りで折り返す（幅 360dp・2.0 倍で「ー」だけが落ちないように）
 // - 開いている途中は、もう一度押しても何もしない
 // - 開けなかったら、URL つきの ⚠️ をオレンジで 6 秒。［コピー］で URL をクリップボードに入れる（D21 B）
+// - N138＋N139 4a：行は PrivacyPolicyTile に切り出した（購入画面と共通。E27 A）
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/services/about_app.dart';
+import 'package:shiftsleep/widgets/privacy_policy_tile.dart';
 
 class AboutAppSection extends StatefulWidget {
   const AboutAppSection({super.key, this.opener = openInExternalBrowser});
@@ -23,46 +24,6 @@ class AboutAppSection extends StatefulWidget {
 }
 
 class _AboutAppSectionState extends State<AboutAppSection> {
-  bool _isOpening = false;
-
-  Future<void> _openPrivacyPolicy() async {
-    if (_isOpening) return;
-    final messenger = ScaffoldMessenger.of(context);  // await 前に取得
-    _isOpening = true;
-    try {
-      final opened = await openPrivacyPolicy(open: widget.opener);
-      if (opened) return;
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text(privacyPolicyOpenFailedText),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 6),
-          action: SnackBarAction(
-            label: copyUrlActionLabel,
-            textColor: Colors.white,
-            onPressed: () => _copyUrl(messenger),
-          ),
-        ),
-      );
-    } finally {
-      _isOpening = false;
-    }
-  }
-
-  Future<void> _copyUrl(ScaffoldMessengerState messenger) async {
-    try {
-      await Clipboard.setData(const ClipboardData(text: privacyPolicyUrl));
-    } catch (e) {
-      debugPrint('⚠️ N210: URL をコピーできませんでした: $e');
-      return;
-    }
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(content: Text(urlCopiedText), duration: Duration(seconds: 2)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(AppDimensions.borderRadiusMedium);
@@ -78,33 +39,7 @@ class _AboutAppSectionState extends State<AboutAppSection> {
             side: const BorderSide(color: AppColors.borderDefault),
           ),
           clipBehavior: Clip.antiAlias,
-          child: ListTile(
-            leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.textSecondary),
-            // 区切りで Wrap に並べ、大きい文字でも「ー」だけが落ちないようにする。読み上げは 1 つにまとめる
-            title: Semantics(
-              label: privacyPolicyLabel,
-              excludeSemantics: true,
-              child: Wrap(
-                children: [
-                  for (final part in privacyPolicyLabelParts)
-                    Text(
-                      part,
-                      style: AppTextStyles.bodyTextStyle.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            trailing: const Icon(
-              Icons.open_in_new,
-              color: AppColors.textSecondary,
-              semanticLabel: externalLinkSemanticLabel,
-            ),
-            onTap: _openPrivacyPolicy,
-          ),
+          child: PrivacyPolicyTile(opener: widget.opener),
         ),
       ],
     );
