@@ -27,6 +27,7 @@ import 'package:shiftsleep/services/wake_time_change.dart';  // N166
 import '../services/manual_wake_service.dart';
 import 'package:shiftsleep/widgets/about_app_section.dart';  // N210
 import 'package:shiftsleep/widgets/premium_debug_toggle.dart';  // A-3 3/3
+import 'package:shiftsleep/widgets/premium_status_panel.dart';  // N138＋N139 3
 import 'package:shiftsleep/widgets/sleep_plan_settings_section.dart';  // A-4 2/3
 
 class SettingsScreen extends StatefulWidget {
@@ -622,150 +623,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ========== プレミアム版ステータスセクション ==========
-                Text(
-                  '💳 プレミアム版ステータス',
-                  style: AppTextStyles.sectionTitleStyle,
-                ),
-                const SizedBox(height: AppDimensions.paddingMedium),
-
-                Container(
-                  padding: const EdgeInsets.all(AppDimensions.paddingMedium),
-                  decoration: BoxDecoration(
-                    color: isPremium
-                        ? Colors.green.withValues(alpha: 0.05)
-                        : Colors.grey.withValues(alpha: 0.05),
-                    border: Border.all(
-                      color: isPremium
-                          ? Colors.green
-                          : AppColors.borderDefault,
-                    ),
-                    borderRadius: BorderRadius.circular(
-                      AppDimensions.borderRadiusMedium,
-                    ),
-                  ),
-                  child: Column(
+                // N138＋N139 3：PremiumStatusPanel に切り出し（D16 B）。🧪 と改善アドバイス表示設定は枠の中の一番下に渡す（E22 A）
+                PremiumStatusPanel(
+                  isPremium: isPremium,
+                  isLoading: _isLoading,
+                  onUpgrade: _isLoading ? null : _showPaywall,
+                  footer: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'あなたのプラン',
-                                style: AppTextStyles.bodyTextStyle.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 8.0),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12.0,
-                                  vertical: 4.0,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isPremium
-                                      ? Colors.green
-                                      : AppColors.textMuted,
-                                  borderRadius: BorderRadius.circular(12.0),
-                                ),
-                                child: Text(
-                                  isPremium ? 'プレミアム版 ✨' : '無料版',
-                                  style: AppTextStyles.bodyTextStyle.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          Icon(
-                            isPremium ? Icons.check_circle : Icons.info,
-                            color: isPremium ? Colors.green : AppColors.textMuted,
-                            size: 40,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppDimensions.paddingMedium),
-
-                      if (!isPremium) ...[
-                        Text(
-                          'プレミアム版でできることは：',
-                          style: AppTextStyles.bodyTextStyle.copyWith(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        const SizedBox(height: 8.0),
-                        _buildBenefitItem('📊 詳細なアドバイスを取得'),
-                        _buildBenefitItem('🎯 最大5つの改善提案'),
-                        _buildBenefitItem('💾 すべての睡眠データを保存'),
-                        const SizedBox(height: AppDimensions.paddingMedium),
-                      ],
-
-                      if (!isPremium)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _isLoading ? null : _showPaywall,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryGradientStart,
-                              disabledBackgroundColor: AppColors.textMuted,
-                              padding: EdgeInsets.symmetric(
-                                vertical: AppDimensions.paddingMedium,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppDimensions.borderRadiusMedium,
-                                ),
-                              ),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Text(
-                                    '✨ プレミアム版にアップグレード（¥980/月）',
-                                    style: AppTextStyles.bodyTextStyle.copyWith(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                          ),
-                        )
-                      else
-                        Container(
-                          width: double.infinity,
-                          padding: EdgeInsets.symmetric(
-                            vertical: AppDimensions.paddingMedium,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(
-                              AppDimensions.borderRadiusMedium,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '✅ プレミアム版をご利用中です',
-                              style: AppTextStyles.bodyTextStyle.copyWith(
-                                color: Colors.green,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
                       // A-3 3/3：デバッグ版だけ、プレミアム表示を切り替える（リリース版では何も出さない）
                       const PremiumDebugToggleButton(),
                       Text(
@@ -1341,19 +1206,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
       );
-  }
-
-  Widget _buildBenefitItem(String benefit) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Text(
-        benefit,
-        style: AppTextStyles.bodyTextStyle.copyWith(
-          fontSize: 12,
-          color: AppColors.textSecondary,
-        ),
-      ),
-    );
   }
 
   Future<void> _showPaywall() async {
