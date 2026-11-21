@@ -5,6 +5,7 @@ import 'package:shiftsleep/repositories/shift_repository.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
+import 'package:shiftsleep/services/premium_purchase.dart';  // N138＋N139 2：購入・復元の結果の種類
 import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
 import 'package:shiftsleep/services/sleep_preference_service.dart';  // ========== Week 8 Phase 4 追加 ==========
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：メイン・補助を長さで決める
@@ -27,7 +28,7 @@ import 'package:shiftsleep/services/sleep_debt.dart';  // N198：睡眠負債を
 /// - isSleepingNow フラグで「睡眠中」状態をグローバル管理
 class SleepProvider extends ChangeNotifier {
   final SleepRepository _repository;
-  final PremiumService _premiumService = PremiumService();  // ========== Week 7 Phase 3 追加 ==========
+  final PremiumService _premiumService;  // ========== Week 7 Phase 3 追加 ==========（N138＋N139 2：テストで差し替える）
   
   // ========================
   // 状態変数
@@ -51,6 +52,9 @@ class SleepProvider extends ChangeNotifier {
   List<SleepAdvice> _displayedAdvice = []; // 表示対象のアドバイス
   bool _isPremiumUser = false;          // 有料ユーザーフラグ
   bool? _debugPremiumOverride;  // A-3 3/3 F6：デバッグ版でテスト用ボタンが切り替えた値（もう一度押すまで保つ）
+  bool _receivedPremium = false;  // N138＋N139 2 D13 B：PremiumService から最後に受け取った本当の値
+  bool _isPremiumBusy = false;  // N138＋N139 2 E12 A：購入・復元の途中か
+  List<PremiumPlan> _premiumPlans = const [];  // N138＋N139 2：最後に取得した商品（月額・年額）
   bool _advicePromoVisible = true;
   // ================================================
 
@@ -123,6 +127,8 @@ class SleepProvider extends ChangeNotifier {
   // ========== Week 7 A 追加: アドバイス Getter ==========
     List<SleepAdvice> get allAdvice => _allAdvice;
   bool get isPremiumUser => _isPremiumUser;
+  bool get isPremiumBusy => _isPremiumBusy;  // N138＋N139 2
+  List<PremiumPlan> get premiumPlans => _premiumPlans;  // N138＋N139 2
   bool get advicePromoVisible => _advicePromoVisible;
   
   /// 表示対象のアドバイスがあるか
@@ -271,7 +277,8 @@ class SleepProvider extends ChangeNotifier {
   // コンストラクタ
   // ========================
 
-  SleepProvider(this._repository) {
+  SleepProvider(this._repository, {PremiumService? premiumService})
+      : _premiumService = premiumService ?? PremiumService() {
     // ✅ 【追加】アプリ起動時に SharedPreferences から睡眠記録IDを復元
     _loadCurrentSleepRecordIdFromPreferences();
   }
@@ -296,7 +303,7 @@ class SleepProvider extends ChangeNotifier {
       print('[SleepProvider] 💳 PremiumService から有料版ステータスを読み込み中...');
       try {
         final isPremium = await _premiumService.loadPremiumStatusFromDatabase('test_user');
-        _isPremiumUser = _withDebugPremiumOverride(isPremium);
+        _applyReceivedPremium(isPremium);
         print('[SleepProvider] ✅ 有料版ステータス読み込み完了: $_isPremiumUser');
       } catch (e) {
         print('[SleepProvider] ⚠️  PremiumService エラー（アドバイス生成は続行）: $e');
@@ -599,8 +606,115 @@ class SleepProvider extends ChangeNotifier {
   /// RevenueCat などで確かめたプレミアムの状態を入れる（設定画面の _showPaywall から呼ぶ）
   /// N191 2/3：デバッグ版でテスト用ボタンを押していたら、その値を保つ（loadAllSleepData と同じ）
   void setPremiumStatus(bool isPremium) {
-    _isPremiumUser = _withDebugPremiumOverride(isPremium);
+    _applyReceivedPremium(isPremium);
     _generateAdvice();
+    notifyListeners();
+  }
+
+  /// N138＋N139 2：商品（月額・年額）を取得して premiumPlans に入れる
+  /// 取得できなかったときは premiumPlans を空にする
+  Future<PremiumPlansOutcome> loadPremiumPlans() async {
+    if (!await _premiumService.isRevenueCatConfigured()) {
+      _setPremiumPlans(const []);
+      return PremiumPlansOutcome.notConfigured;
+    }
+    try {
+      final plans = await _premiumService.fetchPremiumPlans();
+      _setPremiumPlans(plans);
+      return plans.isEmpty ? PremiumPlansOutcome.empty : PremiumPlansOutcome.ready;
+    } catch (e) {
+      debugPrint('[SleepProvider] ⚠️ 商品を取得できませんでした: $e');
+      _setPremiumPlans(const []);
+      return classifyPremiumError(e) == PremiumErrorKind.network
+          ? PremiumPlansOutcome.network
+          : PremiumPlansOutcome.failed;
+    }
+  }
+
+  void _setPremiumPlans(List<PremiumPlan> plans) {
+    _premiumPlans = List.unmodifiable(plans);
+    notifyListeners();
+  }
+
+  /// N138＋N139 2：購入する（D14 B：画面はこれを呼んで、結果で SnackBar を出し分ける）
+  /// - 購入済みのエラーなら、続けて復元する（あれば success、なければ ownedByOtherAccount）
+  /// - 途中の呼び出しは inProgress（E12 A）。configure していなければ notConfigured（D25 B）
+  Future<PremiumPurchaseOutcome> purchasePremium(PremiumPlan plan) async {
+    if (_isPremiumBusy) return PremiumPurchaseOutcome.inProgress;
+    _setPremiumBusy(true);
+    try {
+      if (!await _premiumService.isRevenueCatConfigured()) return PremiumPurchaseOutcome.notConfigured;
+      try {
+        final hasPremium = await _premiumService.purchase(plan);
+        setPremiumStatus(hasPremium);
+        return hasPremium ? PremiumPurchaseOutcome.success : PremiumPurchaseOutcome.notEntitled;
+      } catch (e) {
+        debugPrint('[SleepProvider] ⚠️ 購入できませんでした: $e');
+        switch (classifyPremiumError(e)) {
+          case PremiumErrorKind.cancelled:
+            return PremiumPurchaseOutcome.cancelled;
+          case PremiumErrorKind.network:
+            return PremiumPurchaseOutcome.network;
+          case PremiumErrorKind.pending:
+            return PremiumPurchaseOutcome.pending;
+          case PremiumErrorKind.inProgress:
+            return PremiumPurchaseOutcome.inProgress;
+          case PremiumErrorKind.other:
+            return PremiumPurchaseOutcome.failed;
+          case PremiumErrorKind.alreadyPurchased:
+            // finally（isPremiumBusy を戻す）より先に復元を終えるため await する
+            return await _restoreAfterAlreadyPurchased();
+        }
+      }
+    } finally {
+      _setPremiumBusy(false);
+    }
+  }
+
+  /// 購入済みのエラーのあとの自動の復元（E13 A：復元の失敗は復元の結果の種類に従う）
+  Future<PremiumPurchaseOutcome> _restoreAfterAlreadyPurchased() async {
+    try {
+      final hasPremium = await _premiumService.restore();
+      setPremiumStatus(hasPremium);
+      return hasPremium ? PremiumPurchaseOutcome.success : PremiumPurchaseOutcome.ownedByOtherAccount;
+    } catch (e) {
+      debugPrint('[SleepProvider] ⚠️ 購入済みのため復元しましたが、できませんでした: $e');
+      switch (restoreOutcomeForError(classifyPremiumError(e))) {
+        case PremiumRestoreOutcome.network:
+          return PremiumPurchaseOutcome.network;
+        case PremiumRestoreOutcome.inProgress:
+          return PremiumPurchaseOutcome.inProgress;
+        case PremiumRestoreOutcome.restored:
+        case PremiumRestoreOutcome.nothingToRestore:
+        case PremiumRestoreOutcome.notConfigured:
+        case PremiumRestoreOutcome.failed:
+          return PremiumPurchaseOutcome.failed;
+      }
+    }
+  }
+
+  /// N138＋N139 2：購入を復元する（D26 A：購入画面から呼ぶ）
+  /// 途中の呼び出しは inProgress（E12 A）。configure していなければ notConfigured
+  Future<PremiumRestoreOutcome> restorePremium() async {
+    if (_isPremiumBusy) return PremiumRestoreOutcome.inProgress;
+    _setPremiumBusy(true);
+    try {
+      if (!await _premiumService.isRevenueCatConfigured()) return PremiumRestoreOutcome.notConfigured;
+      try {
+        final hasPremium = await _premiumService.restore();
+        setPremiumStatus(hasPremium);
+        return hasPremium ? PremiumRestoreOutcome.restored : PremiumRestoreOutcome.nothingToRestore;
+      } catch (e) {
+        debugPrint('[SleepProvider] ⚠️ 復元できませんでした: $e');
+        return restoreOutcomeForError(classifyPremiumError(e));
+      }
+    } finally {
+      _setPremiumBusy(false);
+    }
+  }
+
+  void _setPremiumBusy(bool busy) {
+    _isPremiumBusy = busy;
     notifyListeners();
   }
   // ================================================================
@@ -722,11 +836,18 @@ class SleepProvider extends ChangeNotifier {
     return kDebugMode && override != null ? override : value;
   }
 
+  /// N138＋N139 2 D13 B：PremiumService から受け取った本当の値を覚えて、上書きを通して入れる
+  void _applyReceivedPremium(bool value) {
+    _receivedPremium = value;
+    _isPremiumUser = _withDebugPremiumOverride(value);
+  }
+
   /// テスト用：プレミアムの表示を切り替える
   /// A-3 3/3 F6：デバッグ版では、もう一度押すまで loadAllSleepData などで PremiumService の値に戻らない
+  /// N138＋N139 2 D13 B：本当の値と同じに戻ったら、上書きを解除する（以後は本当の値に従う）
   void togglePremiumStatusForTest() {
     _isPremiumUser = !_isPremiumUser;
-    if (kDebugMode) _debugPremiumOverride = _isPremiumUser;
+    if (kDebugMode) _debugPremiumOverride = _isPremiumUser == _receivedPremium ? null : _isPremiumUser;
     print('[SleepProvider] 🧪 テスト用プレミアム状態切り替え: $_isPremiumUser');
     _generateAdvice();
     notifyListeners();
