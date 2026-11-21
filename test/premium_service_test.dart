@@ -24,6 +24,7 @@ void main() {
     messenger.setMockMethodCallHandler(purchasesChannel, (call) async {
       purchasesCalls.add(call.method);
       if (call.method == 'isConfigured') return configured;
+      if (call.method == 'invalidateCustomerInfoCache') return null;  // 2c
       throw PlatformException(code: 'unexpected', message: call.method);
     });
   }
@@ -74,7 +75,7 @@ void main() {
     mockConfigured(true);
 
     expect(await PremiumService().checkPremiumStatus(), false);
-    expect(purchasesCalls, ['isConfigured', 'getCustomerInfo']);
+    expect(purchasesCalls, ['isConfigured', 'invalidateCustomerInfoCache', 'getCustomerInfo']);  // 2c
 
     // DB の検出が働いていることの確認も兼ねる（ここが空なら上の isEmpty は意味がない）
     expect(await PremiumService().loadPremiumStatusFromDatabase('test_user'), false);
@@ -95,6 +96,7 @@ void main() {
       messenger.setMockMethodCallHandler(purchasesChannel, (call) async {
         purchasesCalls.add(call.method);
         if (call.method == 'isConfigured') return true;
+        if (call.method == 'invalidateCustomerInfoCache') return null;  // 2c
         final ids = activeEntitlementIds;
         if (call.method == 'getCustomerInfo' && ids != null) return _customerInfoJson(ids);
         throw PlatformException(code: 'unexpected', message: call.method);
@@ -299,6 +301,7 @@ void main() {
       messenger.setMockMethodCallHandler(purchasesChannel, (call) async {
         purchasesCalls.add(call.method);
         if (call.method == 'isConfigured') return configured;
+        if (call.method == 'invalidateCustomerInfoCache') return null;  // 2c
         final ids = activeEntitlementIds;
         if (call.method == 'getCustomerInfo' && ids != null) return _customerInfoJson(ids);
         throw PlatformException(code: 'unexpected', message: call.method);
@@ -361,6 +364,102 @@ void main() {
       settings.complete(_settings(isPremiumUser: false));
 
       expect(await load, true);
+    });
+  });
+
+  // 2c：覚えている CustomerInfo を消してから確かめる（E32 A・E33 A）と、途中の購入・復元（E34 A）
+  group('2c：invalidateCustomerInfoCache と途中の購入・復元', () {
+    // メソッド名 → 返す値（Exception なら投げる。Completer ならその完了を待つ）
+    final responses = <String, Object?>{};
+    late _FakeShiftRepository repository;
+    late PremiumService service;
+    final monthlyPlan = PremiumPlan(
+      PremiumPlanKind.monthly,
+      Package.fromJson(_packageJson(r'$rc_monthly', 'MONTHLY', '¥980')),
+    );
+
+    setUp(() {
+      responses
+        ..clear()
+        ..['invalidateCustomerInfoCache'] = null
+        ..['getCustomerInfo'] = _customerInfoJson(['ShiftSleep Pro']);
+      repository = _FakeShiftRepository();
+      service = PremiumService.withRepository(repository);
+      messenger.setMockMethodCallHandler(purchasesChannel, (call) async {
+        purchasesCalls.add(call.method);
+        if (call.method == 'isConfigured') return true;
+        if (responses.containsKey(call.method)) {
+          final response = responses[call.method];
+          if (response is Exception) throw response;
+          if (response is Completer<Object?>) return response.future;
+          return response;
+        }
+        throw PlatformException(code: 'unexpected', message: call.method);
+      });
+    });
+
+    test('消してから取りに行く：isConfigured → invalidate → getCustomerInfo の順', () async {
+      expect(await service.verifyPremiumStatus(), PremiumVerification.premium);
+
+      expect(purchasesCalls, ['isConfigured', 'invalidateCustomerInfoCache', 'getCustomerInfo']);
+      expect(repository.saved, [('test_user', true)]);
+    });
+
+    test('E33 A：消せなかった → unavailable で、getCustomerInfo を呼ばず、保存しない', () async {
+      responses['invalidateCustomerInfoCache'] = PlatformException(code: 'unexpected');
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.unavailable);
+
+      expect(purchasesCalls, ['isConfigured', 'invalidateCustomerInfoCache']);
+      expect(repository.saved, isEmpty);
+    });
+
+    test('消したあと通信できない（機内モード）→ unavailable で、保存しない', () async {
+      responses['getCustomerInfo'] = PlatformException(code: '${PurchasesErrorCode.networkError.index}');
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.unavailable);
+
+      expect(purchasesCalls, ['isConfigured', 'invalidateCustomerInfoCache', 'getCustomerInfo']);
+      expect(repository.saved, isEmpty);
+    });
+
+    test('E34 A：確かめている途中に購入が成功 → unavailable で、購入の結果（true）を上書きしない', () async {
+      final customerInfo = Completer<Object?>();
+      responses['getCustomerInfo'] = customerInfo;
+      responses['purchasePackage'] = _purchaseResultJson(['ShiftSleep Pro']);
+
+      final verify = service.verifyPremiumStatus();
+      await pumpEventQueue();
+      expect(await service.purchase(monthlyPlan), true);
+      customerInfo.complete(_customerInfoJson(const []));  // 購入より前に取った無料の結果
+
+      expect(await verify, PremiumVerification.unavailable);
+      expect(repository.saved, [('test_user', true)]);
+      expect(await service.loadPremiumStatusFromDatabase('test_user'), true);
+    });
+
+    test('E34 A：確かめている途中に復元 → unavailable で、復元の結果を上書きしない', () async {
+      final customerInfo = Completer<Object?>();
+      responses['getCustomerInfo'] = customerInfo;
+      responses['restorePurchases'] = _customerInfoJson(['ShiftSleep Pro']);
+
+      final verify = service.verifyPremiumStatus();
+      await pumpEventQueue();
+      expect(await service.restore(), true);
+      customerInfo.complete(_customerInfoJson(const []));
+
+      expect(await verify, PremiumVerification.unavailable);
+      expect(repository.saved, [('test_user', true)]);
+    });
+
+    test('E34 A：前に購入していても、確かめている途中になければ、今までどおり保存する', () async {
+      responses['purchasePackage'] = _purchaseResultJson(['ShiftSleep Pro']);
+      await service.purchase(monthlyPlan);
+      responses['getCustomerInfo'] = _customerInfoJson(const []);  // 期限が切れた
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.free);
+
+      expect(repository.saved, [('test_user', true), ('test_user', false)]);
     });
   });
 }
