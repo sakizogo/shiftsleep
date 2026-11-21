@@ -15,7 +15,7 @@ import 'screens/home_screen.dart';
 
 
 // N26：Test Store のキーは release で使うと SDK がアプリを閉じるので、デバッグ版だけで使う
-const String _revenueCatTestApiKey = 'test_UbjlWenDYu2XCqxFqxQpEWCJcZpH';
+const String _revenueCatTestApiKey = 'test_UbjWenDYUzXCqxFqxQpEWCJcZpH';
 // N26：Google Play 用のキー（goog_）。発行するまでは空のままで、その間はプレミアムなしで動く
 const String _revenueCatProductionApiKey = '';
 
