@@ -96,7 +96,7 @@ void main() {
     expect(find.text('$premiumDebugToggleLabel　今：プレミアム'), findsOneWidget);
   });
 
-  testWidgets('N191 2/3：ボタンを 2 回押して無料に戻していたら、setPremiumStatus(true) でも無料のまま（D13 A）', (tester) async {
+  testWidgets('D13 B：ボタンを 2 回押して本当の値（無料）に戻すと上書きが外れ、setPremiumStatus(true) でプレミアムになる', (tester) async {
     final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
     await tester.tap(find.byType(OutlinedButton));
     await tester.pump();
@@ -104,7 +104,44 @@ void main() {
     await tester.pump();
 
     provider.setPremiumStatus(true);
+    expect(provider.isPremiumUser, isTrue);
+  });
+
+  testWidgets('D13 B：途中で購入したら、本当の値（プレミアム）と同じになったときに上書きが外れる', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    // 1 回目：無料 → プレミアム（上書き true）。そのあと購入（本当の値も true）
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    provider.setPremiumStatus(true);
+    expect(provider.isPremiumUser, isTrue);
+
+    // 2 回目：本当の値（true）と違う無料になるので、上書き false。購入の確認があっても無料のまま
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    provider.setPremiumStatus(true);
     expect(provider.isPremiumUser, isFalse);
+
+    // 3 回目：本当の値と同じプレミアムに戻るので上書きが外れ、以後は本当の値に従う
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    expect(provider.isPremiumUser, isTrue);
+    provider.setPremiumStatus(false);
+    expect(provider.isPremiumUser, isFalse);
+  });
+
+  testWidgets('D13 B：loadAllSleepData の値も本当の値として扱う', (tester) async {
+    final provider = await pumpButton(tester, const PremiumDebugToggleButton(visible: true));
+    provider.setPremiumStatus(true);
+    // テストでは RevenueCat がないので、PremiumService は無料（false）を返す。本当の値は false になる
+    await tester.runAsync(provider.loadAllSleepData);
+    await tester.pump();
+    expect(provider.isPremiumUser, isFalse);
+
+    // 本当の値（false）と違うプレミアムになるので、上書きとして保つ
+    await tester.tap(find.byType(OutlinedButton));
+    await tester.pump();
+    provider.setPremiumStatus(false);
+    expect(provider.isPremiumUser, isTrue);
   });
 
   testWidgets('N191 2/3：上書きで値が変わらなくても、setPremiumStatus は 1 回知らせる', (tester) async {

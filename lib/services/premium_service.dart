@@ -13,6 +13,7 @@
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/services/premium_purchase.dart';
 
 class PremiumService {
   // ========== シングルトンパターン ==========
@@ -76,16 +77,24 @@ class PremiumService {
     final bool hasPremium;
     try {
       final customerInfo = await Purchases.getCustomerInfo();
-      final entitlements = customerInfo.entitlements.active;
-      hasPremium = entitlements.containsKey(_entitlementId);
+      hasPremium = hasPremiumEntitlement(customerInfo);
       debugPrint('[PremiumService] ✅ RevenueCat 確認完了: '
-          'entitlementId=$_entitlementId, hasEntitlement=$hasPremium, active=${entitlements.keys.toList()}');
+          'entitlementId=$_entitlementId, hasEntitlement=$hasPremium, active=${customerInfo.entitlements.active.keys.toList()}');
     } catch (e) {
       debugPrint('[PremiumService] ❌ RevenueCat の確認に失敗（前の値を返す）: $e');
       return _isPremiumUser;
     }
 
-    // D22 A：DB より先にキャッシュに入れる
+    return _applyResult(userId, hasPremium);
+  }
+
+  /// D23 A：entitlement（ShiftSleep Pro）が active か（確認・購入・復元で使う）
+  static bool hasPremiumEntitlement(CustomerInfo customerInfo) =>
+      customerInfo.entitlements.active.containsKey(_entitlementId);
+
+  /// RevenueCat の結果をキャッシュに入れてから DB に保存する
+  /// D22 A：DB に保存できなくても、結果をそのまま返す（失敗は debugPrint だけに出す）
+  Future<bool> _applyResult(String userId, bool hasPremium) async {
     _isPremiumUser = hasPremium;
 
     try {
@@ -95,6 +104,38 @@ class PremiumService {
     }
 
     return hasPremium;
+  }
+
+  /// N138＋N139 2：D19 A'：offerings.current の月額・年額（ないものは入れない。月額・年額の順）
+  /// RevenueCat の例外は外に伝える（判定は呼び出し元）
+  Future<List<PremiumPlan>> fetchPremiumPlans() async {
+    final offerings = await Purchases.getOfferings();
+    final current = offerings.current;
+    if (current == null) return const [];
+    final monthly = current.monthly;
+    final annual = current.annual;
+    return [
+      if (monthly != null) PremiumPlan(PremiumPlanKind.monthly, monthly),
+      if (annual != null) PremiumPlan(PremiumPlanKind.annual, annual),
+    ];
+  }
+
+  /// N138＋N139 2：購入して entitlement を見て、キャッシュと DB に入れる（D23 A・D22 A・E16 A）
+  /// RevenueCat の例外（キャンセルなど）は外に伝える（判定は呼び出し元）
+  Future<bool> purchase(PremiumPlan plan, {String userId = 'test_user'}) async {
+    final result = await Purchases.purchase(PurchaseParams.package(plan.package));
+    final hasPremium = hasPremiumEntitlement(result.customerInfo);
+    debugPrint('[PremiumService] ✅ 購入完了: plan=${plan.kind.name}, hasEntitlement=$hasPremium');
+    return _applyResult(userId, hasPremium);
+  }
+
+  /// N138＋N139 2：復元して entitlement を見て、キャッシュと DB に入れる（D22 A）
+  /// RevenueCat の例外は外に伝える（判定は呼び出し元）
+  Future<bool> restore({String userId = 'test_user'}) async {
+    final customerInfo = await Purchases.restorePurchases();
+    final hasPremium = hasPremiumEntitlement(customerInfo);
+    debugPrint('[PremiumService] ✅ 復元完了: hasEntitlement=$hasPremium');
+    return _applyResult(userId, hasPremium);
   }
 
   /// DB に有料版ステータスを保存
