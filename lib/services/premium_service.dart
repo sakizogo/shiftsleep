@@ -40,6 +40,9 @@ class PremiumService {
   /// loadPremiumStatusFromDatabase は、これがあれば DB の値より優先する
   bool? _verifiedPremium;
 
+  /// 2c E34 A：購入・復元を始めた回数（確かめている途中に増えたら、その結果は使わない）
+  int _purchaseGeneration = 0;
+
   final ShiftRepository _shiftRepository;
 
   // ========================
@@ -93,17 +96,36 @@ class PremiumService {
   /// - configure していない → notConfigured（RevenueCat を呼ばず、キャッシュも DB も変えない）
   /// - 確かめられた → premium / free（キャッシュと DB に入れる。D22 A）
   /// - 確かめられなかった（オフラインなど）→ unavailable（キャッシュも DB も変えない）
+  /// 2c E32 A：SDK が端末に覚えている CustomerInfo は古くてもそのまま返り、期限が切れても
+  /// 取ったときの時刻で有効と判定される（最長 3 日）。そのため、消してから必ず取りに行く
+  /// - 消せなかった → unavailable（getCustomerInfo は呼ばない。E33 A）
+  /// - 確かめている途中に購入・復元が始まった → unavailable（古い結果で上書きしない。E34 A）
   Future<PremiumVerification> verifyPremiumStatus({String userId = 'test_user'}) async {
     if (!await isRevenueCatConfigured()) return PremiumVerification.notConfigured;
+
+    final generation = _purchaseGeneration;
+    try {
+      debugPrint('[PremiumService] 🔄 2c: 覚えている CustomerInfo を消してから確かめる');
+      await Purchases.invalidateCustomerInfoCache();
+    } catch (e) {
+      debugPrint('[PremiumService] ⚠️ 2c: 覚えている CustomerInfo を消せなかった（確かめず、値は変えない）: $e');
+      return PremiumVerification.unavailable;
+    }
 
     final bool hasPremium;
     try {
       final customerInfo = await Purchases.getCustomerInfo();
       hasPremium = hasPremiumEntitlement(customerInfo);
       debugPrint('[PremiumService] ✅ RevenueCat 確認完了: '
-          'entitlementId=$_entitlementId, hasEntitlement=$hasPremium, active=${customerInfo.entitlements.active.keys.toList()}');
+          'entitlementId=$_entitlementId, hasEntitlement=$hasPremium, active=${customerInfo.entitlements.active.keys.toList()}, '
+          'requestDate=${customerInfo.requestDate}');
     } catch (e) {
       debugPrint('[PremiumService] ❌ RevenueCat の確認に失敗（値は変えない）: $e');
+      return PremiumVerification.unavailable;
+    }
+
+    if (generation != _purchaseGeneration) {
+      debugPrint('[PremiumService] ℹ️ 2c: 確かめている途中に購入・復元があったので、この結果は使わない');
       return PremiumVerification.unavailable;
     }
 
@@ -146,6 +168,7 @@ class PremiumService {
   /// N138＋N139 2：購入して entitlement を見て、キャッシュと DB に入れる（D23 A・D22 A・E16 A）
   /// RevenueCat の例外（キャンセルなど）は外に伝える（判定は呼び出し元）
   Future<bool> purchase(PremiumPlan plan, {String userId = 'test_user'}) async {
+    _purchaseGeneration++;  // 2c E34 A
     final result = await Purchases.purchase(PurchaseParams.package(plan.package));
     final hasPremium = hasPremiumEntitlement(result.customerInfo);
     debugPrint('[PremiumService] ✅ 購入完了: plan=${plan.kind.name}, hasEntitlement=$hasPremium');
@@ -155,6 +178,7 @@ class PremiumService {
   /// N138＋N139 2：復元して entitlement を見て、キャッシュと DB に入れる（D22 A）
   /// RevenueCat の例外は外に伝える（判定は呼び出し元）
   Future<bool> restore({String userId = 'test_user'}) async {
+    _purchaseGeneration++;  // 2c E34 A
     final customerInfo = await Purchases.restorePurchases();
     final hasPremium = hasPremiumEntitlement(customerInfo);
     debugPrint('[PremiumService] ✅ 復元完了: hasEntitlement=$hasPremium');

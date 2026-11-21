@@ -171,6 +171,33 @@ void main() {
     expect(service.verifyCalls, 0);
   });
 
+  test('2c E34 A：確かめている途中に購入が成功し、結果が unavailable → プレミアムのままで、間隔も進めない', () async {
+    final verification = Completer<PremiumVerification>();
+    service.onVerify = () => verification.future;
+    final plan = PremiumPlan(
+      PremiumPlanKind.monthly,
+      const Package(
+        r'$rc_monthly',
+        PackageType.monthly,
+        StoreProduct('shiftsleep_monthly', '', '', 0, '¥980', 'JPY'),
+        PresentedOfferingContext('default', null, null),
+      ),
+    );
+
+    final refreshing = provider.refreshPremiumStatus(now: start);
+    expect(await provider.purchasePremium(plan), PremiumPurchaseOutcome.success);
+    verification.complete(PremiumVerification.unavailable);  // PremiumService が途中の購入に気づいて捨てた
+
+    expect(await refreshing, PremiumRefreshOutcome.unavailable);
+    expect(provider.isPremiumUser, isTrue);
+    service.onVerify = () async => PremiumVerification.premium;
+    expect(
+      await provider.refreshPremiumStatus(now: start.add(const Duration(minutes: 1))),
+      PremiumRefreshOutcome.unchanged,
+    );
+    expect(service.verifyCalls, 2);
+  });
+
   test('D13：🧪 の上書きがあるときは表示を変えず、本当の値だけ更新する', () async {
     // 本当の値は無料。🧪 でプレミアムの表示にする（上書き true）
     provider.togglePremiumStatusForTest();
