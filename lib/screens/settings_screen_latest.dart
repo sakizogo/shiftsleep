@@ -10,6 +10,7 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/constants/shift_enums.dart';
 import 'package:shiftsleep/models/app_settings.dart';
 import 'package:shiftsleep/repositories/shift_repository.dart';
+import 'package:shiftsleep/screens/premium_purchase_screen.dart';  // N138＋N139 4a
 import 'package:shiftsleep/screens/vacation_settings_screen.dart';
 import 'package:shiftsleep/screens/vacation_usage_screen.dart';
 import 'package:shiftsleep/services/alarm_reschedule.dart';
@@ -17,7 +18,6 @@ import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/daily_wake_toggle.dart';  // N147
 import 'package:shiftsleep/services/next_shift.dart';  // N180 3/3
 import 'package:shiftsleep/services/pre_alarm_reschedule_service.dart';
-import 'package:shiftsleep/services/premium_check_message.dart';  // N191 3/3
 import 'package:shiftsleep/services/premium_service.dart';
 import 'package:shiftsleep/services/settings_load_state.dart';  // N118 2/4 2c
 import 'package:shiftsleep/providers/sleep_provider.dart';
@@ -627,7 +627,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 PremiumStatusPanel(
                   isPremium: isPremium,
                   isLoading: _isLoading,
-                  onUpgrade: _isLoading ? null : _showPaywall,
+                  onUpgrade: _isLoading ? null : _openPurchaseScreen,
                   footer: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1208,49 +1208,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
   }
 
-  Future<void> _showPaywall() async {
+  /// N138＋N139 4a：購入画面を開く（E26 A：状態の確認だけの _showPaywall は消した。確認は 2b で起動時と復帰時に行う）
+  /// D25 B・E25 A：configure していないときは開かず「準備中です」。開いている間は _isLoading で二度押しを防ぐ
+  Future<void> _openPurchaseScreen() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
     try {
-      setState(() {
-        _isLoading = true;
-      });
-
-      print('[SettingsScreen] 💳 有料版ステータスを確認中...');
-
-      final isPremium = await _premiumService.checkPremiumStatus(userId: 'test_user');
-
-      print('[SettingsScreen] ✅ 有料版ステータス確認完了: $isPremium');
-
-      if (mounted) {
-        // N191 3/3：画面の欄は Provider の値で描くので、ここでは Provider にだけ入れる
-        final sleepProvider = context.read<SleepProvider>();
-        sleepProvider.setPremiumStatus(isPremium);
-
-        // N191 3/3 D15 B：欄の表示とそろえるため、setPremiumStatus のあとの Provider の値で出し分ける
-        final message = premiumCheckMessage(sleepProvider.isPremiumUser);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message.text),
-            backgroundColor: message.color,
-            duration: const Duration(seconds: 3),
-          ),
+      final configured = await _premiumService.isRevenueCatConfigured();
+      if (!mounted) return;
+      if (!configured) {
+        debugPrint('[SettingsScreen] ℹ️ RevenueCat を configure していないので、購入画面を開きません');
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(content: Text(premiumNotReadyText), backgroundColor: Colors.blue),
         );
+        return;
       }
-    } catch (e) {
-      debugPrint('[SettingsScreen] ❌ 有料版確認エラー: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ プレミアム版の状態を確認できませんでした。しばらくしてからもう一度お試しください'),
-            backgroundColor: AppColors.warningRed,
-          ),
-        );
-      }
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PremiumPurchaseScreen()),
+      );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

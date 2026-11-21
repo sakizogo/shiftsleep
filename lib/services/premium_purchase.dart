@@ -126,7 +126,7 @@ enum PremiumPlanKind { monthly, annual }
 
 /// 画面に渡す商品（E10 B）
 ///
-/// 値段はストアの値（D27）。トライアルの日数（D28・D29）は 4a で足す
+/// 値段はストアの値（D27）。トライアルの日数（D28・D29）もストアの情報から出す（4a）
 class PremiumPlan {
   const PremiumPlan(this.kind, this.package);
 
@@ -137,4 +137,80 @@ class PremiumPlan {
 
   /// ストアの値段の文字（例：¥980）
   String get priceString => package.storeProduct.priceString;
+
+  /// 期間の文字（「月」「年」）。値段のあとに「／月」のように付ける
+  String get periodLabel => switch (kind) {
+        PremiumPlanKind.monthly => '月',
+        PremiumPlanKind.annual => '年',
+      };
+
+  /// 無料トライアル（受けられないとき・ないときは null）
+  PremiumTrial? get trial => premiumTrialOf(package.storeProduct);
+}
+
+/// 4a：トライアルの情報をどの欄から取ったか（logcat で確かめる）
+enum PremiumTrialSource {
+  /// StoreProduct.defaultOption.freePhase（Google Play）
+  defaultOptionFreePhase,
+
+  /// StoreProduct.introductoryPrice の 0 円のもの（Test Store などの予備）
+  introductoryPrice,
+}
+
+/// 4a：無料トライアル（D28・D29：日数はストアの情報から出す）
+class PremiumTrial {
+  const PremiumTrial({required this.label, required this.source});
+
+  /// 期間の文字（E30 A：日と週は日数で「14 日間」、月は「1 か月」、年は「1 年」）
+  final String label;
+
+  final PremiumTrialSource source;
+}
+
+/// 4a：トライアルの期間の文字（E30 A）。単位がわからないときは null
+String? premiumTrialPeriodLabel(PeriodUnit unit, int value) {
+  if (value <= 0) return null;
+  switch (unit) {
+    case PeriodUnit.day:
+      return '$value 日間';
+    case PeriodUnit.week:
+      return '${value * 7} 日間';
+    case PeriodUnit.month:
+      return '$value か月';
+    case PeriodUnit.year:
+      return '$value 年';
+    case PeriodUnit.unknown:
+      return null;
+  }
+}
+
+/// 4a：StoreProduct から無料トライアルを取り出す
+///
+/// - Google Play：defaultOption.freePhase。Play はその人が受けられるオファーだけを返すので、受けた人では null になる
+/// - 予備：introductoryPrice の 0 円のもの（割引の値段はトライアルとして扱わない）
+/// - checkTrialOrIntroductoryPriceEligibility は Android ではいつも unknown なので使わない
+PremiumTrial? premiumTrialOf(StoreProduct product) {
+  final freePhase = product.defaultOption?.freePhase;
+  final freePeriod = freePhase?.billingPeriod;
+  if (freePhase != null && freePeriod != null) {
+    final label = premiumTrialPeriodLabel(freePeriod.unit, freePeriod.value * (freePhase.billingCycleCount ?? 1));
+    return label == null ? null : PremiumTrial(label: label, source: PremiumTrialSource.defaultOptionFreePhase);
+  }
+  final intro = product.introductoryPrice;
+  if (intro != null && intro.price == 0) {
+    final cycles = intro.cycles < 1 ? 1 : intro.cycles;
+    final label = premiumTrialPeriodLabel(intro.periodUnit, intro.periodNumberOfUnits * cycles);
+    return label == null ? null : PremiumTrial(label: label, source: PremiumTrialSource.introductoryPrice);
+  }
+  return null;
+}
+
+/// 4a：年額が月額の 12 か月ぶんより何 % 安いか（E29 A：小数は切り捨て）
+/// 通貨が違うとき・月額が 0 以下のとき・0% 以下のときは null（バッジを出さない）
+int? annualSavingsPercent(StoreProduct monthly, StoreProduct annual) {
+  if (monthly.currencyCode != annual.currencyCode) return null;
+  if (monthly.price <= 0) return null;
+  // 割り算の端数で 20% が 19% にならないよう、少しだけ足してから切り捨てる
+  final percent = ((1 - annual.price / (monthly.price * 12)) * 100 + 1e-9).floor();
+  return percent > 0 ? percent : null;
 }
