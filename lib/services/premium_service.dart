@@ -36,6 +36,10 @@ class PremiumService {
   /// 最後に確かめた値（RevenueCat の確認に失敗したときに返す）
   bool _isPremiumUser = false;
 
+  /// 2b E21 A：この起動中に RevenueCat で確かめた値（確認・購入・復元。まだなければ null）
+  /// loadPremiumStatusFromDatabase は、これがあれば DB の値より優先する
+  bool? _verifiedPremium;
+
   final ShiftRepository _shiftRepository;
 
   // ========================
@@ -64,7 +68,7 @@ class PremiumService {
   ///
   /// RevenueCat が configure されていないときは、呼ばずに false を返す（N26）
   ///
-  /// 処理フロー:
+  /// 処理フロー（2b：verifyPremiumStatus を使う。動きは今までと同じ）:
   /// 1. RevenueCat の CustomerInfo を取得（失敗したら前の値を返す）
   /// 2. entitlements から 'ShiftSleep Pro' が有効かチェック
   /// 3. 結果をキャッシュに入れる
@@ -72,7 +76,25 @@ class PremiumService {
   ///
   /// 返り値: 有料版フラグ（true = 有料ユーザー）
   Future<bool> checkPremiumStatus({String userId = 'test_user'}) async {
-    if (!await isRevenueCatConfigured()) return _treatAsFreeUser();
+    switch (await verifyPremiumStatus(userId: userId)) {
+      case PremiumVerification.premium:
+        return true;
+      case PremiumVerification.free:
+        return false;
+      case PremiumVerification.notConfigured:
+        return _treatAsFreeUser();
+      case PremiumVerification.unavailable:
+        return _isPremiumUser;
+    }
+  }
+
+  /// 2b：RevenueCat に確かめる（「確かめられた」と「確かめられなかった」を分けて返す）
+  ///
+  /// - configure していない → notConfigured（RevenueCat を呼ばず、キャッシュも DB も変えない）
+  /// - 確かめられた → premium / free（キャッシュと DB に入れる。D22 A）
+  /// - 確かめられなかった（オフラインなど）→ unavailable（キャッシュも DB も変えない）
+  Future<PremiumVerification> verifyPremiumStatus({String userId = 'test_user'}) async {
+    if (!await isRevenueCatConfigured()) return PremiumVerification.notConfigured;
 
     final bool hasPremium;
     try {
@@ -81,11 +103,11 @@ class PremiumService {
       debugPrint('[PremiumService] ✅ RevenueCat 確認完了: '
           'entitlementId=$_entitlementId, hasEntitlement=$hasPremium, active=${customerInfo.entitlements.active.keys.toList()}');
     } catch (e) {
-      debugPrint('[PremiumService] ❌ RevenueCat の確認に失敗（前の値を返す）: $e');
-      return _isPremiumUser;
+      debugPrint('[PremiumService] ❌ RevenueCat の確認に失敗（値は変えない）: $e');
+      return PremiumVerification.unavailable;
     }
 
-    return _applyResult(userId, hasPremium);
+    return await _applyResult(userId, hasPremium) ? PremiumVerification.premium : PremiumVerification.free;
   }
 
   /// D23 A：entitlement（ShiftSleep Pro）が active か（確認・購入・復元で使う）
@@ -96,6 +118,7 @@ class PremiumService {
   /// D22 A：DB に保存できなくても、結果をそのまま返す（失敗は debugPrint だけに出す）
   Future<bool> _applyResult(String userId, bool hasPremium) async {
     _isPremiumUser = hasPremium;
+    _verifiedPremium = hasPremium;  // 2b E21 A
 
     try {
       await updatePremiumStatusToDatabase(userId, hasPremium);
@@ -152,11 +175,21 @@ class PremiumService {
   /// 有料版ステータスを DB から読み込む（アプリ起動時に実行）
   ///
   /// RevenueCat が configure されていないときは、DB の値によらず false を返す（N26）
+  /// 2b E21 A：この起動中に RevenueCat で確かめた値があれば、DB より優先する
+  /// （DB を読んでいる途中で確かめ終わったときも、読み終わったあとで確かめた値を返す）
   Future<bool> loadPremiumStatusFromDatabase(String userId) async {
     if (!await isRevenueCatConfigured()) return _treatAsFreeUser();
+    final verifiedBefore = _verifiedPremium;
+    if (verifiedBefore != null) return _isPremiumUser = verifiedBefore;
 
     try {
       final settings = await _shiftRepository.getAppSettings(userId);
+
+      final verifiedAfter = _verifiedPremium;
+      if (verifiedAfter != null) {
+        debugPrint('[PremiumService] ℹ️ DB を読む途中で RevenueCat で確かめたので、確かめた値を使う: $verifiedAfter');
+        return _isPremiumUser = verifiedAfter;
+      }
 
       if (settings == null) {
         debugPrint('[PremiumService] ⚠️ AppSettings が見つかりません（無料版として扱う）');
@@ -170,7 +203,7 @@ class PremiumService {
       return _isPremiumUser;
     } catch (e) {
       debugPrint('[PremiumService] ❌ DB 読み込みエラー: $e');
-      return _isPremiumUser;
+      return _verifiedPremium ?? _isPremiumUser;
     }
   }
 }
