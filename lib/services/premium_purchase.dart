@@ -88,6 +88,39 @@ PremiumRestoreOutcome restoreOutcomeForError(PremiumErrorKind kind) {
 /// 商品の取得の結果
 enum PremiumPlansOutcome { ready, empty, notConfigured, network, failed }
 
+/// 2b：RevenueCat に確かめた結果（「確かめられた」と「確かめられなかった」を分ける）
+enum PremiumVerification {
+  /// 確かめられた：プレミアム
+  premium,
+
+  /// 確かめられた：無料
+  free,
+
+  /// 確かめられなかった（オフラインなど）。キャッシュも DB も変えない
+  unavailable,
+
+  /// RevenueCat を configure していない（RevenueCat を呼ばない）
+  notConfigured,
+}
+
+/// 2b：Provider の refreshPremiumStatus の結果
+enum PremiumRefreshOutcome {
+  /// 本当の値と違ったので setPremiumStatus で更新した
+  updated,
+
+  /// 本当の値と同じだった（何もしない）
+  unchanged,
+
+  /// 確かめられなかった（値を変えない）
+  unavailable,
+
+  /// configure していない（値を変えない）
+  notConfigured,
+
+  /// 確かめなかった（15 分以内・確かめている途中・購入や復元の途中）
+  skipped,
+}
+
 /// 商品の種類（D19 A'：月額・年額）
 enum PremiumPlanKind { monthly, annual }
 

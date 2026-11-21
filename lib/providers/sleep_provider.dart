@@ -55,6 +55,11 @@ class SleepProvider extends ChangeNotifier {
   bool _receivedPremium = false;  // N138＋N139 2 D13 B：PremiumService から最後に受け取った本当の値
   bool _isPremiumBusy = false;  // N138＋N139 2 E12 A：購入・復元の途中か
   List<PremiumPlan> _premiumPlans = const [];  // N138＋N139 2：最後に取得した商品（月額・年額）
+  bool _isRefreshingPremium = false;  // 2b：RevenueCat に確かめている途中か
+  DateTime? _lastPremiumVerifiedAt;  // 2b E19 A：最後に RevenueCat で確かめられた時刻（確かめられなかったときは進めない）
+
+  /// 2b E18 B：起動後 2 回目からは、前に確かめられてからこれだけたっていたら確かめる
+  static const Duration premiumRefreshInterval = Duration(minutes: 15);
   bool _advicePromoVisible = true;
   // ================================================
 
@@ -716,6 +721,48 @@ class SleepProvider extends ChangeNotifier {
   void _setPremiumBusy(bool busy) {
     _isPremiumBusy = busy;
     notifyListeners();
+  }
+
+  /// 2b D20 B：裏で RevenueCat に確かめ、本当の値と違えば setPremiumStatus で更新する
+  /// - 起動して最初の 1 回は必ず確かめる。2 回目からは、前に確かめられてから 15 分以上たっていたときだけ（E18 B）
+  /// - 確かめられなかった・configure していないときは、値を変えない（間隔も進めない。E19 A）
+  /// - 確かめている途中・購入や復元の途中は確かめない（skipped）
+  /// 画面（ホーム）からは await せずに呼ぶ（起動を遅らせない）。now はテストで時刻を差し替える
+  Future<PremiumRefreshOutcome> refreshPremiumStatus({DateTime? now}) async {
+    final startedAt = now ?? DateTime.now();
+    final lastVerifiedAt = _lastPremiumVerifiedAt;
+    final tooSoon = lastVerifiedAt != null && startedAt.difference(lastVerifiedAt) < premiumRefreshInterval;
+    if (_isRefreshingPremium || _isPremiumBusy || tooSoon) {
+      debugPrint('[SleepProvider] 💳 2b: RevenueCat の確認は skipped '
+          '（途中=$_isRefreshingPremium, 購入・復元の途中=$_isPremiumBusy, 15 分以内=$tooSoon）');
+      return PremiumRefreshOutcome.skipped;
+    }
+
+    _isRefreshingPremium = true;
+    try {
+      final verification = await _premiumService.verifyPremiumStatus();
+      switch (verification) {
+        case PremiumVerification.notConfigured:
+          debugPrint('[SleepProvider] 💳 2b: RevenueCat は notConfigured（値は変えない）');
+          return PremiumRefreshOutcome.notConfigured;
+        case PremiumVerification.unavailable:
+          debugPrint('[SleepProvider] 💳 2b: RevenueCat で確かめられなかった unavailable（値は変えない）');
+          return PremiumRefreshOutcome.unavailable;
+        case PremiumVerification.premium:
+        case PremiumVerification.free:
+          _lastPremiumVerifiedAt = startedAt;
+          final isPremium = verification == PremiumVerification.premium;
+          if (isPremium == _receivedPremium) {
+            debugPrint('[SleepProvider] 💳 2b: RevenueCat で確かめた ${verification.name}（unchanged）');
+            return PremiumRefreshOutcome.unchanged;
+          }
+          debugPrint('[SleepProvider] 💳 2b: RevenueCat で確かめた ${verification.name}（updated）');
+          setPremiumStatus(isPremium);
+          return PremiumRefreshOutcome.updated;
+      }
+    } finally {
+      _isRefreshingPremium = false;
+    }
   }
   // ================================================================
 

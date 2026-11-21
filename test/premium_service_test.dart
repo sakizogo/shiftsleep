@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -280,13 +282,106 @@ void main() {
       await expectLater(service.fetchPremiumPlans(), throwsNetworkError);
     });
   });
+
+  // 2b：verifyPremiumStatus（確かめられた／確かめられなかったを分ける）と、確かめた値を DB より優先する（E21 A）
+  group('2b：verifyPremiumStatus と確かめた値の優先', () {
+    // null なら getCustomerInfo を失敗させる
+    List<String>? activeEntitlementIds;
+    var configured = true;
+    late _FakeShiftRepository repository;
+    late PremiumService service;
+
+    setUp(() {
+      activeEntitlementIds = const [];
+      configured = true;
+      repository = _FakeShiftRepository();
+      service = PremiumService.withRepository(repository);
+      messenger.setMockMethodCallHandler(purchasesChannel, (call) async {
+        purchasesCalls.add(call.method);
+        if (call.method == 'isConfigured') return configured;
+        final ids = activeEntitlementIds;
+        if (call.method == 'getCustomerInfo' && ids != null) return _customerInfoJson(ids);
+        throw PlatformException(code: 'unexpected', message: call.method);
+      });
+    });
+
+    test('entitlement あり → premium で、true を保存する', () async {
+      activeEntitlementIds = ['ShiftSleep Pro'];
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.premium);
+
+      expect(repository.saved, [('test_user', true)]);
+    });
+
+    test('entitlement なし → free で、false を保存する', () async {
+      expect(await service.verifyPremiumStatus(), PremiumVerification.free);
+
+      expect(repository.saved, [('test_user', false)]);
+    });
+
+    test('確かめられない → unavailable で、保存せず、確かめた値にもしない（DB を読む）', () async {
+      activeEntitlementIds = null;
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.unavailable);
+
+      expect(repository.saved, isEmpty);
+      repository.onGetAppSettings = () async => _settings(isPremiumUser: true);
+      expect(await service.loadPremiumStatusFromDatabase('test_user'), true);
+      expect(repository.getAppSettingsCalls, 1);
+    });
+
+    test('configure していない → notConfigured で、getCustomerInfo を呼ばない', () async {
+      configured = false;
+
+      expect(await service.verifyPremiumStatus(), PremiumVerification.notConfigured);
+
+      expect(purchasesCalls, ['isConfigured']);
+      expect(repository.saved, isEmpty);
+    });
+
+    test('E21 A：確かめたあとは、loadPremiumStatusFromDatabase が DB を読まずに確かめた値を返す', () async {
+      activeEntitlementIds = ['ShiftSleep Pro'];
+      repository.saveError = Exception('db');  // D22 A：DB には残らなかった
+      await service.verifyPremiumStatus();
+
+      expect(await service.loadPremiumStatusFromDatabase('test_user'), true);
+
+      expect(repository.getAppSettingsCalls, 0);
+    });
+
+    test('E21 A：DB を読んでいる途中で確かめ終わったら、読んだ古い値ではなく確かめた値を返す', () async {
+      final settings = Completer<AppSettings?>();
+      repository.onGetAppSettings = () => settings.future;
+      activeEntitlementIds = ['ShiftSleep Pro'];
+
+      final load = service.loadPremiumStatusFromDatabase('test_user');
+      await pumpEventQueue();
+      expect(repository.getAppSettingsCalls, 1);
+      expect(await service.verifyPremiumStatus(), PremiumVerification.premium);
+      settings.complete(_settings(isPremiumUser: false));
+
+      expect(await load, true);
+    });
+  });
 }
+
+/// 2b：DB の行（is_premium_user だけを変える）
+AppSettings _settings({required bool isPremiumUser}) => AppSettings(
+      id: 1,
+      userId: 'test_user',
+      isPremiumUser: isPremiumUser,
+      createdAt: DateTime(2026, 11, 21),
+      updatedAt: DateTime(2026, 11, 21),
+    );
 
 /// 1b：updateIsPremiumUser の呼び出しを記録し、getAppSettings を数える偽の ShiftRepository（DB は開かない）
 class _FakeShiftRepository extends ShiftRepository {
   final saved = <(String, bool)>[];
   Object? saveError;
   int getAppSettingsCalls = 0;
+
+  /// 2b：getAppSettings が返すもの（既定は行がない＝null）
+  Future<AppSettings?> Function() onGetAppSettings = () async => null;
 
   @override
   Future<void> updateIsPremiumUser(String userId, bool isPremium) async {
@@ -295,9 +390,9 @@ class _FakeShiftRepository extends ShiftRepository {
   }
 
   @override
-  Future<AppSettings?> getAppSettings(String userId) async {
+  Future<AppSettings?> getAppSettings(String userId) {
     getAppSettingsCalls++;
-    return null;
+    return onGetAppSettings();
   }
 }
 

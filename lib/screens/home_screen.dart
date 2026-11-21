@@ -254,6 +254,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) {
         final sleepProvider = context.read<SleepProvider>();
         await sleepProvider.loadAllSleepData();  // ✅ 変更：loadLatestSleepData() → loadAllSleepData()
+        // 2b D20 B：DB の値で表示したあと、裏で RevenueCat に確かめる（await しない）
+        unawaited(sleepProvider.refreshPremiumStatus());
       }
     });
     // ====================================================
@@ -321,6 +323,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // N129 2/2：裏にいる間に鳴りはじめた・止まった場合（await しない）
       _refreshStopAlarmButton();
+
+      // 2b D20 B：戻ったときも RevenueCat に確かめる（15 分以内は Provider が間引く。await しない）
+      unawaited(context.read<SleepProvider>().refreshPremiumStatus());
     }
   }
 
