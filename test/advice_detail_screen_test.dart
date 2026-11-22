@@ -1,6 +1,7 @@
 // A-3 2/3：改善アドバイスの詳細（AdviceDetailScreen）のダイアログ
 // 🔒 のダイアログを共通の関数（showPremiumLockDialog）にしたあとも、動きが変わらないことを確かめる
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,7 @@ import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/screens/advice_detail_screen.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/widgets/action_tip_locked_label.dart';  // P1
+import 'package:shiftsleep/widgets/premium_lock_dialog.dart';
 
 class _NoRepository extends SleepRepository {}
 
@@ -48,7 +50,18 @@ void main() {
     actionTip: 'ヒントの中身',
   );
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  // N138＋N139 4b：🔒 の［プレミアム版に登録］が configure を確かめるので、RevenueCat は configure していない扱いにする
+  const purchasesChannel = MethodChannel('purchases_flutter');
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        purchasesChannel, (call) async => call.method == 'isConfigured' ? false : null);
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(purchasesChannel, null);
+  });
 
   Future<_TestProvider> pumpScreen(
     WidgetTester tester, {
@@ -86,7 +99,7 @@ void main() {
     await tester.tap(find.text('プレミアム版に登録'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
-    expect(find.text('準備中です'), findsOneWidget);
+    expect(find.text(premiumComingSoonText), findsOneWidget);
   });
 
   testWidgets('ロックされていないアドバイスは説明と実行ヒント（無料はロック）で、［閉じる］だけ', (tester) async {
