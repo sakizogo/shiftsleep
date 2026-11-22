@@ -8,6 +8,10 @@
 // - N138＋N139 4c：プレミアムのときは「ご利用中」の下に「Google Play で定期購入を管理する ↗」を出す
 //   - 4a の購入画面と同じ部品・URL（固定）・文言・開けなかったときの知らせを使う（D34 A・D35 A・D37 A・D38 A）
 //   - isPremium で出し分ける（🧪 の上書きでプレミアムの表示でも出す。無料では出さない。D36 A）
+// - N213 D48 B：プレミアムの表示で、審査用コードだけで解放中（isReviewUnlockOnly）なら「✅ 審査用コードで解放中です」を出し、
+//   定期購入の管理のリンクは出さない。🧪 で無料の表示にしているときは、いつもの無料のパネル
+//   - D47 A：その文字だけを 2 秒の長押しで包み、onReviewLongPress を呼ぶ（リリース版でも購入画面を通らずに解除できる。読み上げは今のまま）
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
@@ -15,6 +19,7 @@ import 'package:shiftsleep/constants/text_styles.dart';
 import 'package:shiftsleep/screens/premium_purchase_screen.dart';
 import 'package:shiftsleep/services/about_app.dart';
 import 'package:shiftsleep/widgets/privacy_policy_tile.dart';
+import 'package:shiftsleep/widgets/review_code_dialog.dart';
 
 /// 欄の見出し
 const premiumStatusSectionTitle = '💳 プレミアム版ステータス';
@@ -39,6 +44,12 @@ const premiumInUseLabel = '✅ プレミアム版をご利用中です';
 /// 画面では、この区切りで折り返す。つなげると premiumInUseLabel と同じ
 const premiumInUseLabelParts = ['✅ プレミアム版を', 'ご利用中です'];
 
+/// N213 D48 B：審査用コードだけで解放中のときの文字（読み上げにはこの 1 つを使う）
+const premiumReviewUnlockLabel = '✅ 審査用コードで解放中です';
+
+/// 画面では、この区切りで折り返す。つなげると premiumReviewUnlockLabel と同じ
+const premiumReviewUnlockLabelParts = ['✅ 審査用コードで', '解放中です'];
+
 class PremiumStatusPanel extends StatelessWidget {
   const PremiumStatusPanel({
     super.key,
@@ -47,10 +58,18 @@ class PremiumStatusPanel extends StatelessWidget {
     this.isLoading = false,
     this.footer,
     this.opener = openInExternalBrowser,
+    this.isReviewUnlockOnly = false,
+    this.onReviewLongPress,
   });
 
   /// プレミアムか（設定画面は SleepProvider の値を渡す）
   final bool isPremium;
+
+  /// N213：審査用コードだけで解放中か（設定画面は SleepProvider.isReviewUnlockOnly を渡す。isPremium のときだけ効く）
+  final bool isReviewUnlockOnly;
+
+  /// N213 D47 A：「審査用コードで解放中です」を 2 秒長押ししたときの処理（設定画面は審査用コードのダイアログを開く）
+  final VoidCallback? onReviewLongPress;
 
   /// アップグレード ボタンを押したときの処理（null なら押せない）。4a で購入画面を開く処理に替える
   final VoidCallback? onUpgrade;
@@ -66,6 +85,7 @@ class PremiumStatusPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reviewUnlockOnly = isPremium && isReviewUnlockOnly;  // N213 D48 B
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -203,17 +223,28 @@ class PremiumStatusPanel extends StatelessWidget {
                     ),
                   ),
                   child: Center(
-                    child: _buildWrappedLabel(
-                      label: premiumInUseLabel,
-                      parts: premiumInUseLabelParts,
-                      style: AppTextStyles.bodyTextStyle.copyWith(
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: reviewUnlockOnly
+                        ? _buildReviewLongPress(
+                            _buildWrappedLabel(
+                              label: premiumReviewUnlockLabel,
+                              parts: premiumReviewUnlockLabelParts,
+                              style: AppTextStyles.bodyTextStyle.copyWith(
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          )
+                        : _buildWrappedLabel(
+                            label: premiumInUseLabel,
+                            parts: premiumInUseLabelParts,
+                            style: AppTextStyles.bodyTextStyle.copyWith(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 ),
-              if (isPremium) ...[
+              if (isPremium && !reviewUnlockOnly) ...[
                 const SizedBox(height: AppDimensions.paddingMedium),
                 _buildManageSubscriptionLink(),
               ],
@@ -242,6 +273,20 @@ class PremiumStatusPanel extends StatelessWidget {
         open: () => openPlaySubscriptions(open: opener),
         openFailedText: manageSubscriptionOpenFailedText,
       ),
+    );
+  }
+
+  /// N213 D47 A：2 秒の長押しで onReviewLongPress を呼ぶ（読み上げの動きは足さない）
+  Widget _buildReviewLongPress(Widget child) {
+    return RawGestureDetector(
+      excludeFromSemantics: true,
+      gestures: {
+        LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+          () => LongPressGestureRecognizer(duration: reviewCodeLongPressDuration),
+          (recognizer) => recognizer.onLongPress = onReviewLongPress,
+        ),
+      },
+      child: child,
     );
   }
 

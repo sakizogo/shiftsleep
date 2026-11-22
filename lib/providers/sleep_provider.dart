@@ -7,6 +7,7 @@ import 'package:shiftsleep/services/sjl_sri_calculator.dart';
 import 'package:shiftsleep/services/sleep_advisory_service.dart';
 import 'package:shiftsleep/services/premium_purchase.dart';  // N138＋N139 2：購入・復元の結果の種類
 import 'package:shiftsleep/services/premium_service.dart';  // ========== Week 7 Phase 3 追加 ==========
+import 'package:shiftsleep/services/review_unlock.dart';  // N213：審査用コード
 import 'package:shiftsleep/services/sleep_preference_service.dart';  // ========== Week 8 Phase 4 追加 ==========
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N184：メイン・補助を長さで決める
 import 'package:shiftsleep/services/sleep_debt.dart';  // N198：睡眠負債を 1 日平均で
@@ -29,6 +30,8 @@ import 'package:shiftsleep/services/sleep_debt.dart';  // N198：睡眠負債を
 class SleepProvider extends ChangeNotifier {
   final SleepRepository _repository;
   final PremiumService _premiumService;  // ========== Week 7 Phase 3 追加 ==========（N138＋N139 2：テストで差し替える）
+  final ReviewUnlockStore _reviewUnlockStore;  // N213：審査用の解放の保存（テストで差し替える）
+  final String _reviewCode;  // N213：審査用コード（既定はビルドのときに渡した値。テストで差し替える）
   
   // ========================
   // 状態変数
@@ -53,6 +56,8 @@ class SleepProvider extends ChangeNotifier {
   bool _isPremiumUser = false;          // 有料ユーザーフラグ
   bool? _debugPremiumOverride;  // A-3 3/3 F6：デバッグ版でテスト用ボタンが切り替えた値（もう一度押すまで保つ）
   bool _receivedPremium = false;  // N138＋N139 2 D13 B：PremiumService から最後に受け取った本当の値
+  bool _reviewUnlocked = false;  // N213：審査用コードで解放中か（RevenueCat・DB には触れない）
+  bool _reviewUnlockLoaded = false;  // N213：保存した解放を読んだか（loadAllSleepData で 1 回だけ読む）
   bool _isPremiumBusy = false;  // N138＋N139 2 E12 A：購入・復元の途中か
   List<PremiumPlan> _premiumPlans = const [];  // N138＋N139 2：最後に取得した商品（月額・年額）
   bool _isRefreshingPremium = false;  // 2b：RevenueCat に確かめている途中か
@@ -132,6 +137,12 @@ class SleepProvider extends ChangeNotifier {
   // ========== Week 7 A 追加: アドバイス Getter ==========
     List<SleepAdvice> get allAdvice => _allAdvice;
   bool get isPremiumUser => _isPremiumUser;
+
+  /// N213：審査用コードで解放中で、本当には購入していない
+  bool get isReviewUnlockOnly => _reviewUnlocked && !_receivedPremium;
+
+  /// N213：審査用コードで解放中か（本当に購入しているかによらない。ダイアログの［解除する］を出すかに使う）
+  bool get isReviewUnlocked => _reviewUnlocked;
   bool get isPremiumBusy => _isPremiumBusy;  // N138＋N139 2
   List<PremiumPlan> get premiumPlans => _premiumPlans;  // N138＋N139 2
   bool get advicePromoVisible => _advicePromoVisible;
@@ -282,8 +293,14 @@ class SleepProvider extends ChangeNotifier {
   // コンストラクタ
   // ========================
 
-  SleepProvider(this._repository, {PremiumService? premiumService})
-      : _premiumService = premiumService ?? PremiumService() {
+  SleepProvider(
+    this._repository, {
+    PremiumService? premiumService,
+    ReviewUnlockStore? reviewUnlockStore,
+    String? reviewCode,
+  })  : _premiumService = premiumService ?? PremiumService(),
+        _reviewUnlockStore = reviewUnlockStore ?? const ReviewUnlockStore(),
+        _reviewCode = reviewCode ?? reviewCodeFromEnvironment {
     // ✅ 【追加】アプリ起動時に SharedPreferences から睡眠記録IDを復元
     _loadCurrentSleepRecordIdFromPreferences();
   }
@@ -303,6 +320,15 @@ class SleepProvider extends ChangeNotifier {
       _errorMessage = null;
       _sleepDataLoadFailed = false;
       notifyListeners();
+
+      // N213 E38：審査用の解放は DB より先に、最初の 1 回だけ読む（DB の読み込みが例外でも効く）
+      // 読む前に解放していたら、その解放を保つ（D50 A：保存に失敗していても、この起動中は解放のまま）
+      if (!_reviewUnlockLoaded) {
+        _reviewUnlockLoaded = true;
+        final savedUnlock = await _reviewUnlockStore.load();
+        _reviewUnlocked = _reviewUnlocked || savedUnlock;
+        _updatePremiumValue();
+      }
 
       // ========== Week 7 Phase 3: PremiumService から有料版ステータスを読み込み ==========
       print('[SleepProvider] 💳 PremiumService から有料版ステータスを読み込み中...');
@@ -886,18 +912,57 @@ class SleepProvider extends ChangeNotifier {
   /// N138＋N139 2 D13 B：PremiumService から受け取った本当の値を覚えて、上書きを通して入れる
   void _applyReceivedPremium(bool value) {
     _receivedPremium = value;
-    _isPremiumUser = _withDebugPremiumOverride(value);
+    _updatePremiumValue();
+  }
+
+  /// N213 D43 A：基準（本当の値か審査用の解放）を求めて、デバッグ版の上書きを通して画面の値を決める
+  bool get _basePremium => _receivedPremium || _reviewUnlocked;
+
+  void _updatePremiumValue() {
+    _isPremiumUser = _withDebugPremiumOverride(_basePremium);
   }
 
   /// テスト用：プレミアムの表示を切り替える
   /// A-3 3/3 F6：デバッグ版では、もう一度押すまで loadAllSleepData などで PremiumService の値に戻らない
-  /// N138＋N139 2 D13 B：本当の値と同じに戻ったら、上書きを解除する（以後は本当の値に従う）
+  /// N138＋N139 2 D13 B：基準と同じに戻ったら、上書きを解除する（以後は基準に従う。N213：基準は審査用の解放も含む）
+  /// N213 E35：反転はデバッグ版の中だけ（リリース版では値を変えない）
   void togglePremiumStatusForTest() {
-    _isPremiumUser = !_isPremiumUser;
-    if (kDebugMode) _debugPremiumOverride = _isPremiumUser == _receivedPremium ? null : _isPremiumUser;
+    if (kDebugMode) {
+      final toggled = !_isPremiumUser;
+      _debugPremiumOverride = toggled == _basePremium ? null : toggled;
+      _updatePremiumValue();
+    }
     print('[SleepProvider] 🧪 テスト用プレミアム状態切り替え: $_isPremiumUser');
     _generateAdvice();
     notifyListeners();
+  }
+
+  /// N213：審査用コードで解放する（RevenueCat・DB・購入・復元には触れない）
+  /// - コードが違えば何も変えない（wrongCode）
+  /// - D50 A：保存に失敗したら、この起動中だけ解放する（unlockedThisSessionOnly）
+  Future<ReviewUnlockOutcome> unlockWithReviewCode(String input) async {
+    if (!isValidReviewCode(input, expected: _reviewCode)) {
+      debugPrint('[SleepProvider] 🔑 審査用コードが違います');
+      return ReviewUnlockOutcome.wrongCode;
+    }
+    final saved = await _reviewUnlockStore.save();
+    _reviewUnlocked = true;
+    _updatePremiumValue();
+    debugPrint('[SleepProvider] 🔑 審査用コードで解放（保存できたか: $saved）');
+    _generateAdvice();
+    notifyListeners();
+    return saved ? ReviewUnlockOutcome.unlocked : ReviewUnlockOutcome.unlockedThisSessionOnly;
+  }
+
+  /// N213：審査用の解放を解除して、保存も消す（保存を消せたか。消せなくても、この起動中は解除する）
+  Future<bool> clearReviewUnlock() async {
+    final cleared = await _reviewUnlockStore.clear();
+    _reviewUnlocked = false;
+    _updatePremiumValue();
+    debugPrint('[SleepProvider] 🔑 審査用の解放を解除（保存を消せたか: $cleared）');
+    _generateAdvice();
+    notifyListeners();
+    return cleared;
   }
   // =====================================================================
   // ========== N35: 0:00 で切り分けた当日の睡眠時間 ==========

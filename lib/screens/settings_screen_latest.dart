@@ -28,6 +28,7 @@ import '../services/manual_wake_service.dart';
 import 'package:shiftsleep/widgets/about_app_section.dart';  // N210
 import 'package:shiftsleep/widgets/premium_debug_toggle.dart';  // A-3 3/3
 import 'package:shiftsleep/widgets/premium_status_panel.dart';  // N138＋N139 3
+import 'package:shiftsleep/widgets/review_code_dialog.dart';  // N213
 import 'package:shiftsleep/widgets/sleep_plan_settings_section.dart';  // A-4 2/3
 
 class SettingsScreen extends StatefulWidget {
@@ -589,6 +590,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final canEdit = canEditSettings(loaded: _settingsLoaded, alarmBusy: _isAlarmBusy);
     // N191 3/3：プレミアムの表示は SleepProvider の 1 か所から読む（値が変わったときだけ作り直す）
     final isPremium = context.select<SleepProvider, bool>((provider) => provider.isPremiumUser);
+    // N213 D48 B：審査用コードだけで解放中か（パネルの「審査用コードで解放中です」に使う）
+    final isReviewUnlockOnly = context.select<SleepProvider, bool>((provider) => provider.isReviewUnlockOnly);
     return Scaffold(
         backgroundColor: AppColors.backgroundLight,
         appBar: AppBar(
@@ -626,6 +629,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // N138＋N139 3：PremiumStatusPanel に切り出し（D16 B）。🧪 と改善アドバイス表示設定は枠の中の一番下に渡す（E22 A）
                 PremiumStatusPanel(
                   isPremium: isPremium,
+                  isReviewUnlockOnly: isReviewUnlockOnly,
+                  onReviewLongPress: _openReviewCodeDialog,
                   isLoading: _isLoading,
                   onUpgrade: _isLoading ? null : _openPurchaseScreen,
                   footer: Column(
@@ -1232,6 +1237,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// N213 D47 A：パネルの「審査用コードで解放中です」の長押しで、審査用コードのダイアログを開く（設定画面は閉じない）
+  /// E41：await の前に ScaffoldMessengerState を取っておく
+  Future<void> _openReviewCodeDialog() async {
+    final provider = context.read<SleepProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showReviewCodeDialog(context, provider: provider);
+    if (result == null) return;
+    debugPrint('[SettingsScreen] 🔑 審査用コードのダイアログの結果: ${result.name}');
+    final message = reviewCodeResultMessage(result);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.color,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   Widget _buildAlarmModeButton(AlarmMode mode) {
