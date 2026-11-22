@@ -5,10 +5,16 @@
 // - P2（D18 A）：ボタンから値段を外す（値段は 4a の購入画面でストアの値を出す）
 // - ボタンと「ご利用中」は区切りで折り返し、大きい文字でも最後の 1〜2 文字だけが落ちないようにする（E23 A・E24 A。P1 と同じやり方）
 // - 色だけで区別しない（バッジは文字つき、アイコンも変える）
+// - N138＋N139 4c：プレミアムのときは「ご利用中」の下に「Google Play で定期購入を管理する ↗」を出す
+//   - 4a の購入画面と同じ部品・URL（固定）・文言・開けなかったときの知らせを使う（D34 A・D35 A・D37 A・D38 A）
+//   - isPremium で出し分ける（🧪 の上書きでプレミアムの表示でも出す。無料では出さない。D36 A）
 import 'package:flutter/material.dart';
 import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/constants/dimensions.dart';
 import 'package:shiftsleep/constants/text_styles.dart';
+import 'package:shiftsleep/screens/premium_purchase_screen.dart';
+import 'package:shiftsleep/services/about_app.dart';
+import 'package:shiftsleep/widgets/privacy_policy_tile.dart';
 
 /// 欄の見出し
 const premiumStatusSectionTitle = '💳 プレミアム版ステータス';
@@ -40,6 +46,7 @@ class PremiumStatusPanel extends StatelessWidget {
     required this.onUpgrade,
     this.isLoading = false,
     this.footer,
+    this.opener = openInExternalBrowser,
   });
 
   /// プレミアムか（設定画面は SleepProvider の値を渡す）
@@ -53,6 +60,9 @@ class PremiumStatusPanel extends StatelessWidget {
 
   /// 枠の中の一番下に置くもの
   final Widget? footer;
+
+  /// 4c：定期購入の画面を開く関数（テストで差し替える）
+  final UrlOpener opener;
 
   @override
   Widget build(BuildContext context) {
@@ -203,11 +213,35 @@ class PremiumStatusPanel extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (isPremium) ...[
+                const SizedBox(height: AppDimensions.paddingMedium),
+                _buildManageSubscriptionLink(),
+              ],
               if (footer case final footer?) footer,
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// 4c：定期購入の画面へのリンク（白地・枠・角丸は 4a の購入画面と同じ。ListTile の波紋のために Material で包む）
+  Widget _buildManageSubscriptionLink() {
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppDimensions.borderRadiusMedium),
+        side: const BorderSide(color: AppColors.borderDefault),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ExternalLinkTile(
+        url: playSubscriptionsUrl,
+        label: manageSubscriptionLabel,
+        labelParts: manageSubscriptionLabelParts,
+        leadingIcon: Icons.subscriptions_outlined,
+        open: () => openPlaySubscriptions(open: opener),
+        openFailedText: manageSubscriptionOpenFailedText,
+      ),
     );
   }
 
