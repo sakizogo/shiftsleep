@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,11 +97,20 @@ void main() {
   late DateTime now;
   late List<SleepStylePreference> saved;
 
+  // N138＋N139 4b：🔒 の［プレミアム版に登録］が configure を確かめるので、RevenueCat は configure していない扱いにする
+  const purchasesChannel = MethodChannel('purchases_flutter');
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        purchasesChannel, (call) async => call.method == 'isConfigured' ? false : null);
     provider = _TestProvider();
     now = t(16, 18);
     saved = [];
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(purchasesChannel, null);
   });
 
   Future<void> pumpCard(
