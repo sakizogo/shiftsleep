@@ -2,7 +2,7 @@ name: shiftsleep
 description: "交代勤務者向け睡眠管理アプリ。分割睡眠・シフト対応・医学的信頼性を重視。"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.1.0
