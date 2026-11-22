@@ -10,14 +10,10 @@ import 'package:shiftsleep/providers/sleep_provider.dart';
 import 'package:shiftsleep/repositories/sleep_repository.dart';
 import 'package:shiftsleep/services/alarm_service.dart';
 import 'package:shiftsleep/services/orphan_sleep_record_service.dart';
+import 'package:shiftsleep/services/revenuecat_key.dart';
 import 'package:shiftsleep/services/wake_up_service.dart';
 import 'screens/home_screen.dart';
 
-
-// N26：Test Store のキーは release で使うと SDK がアプリを閉じるので、デバッグ版だけで使う
-const String _revenueCatTestApiKey = 'test_UbjWenDYUzXCqxFqxQpEWCJcZpH';
-// N26：Google Play 用のキー（goog_）。発行するまでは空のままで、その間はプレミアムなしで動く
-const String _revenueCatProductionApiKey = '';
 
 void main() {
   // N26：ensureInitialized と runApp が同じ Zone に入るよう、起動処理を丸ごと包む
@@ -37,8 +33,8 @@ Future<void> _startApp() async {
 
   WidgetsFlutterBinding.ensureInitialized();
 
-  const revenueCatApiKey =
-      kDebugMode ? _revenueCatTestApiKey : _revenueCatProductionApiKey;
+  // 5a：デバッグ版は Test Store（test_）、それ以外は Google Play（goog_）のキー
+  final revenueCatApiKey = revenueCatApiKeyFor(debug: kDebugMode);
   // N26：キーが空なら configure しない（PremiumService が Purchases.isConfigured を見て無料版として扱う）
   if (revenueCatApiKey.isEmpty) {
     debugPrint('[main] ℹ️ RevenueCat のキーが空のため configure しません');
