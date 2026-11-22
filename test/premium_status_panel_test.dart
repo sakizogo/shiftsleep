@@ -6,6 +6,7 @@ import 'package:shiftsleep/constants/colors.dart';
 import 'package:shiftsleep/screens/premium_purchase_screen.dart';
 import 'package:shiftsleep/services/about_app.dart';
 import 'package:shiftsleep/widgets/premium_status_panel.dart';
+import 'package:shiftsleep/widgets/review_code_dialog.dart';
 
 /// 設定画面の中の幅（幅 360dp の端末）
 const double _settingsWidth = 328;
@@ -31,6 +32,8 @@ void main() {
     bool isLoading = false,
     double scale = 1.0,
     UrlOpener? opener,
+    bool isReviewUnlockOnly = false,
+    VoidCallback? onReviewLongPress,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -48,6 +51,8 @@ void main() {
                     isLoading: isLoading,
                     footer: const Text('footer', key: _footerKey),
                     opener: opener ?? (uri) async => true,
+                    isReviewUnlockOnly: isReviewUnlockOnly,
+                    onReviewLongPress: onReviewLongPress,
                   ),
                 ),
               ),
@@ -278,6 +283,77 @@ void main() {
         expect(find.bySemanticsLabel(part), findsNothing);
       }
       expect(find.bySemanticsLabel(RegExp(externalLinkSemanticLabel)), findsOneWidget);
+      handle.dispose();
+    });
+  });
+
+  // N213 D48 B：審査用コードだけで解放中のとき
+  group('N213：審査用コードで解放中', () {
+    testWidgets('プレミアムの表示：バッジはプレミアム版で「✅ 審査用コードで解放中です」が出て、ご利用中と管理のリンクは出ない', (tester) async {
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, isReviewUnlockOnly: true);
+
+      expect(premiumReviewUnlockLabelParts.join(), premiumReviewUnlockLabel);
+      expect(find.text(premiumPlanPremiumLabel), findsOneWidget);
+      for (final part in premiumReviewUnlockLabelParts) {
+        expect(find.text(part), findsOneWidget);
+      }
+      for (final part in premiumInUseLabelParts) {
+        expect(find.text(part), findsNothing);
+      }
+      expect(find.text(manageSubscriptionLabelParts.first), findsNothing);
+      expect(button, findsNothing);
+      expect(find.byKey(_footerKey), findsOneWidget);
+    });
+
+    testWidgets('🧪 で無料の表示（isPremium が false）なら、いつもの無料のパネル', (tester) async {
+      await pumpPanel(tester, isPremium: false, onUpgrade: () {}, isReviewUnlockOnly: true);
+
+      expect(find.text(premiumPlanFreeLabel), findsOneWidget);
+      expect(button, findsOneWidget);
+      for (final benefit in premiumBenefits) {
+        expect(find.text(benefit), findsOneWidget);
+      }
+      for (final part in premiumReviewUnlockLabelParts) {
+        expect(find.text(part), findsNothing);
+      }
+    });
+
+    /// finder を duration だけ押してから離す
+    Future<void> press(WidgetTester tester, Finder finder, Duration duration) async {
+      final gesture = await tester.startGesture(tester.getCenter(finder));
+      await tester.pump(duration);
+      await gesture.up();
+      await tester.pump();
+    }
+
+    testWidgets('D47 A：「審査用コードで解放中です」を 2 秒長押しすると onReviewLongPress が呼ばれ、1 秒では呼ばれない', (tester) async {
+      var pressed = 0;
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, isReviewUnlockOnly: true, onReviewLongPress: () => pressed++);
+      final label = find.text(premiumReviewUnlockLabelParts.first);
+
+      await press(tester, label, const Duration(seconds: 1));
+      expect(pressed, 0);
+
+      await press(tester, label, reviewCodeLongPressDuration);
+      expect(pressed, 1);
+    });
+
+    testWidgets('審査用だけで解放中でなければ（本当に購入している）、「ご利用中」を長押ししても呼ばれない', (tester) async {
+      var pressed = 0;
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, onReviewLongPress: () => pressed++);
+
+      await press(tester, find.text(premiumInUseLabelParts.first), reviewCodeLongPressDuration);
+
+      expect(pressed, 0);
+    });
+
+    testWidgets('読み上げ：「審査用コードで解放中です」の 1 つにまとまり、長押しの動きは足さない', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, isReviewUnlockOnly: true, onReviewLongPress: () {});
+
+      final semantics = find.bySemanticsLabel(premiumReviewUnlockLabel);
+      expect(semantics, findsOneWidget);
+      expect(tester.getSemantics(semantics), isSemantics(hasLongPressAction: false));
       handle.dispose();
     });
   });

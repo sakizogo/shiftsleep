@@ -9,6 +9,9 @@
 //   成功したら画面を閉じて ✨。SnackBar に例外の中身は出さない（debugPrint だけ）
 // - 処理中は SleepProvider.isPremiumBusy でボタンを押せなくする
 // - 色だけで区別しない（Wong 2011 の色＋文字・アイコン）。文字の大きさ 1.0・1.3・2.0 倍と幅 360dp で崩れない
+// - N213 E40：AppBar の見出しの文字を 2 秒長押しすると、審査用コードのダイアログを開く（リリース版でも動く。読み上げは今のまま）
+//   解放したら画面を閉じて知らせる（D49 A・D50 A）。解除したら画面はそのままで知らせる
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shiftsleep/constants/colors.dart';
@@ -19,6 +22,7 @@ import 'package:shiftsleep/services/about_app.dart';
 import 'package:shiftsleep/services/premium_purchase.dart';
 import 'package:shiftsleep/widgets/premium_status_panel.dart';
 import 'package:shiftsleep/widgets/privacy_policy_tile.dart';
+import 'package:shiftsleep/widgets/review_code_dialog.dart';
 
 /// AppBar の文字
 const premiumPurchaseScreenTitle = '✨ プレミアム版';
@@ -284,6 +288,26 @@ class _PremiumPurchaseScreenState extends State<PremiumPurchaseScreen> {
     _showMessage(messenger, premiumRestoreMessage(outcome));
   }
 
+  /// N213：審査用コードのダイアログを開き、結果で知らせる（解放したら画面を閉じる）
+  Future<void> _openReviewCodeDialog() async {
+    final provider = context.read<SleepProvider>();
+    final messenger = ScaffoldMessenger.of(context);  // E41：await の前に取る（閉じたあと設定画面に出す）
+    final navigator = Navigator.of(context);
+    final result = await showReviewCodeDialog(context, provider: provider);
+    if (result == null) return;
+    debugPrint('[PremiumPurchase] 🔑 審査用コードのダイアログの結果: ${result.name}');
+    if (reviewCodeResultUnlocks(result) && mounted) navigator.pop();
+    final message = reviewCodeResultMessage(result);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message.text),
+        backgroundColor: message.color,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   void _showMessage(ScaffoldMessengerState messenger, ({String text, Color color})? message) {
     if (message == null) return;
     messenger.hideCurrentSnackBar();
@@ -307,7 +331,19 @@ class _PremiumPurchaseScreenState extends State<PremiumPurchaseScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text(premiumPurchaseScreenTitle)),
+      appBar: AppBar(
+        // N213 E40：見出しの文字だけを 2 秒の長押しで包む（読み上げの動きは足さない）
+        title: RawGestureDetector(
+          excludeFromSemantics: true,
+          gestures: {
+            LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(duration: reviewCodeLongPressDuration),
+              (recognizer) => recognizer.onLongPress = _openReviewCodeDialog,
+            ),
+          },
+          child: const Text(premiumPurchaseScreenTitle),
+        ),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppDimensions.paddingMedium),

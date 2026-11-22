@@ -19,6 +19,8 @@ import 'package:shiftsleep/screens/premium_purchase_screen.dart';
 import 'package:shiftsleep/services/about_app.dart';
 import 'package:shiftsleep/services/premium_purchase.dart';
 import 'package:shiftsleep/services/premium_service.dart';
+import 'package:shiftsleep/services/review_unlock.dart';
+import 'package:shiftsleep/widgets/review_code_dialog.dart';
 
 class _NoRepository extends SleepRepository {
   @override
@@ -56,6 +58,27 @@ class _FakePremiumService extends PremiumService {
 }
 
 PlatformException _error(PurchasesErrorCode code) => PlatformException(code: '${code.index}');
+
+/// N213：テスト用の審査用コード（本物のコードはテストにも書かない）
+const _reviewCode = 'TEST-CODE-1A';
+
+/// N213：保存に失敗する store
+class _FailingReviewStore extends ReviewUnlockStore {
+  const _FailingReviewStore();
+
+  @override
+  Future<bool> save() async => false;
+}
+
+/// N213：保存を待たせる store（complete するまで処理中のまま）
+class _WaitingReviewStore extends ReviewUnlockStore {
+  _WaitingReviewStore();
+
+  final saving = Completer<bool>();
+
+  @override
+  Future<bool> save() => saving.future;
+}
 
 /// 0 円・2 週間のトライアル（Test Store の形：introductoryPrice）
 const _twoWeeksFree = IntroductoryPrice(0, 'US\$0.00', 'P2W', 1, PeriodUnit.week, 2);
@@ -455,5 +478,186 @@ void main() {
     expect(find.bySemanticsLabel('年額プラン、US\$69.99／年、最初の 14 日間 無料、16% お得'), findsOneWidget);
     expect(find.bySemanticsLabel('🎁 14 日間無料で始める'), findsOneWidget);
     handle.dispose();
+  });
+
+  // N213：AppBar の見出しを 2 秒長押しして開く、審査用コードのダイアログ
+  group('N213：審査用コード', () {
+    final title = find.text(premiumPurchaseScreenTitle);
+    final dialog = find.byType(ReviewCodeDialog);
+
+    /// 審査用コードを知っている provider に替える（openScreen の前に呼ぶ）
+    void useReviewCode({ReviewUnlockStore? store}) {
+      provider = SleepProvider(_NoRepository(), premiumService: service, reviewUnlockStore: store, reviewCode: _reviewCode);
+    }
+
+    /// 見出しを duration だけ押してから離す
+    Future<void> pressTitle(WidgetTester tester, Duration duration) async {
+      final gesture = await tester.startGesture(tester.getCenter(title));
+      await tester.pump(duration);
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openDialog(WidgetTester tester) => pressTitle(tester, reviewCodeLongPressDuration);
+
+    Future<void> submit(WidgetTester tester, String code) async {
+      await tester.enterText(find.byType(TextField), code);
+      await tester.tap(find.text(reviewCodeUnlockLabel));
+      await tester.pumpAndSettle();
+    }
+
+    test('知らせは文の頭に記号を付け、色を分ける（解除できたときだけ、いつもの色で記号なし）', () {
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.unlocked), (text: '✨ 審査用コードでプレミアム版を解放しました', color: Colors.green));
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.unlockedThisSessionOnly).color, Colors.orange);
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.unlockedThisSessionOnly).text, matches(RegExp(r'^⚠️ .*再起動すると元に戻ります$')));
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.clearNotSaved).color, Colors.orange);
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.clearNotSaved).text, matches(RegExp(r'^⚠️ .*再起動すると解放された状態に戻ります$')));
+      expect(reviewCodeResultMessage(ReviewCodeDialogResult.cleared), (text: '審査用コードの解放を解除しました', color: null));
+      expect(reviewCodeWrongText, '❌ コードが違います');
+    });
+
+    testWidgets('2 秒の長押しで開き、1 秒では開かない', (tester) async {
+      useReviewCode();
+      await openScreen(tester);
+
+      await pressTitle(tester, const Duration(seconds: 1));
+      expect(dialog, findsNothing);
+
+      await openDialog(tester);
+      expect(dialog, findsOneWidget);
+      expect(find.text(reviewCodeDialogTitle), findsOneWidget);
+      expect(find.text(reviewCodeClearLabel), findsNothing);  // 解放していないので［解除する］は出ない
+    });
+
+    testWidgets('D49 A：正しいコードなら購入画面を閉じて、緑の ✨ を出す。購入・復元は呼ばない', (tester) async {
+      useReviewCode();
+      var purchases = 0;
+      var restores = 0;
+      service.onPurchase = () async => (++purchases) > 0;
+      service.onRestore = () async => (++restores) > 0;
+      await openScreen(tester);
+      await openDialog(tester);
+
+      await submit(tester, ' test-code-1a ');
+
+      expect(dialog, findsNothing);
+      expect(screen, findsNothing);
+      expect(find.text(reviewUnlockedText), findsOneWidget);
+      expect(tester.widget<SnackBar>(find.byType(SnackBar)).backgroundColor, Colors.green);
+      expect(provider.isPremiumUser, isTrue);
+      expect(provider.isReviewUnlockOnly, isTrue);
+      expect(purchases, 0);
+      expect(restores, 0);
+    });
+
+    testWidgets('処理中は、戻る操作でも外のタップでも、ダイアログも購入画面も閉じない', (tester) async {
+      final store = _WaitingReviewStore();
+      useReviewCode(store: store);
+      await openScreen(tester);
+      await openDialog(tester);
+      await tester.enterText(find.byType(TextField), _reviewCode);
+      await tester.tap(find.text(reviewCodeUnlockLabel));
+      await tester.pump();
+
+      await tester.binding.handlePopRoute();  // 戻るボタン
+      await tester.pump();
+      await tester.tapAt(const Offset(5, 400));  // ダイアログの外
+      await tester.pump();
+
+      expect(dialog, findsOneWidget);
+      expect(screen, findsOneWidget);
+
+      // 保存が終わると、ダイアログと購入画面だけが閉じる（その下の画面は残る）
+      store.saving.complete(true);
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(screen, findsNothing);
+      expect(find.text('open'), findsOneWidget);
+      expect(find.text(reviewUnlockedText), findsOneWidget);
+    });
+
+    testWidgets('D46 A：違うコードなら閉じずに、入力欄の下に「❌ コードが違います」（エラーの色）', (tester) async {
+      useReviewCode();
+      await openScreen(tester);
+      await openDialog(tester);
+
+      await submit(tester, 'TEST-CODE-1B');
+
+      expect(dialog, findsOneWidget);
+      expect(find.text(reviewCodeWrongText), findsOneWidget);
+      expect(
+        tester.widget<Text>(find.text(reviewCodeWrongText)).style?.color,
+        Theme.of(tester.element(dialog)).colorScheme.error,
+      );
+      expect(provider.isPremiumUser, isFalse);
+
+      // もう一度、正しいコードなら解放できる（E39：回数の制限はない）
+      await submit(tester, _reviewCode);
+      expect(screen, findsNothing);
+      expect(provider.isPremiumUser, isTrue);
+    });
+
+    testWidgets('［キャンセル］で閉じ、何も出さず購入画面のまま', (tester) async {
+      useReviewCode();
+      await openScreen(tester);
+      await openDialog(tester);
+
+      await tester.tap(find.text(reviewCodeCancelLabel));
+      await tester.pumpAndSettle();
+
+      expect(dialog, findsNothing);
+      expect(screen, findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      expect(provider.isPremiumUser, isFalse);
+    });
+
+    testWidgets('D50 A：保存に失敗したら、⚠️ をオレンジで出す（この起動中は解放）', (tester) async {
+      useReviewCode(store: const _FailingReviewStore());
+      await openScreen(tester);
+      await openDialog(tester);
+
+      await submit(tester, _reviewCode);
+
+      expect(screen, findsNothing);
+      expect(find.text(reviewUnlockNotSavedText), findsOneWidget);
+      expect(tester.widget<SnackBar>(find.byType(SnackBar)).backgroundColor, Colors.orange);
+      expect(provider.isPremiumUser, isTrue);
+    });
+
+    testWidgets('D47 A：解放中に開くと［解除する］が出て、押すと解除し、いつもの色で知らせる（購入画面のまま）', (tester) async {
+      useReviewCode();
+      await provider.unlockWithReviewCode(_reviewCode);
+      await openScreen(tester);
+      await openDialog(tester);
+
+      await tester.tap(find.text(reviewCodeClearLabel));
+      await tester.pumpAndSettle();
+
+      expect(dialog, findsNothing);
+      expect(screen, findsOneWidget);
+      expect(find.text(reviewClearedText), findsOneWidget);
+      expect(tester.widget<SnackBar>(find.byType(SnackBar)).backgroundColor, isNull);
+      expect(provider.isPremiumUser, isFalse);
+      expect(provider.isReviewUnlocked, isFalse);
+    });
+
+    for (final name in ['failed', 'network', 'empty']) {
+      testWidgets('商品が読めない（$name）ときも、長押しで開いて解放できる', (tester) async {
+        useReviewCode();
+        service.onFetch = switch (name) {
+          'failed' => () async => throw _error(PurchasesErrorCode.storeProblemError),
+          'network' => () async => throw _error(PurchasesErrorCode.networkError),
+          _ => () async => const <PremiumPlan>[],
+        };
+        await openScreen(tester);
+        expect(purchaseButton, findsNothing);
+
+        await openDialog(tester);
+        await submit(tester, _reviewCode);
+
+        expect(screen, findsNothing);
+        expect(provider.isPremiumUser, isTrue);
+      });
+    }
   });
 }
