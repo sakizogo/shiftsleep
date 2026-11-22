@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shiftsleep/constants/colors.dart';
+import 'package:shiftsleep/screens/premium_purchase_screen.dart';
+import 'package:shiftsleep/services/about_app.dart';
 import 'package:shiftsleep/widgets/premium_status_panel.dart';
 
 /// 設定画面の中の幅（幅 360dp の端末）
@@ -28,6 +30,7 @@ void main() {
     VoidCallback? onUpgrade,
     bool isLoading = false,
     double scale = 1.0,
+    UrlOpener? opener,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -44,6 +47,7 @@ void main() {
                     onUpgrade: onUpgrade,
                     isLoading: isLoading,
                     footer: const Text('footer', key: _footerKey),
+                    opener: opener ?? (uri) async => true,
                   ),
                 ),
               ),
@@ -193,5 +197,80 @@ void main() {
       expect(find.bySemanticsLabel(part), findsNothing);
     }
     handle.dispose();
+  });
+
+  // 4c：プレミアムのときの［定期購入の管理］（Google Play の定期購入の画面へのリンク）
+  group('4c：定期購入の管理のリンク', () {
+    final link = find.text(manageSubscriptionLabelParts.first);
+
+    testWidgets('プレミアム：「ご利用中」の下・footer の上に、区切りの文言と ↗ のリンクが出る', (tester) async {
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {});
+
+      for (final part in manageSubscriptionLabelParts) {
+        expect(find.text(part), findsOneWidget);
+      }
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      expect(find.byIcon(Icons.subscriptions_outlined), findsOneWidget);
+      final linkRect = tester.getRect(link);
+      expect(linkRect.top, greaterThanOrEqualTo(tester.getRect(find.text(premiumInUseLabelParts.last)).bottom));
+      expect(tester.getRect(find.byKey(_footerKey)).top, greaterThanOrEqualTo(linkRect.bottom));
+      expect(find.descendant(of: frame, matching: link), findsOneWidget);
+    });
+
+    testWidgets('無料：リンクは出ない', (tester) async {
+      await pumpPanel(tester, isPremium: false, onUpgrade: () {});
+
+      for (final part in manageSubscriptionLabelParts) {
+        expect(find.text(part), findsNothing);
+      }
+      expect(find.byIcon(Icons.open_in_new), findsNothing);
+    });
+
+    testWidgets('押すと定期購入の画面の URL を 1 回開き、SnackBar は出ない', (tester) async {
+      final opened = <Uri>[];
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, opener: (uri) async {
+        opened.add(uri);
+        return true;
+      });
+
+      await tester.tap(link);
+      await tester.pumpAndSettle();
+
+      expect(opened, [Uri.parse(playSubscriptionsUrl)]);
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('D38 A：開けなかったら、URL つきの ⚠️ をオレンジで出す（［コピー］つき）', (tester) async {
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {}, opener: (uri) async => false);
+
+      await tester.tap(link);
+      await tester.pumpAndSettle();
+
+      expect(find.text(manageSubscriptionOpenFailedText), findsOneWidget);
+      expect(manageSubscriptionOpenFailedText, contains(playSubscriptionsUrl));
+      expect(tester.widget<SnackBar>(find.byType(SnackBar)).backgroundColor, Colors.orange);
+      expect(find.text(copyUrlActionLabel), findsOneWidget);
+    });
+
+    testWidgets('倍率 1.0：リンクの区切りがそれぞれ 1 行に収まる', (tester) async {
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {});
+
+      for (final part in manageSubscriptionLabelParts) {
+        expectOneLine(tester, part, 1.0);
+      }
+    });
+
+    testWidgets('読み上げ：リンクは「Google Play で定期購入を管理する」の 1 つにまとまり、↗ は「外部のブラウザで開きます」', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpPanel(tester, isPremium: true, onUpgrade: () {});
+
+      // about_app_section_test と同じく、行の読み上げは ↗ の文と 1 つの節にまとまるので RegExp で探す
+      expect(find.bySemanticsLabel(RegExp(manageSubscriptionLabel)), findsOneWidget);
+      for (final part in manageSubscriptionLabelParts) {
+        expect(find.bySemanticsLabel(part), findsNothing);
+      }
+      expect(find.bySemanticsLabel(RegExp(externalLinkSemanticLabel)), findsOneWidget);
+      handle.dispose();
+    });
   });
 }
