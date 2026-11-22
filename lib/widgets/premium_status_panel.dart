@@ -25,7 +25,7 @@ const premiumPlanPremiumLabel = 'プレミアム版 ✨';
 
 /// 無料のときに出す、プレミアム版でできること
 const premiumBenefitsIntro = 'プレミアム版でできることは：';
-const premiumBenefits = ['📊 詳細なアドバイスを取得', '🎯 最大5つの改善提案', '💾 すべての睡眠データを保存'];
+const premiumBenefits = ['📊 改善アドバイスをすべて表示', '💡 アドバイスごとの実行ヒント', '🛏️ 睡眠の目安の理由・仮眠・3日分の目安'];
 
 /// アップグレード ボタンの文字（読み上げにはこの 1 つを使う）。P2：値段は入れない
 const premiumUpgradeLabel = '✨ プレミアム版にアップグレード';

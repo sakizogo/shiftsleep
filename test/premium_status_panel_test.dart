@@ -77,6 +77,14 @@ void main() {
     expect(premiumInUseLabelParts.join(), premiumInUseLabel);
   });
 
+  test('N214：できることは Play Console の定期購入の特典と同じ 3 つで、「保存」と「5つ」は入っていない', () {
+    expect(premiumBenefits, ['📊 改善アドバイスをすべて表示', '💡 アドバイスごとの実行ヒント', '🛏️ 睡眠の目安の理由・仮眠・3日分の目安']);
+    for (final benefit in premiumBenefits) {
+      expect(benefit, isNot(contains('保存')));
+      expect(benefit, isNot(contains('5つ')));
+    }
+  });
+
   testWidgets('無料：「無料版」のバッジ・できること・ボタンが出て、「ご利用中」は出ない。枠は灰色', (tester) async {
     await pumpPanel(tester, isPremium: false, onUpgrade: () {});
 
