@@ -17,6 +17,7 @@ import 'package:shiftsleep/services/sleep_debt.dart';  // N198 2/2
 import 'package:shiftsleep/services/sleep_record_kind.dart';  // N199：formatSleepDuration
 import 'package:shiftsleep/services/medical_consult_dismiss_store.dart';  // N202
 import 'package:shiftsleep/services/tab_snackbar.dart';  // N190
+import 'package:shiftsleep/services/body_clock_level.dart';  // N213
 import '../constants/colors.dart';
 import '../constants/text_styles.dart';
 import '../constants/dimensions.dart';
@@ -91,13 +92,45 @@ String formatSleepDebtTarget(Duration target) => formatSleepDuration(target);
 /// N196 A 2/2：「あなたの体内時計」の文（SJL だけで判定。SRI は見ない）
 /// - SJL が null：記録が足りない・時刻がばらばら・5 時間未満に分けて寝ている（メイン睡眠がない）
 String bodyClockMessage(double? sjl) {
-  if (sjl == null) {
-    return '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレ（SJL）を計算できません。'
-        '5時間未満に分けて寝ている場合も計算できません。';
+  switch (bodyClockLevel(sjl)) {  // N213：境目は bodyClockLevel にまとめる
+    case BodyClockLevel.notJudgeable:
+      return '記録が足りないか、寝る時刻がばらばらなため、体内時計のズレ（SJL）を計算できません。'
+          '5時間未満に分けて寝ている場合も計算できません。';
+    case BodyClockLevel.disrupted:
+      return 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。';
+    case BodyClockLevel.slightlyDisrupted:
+      return 'SJLが1時間以上あるため、体内時計がやや乱れています。';
+    case BodyClockLevel.normal:
+      return '体内時計は正常範囲です。良好な睡眠リズムを維持してください。';
   }
-  if (sjl >= 2) return 'SJLが2時間以上あるため、体内時計が大きく乱れています。定期的な就寝時間の調整が効果的です。';
-  if (sjl >= 1) return 'SJLが1時間以上あるため、体内時計がやや乱れています。';
-  return '体内時計は正常範囲です。良好な睡眠リズムを維持してください。';
+}
+
+/// N213：体内時計の枠と SJL の小さいカードの色。睡眠負債のカードと同じ配色を使う
+/// - 大きく乱れている＝朱色（要注意）、やや乱れている＝オレンジ（改善推奨）、正常範囲・判定できない＝灰色
+SleepDebtCardColors bodyClockCardColors(BodyClockLevel level) {
+  switch (level) {
+    case BodyClockLevel.disrupted:
+      return sleepDebtCardColors(SleepDebtLevel.alert);
+    case BodyClockLevel.slightlyDisrupted:
+      return sleepDebtCardColors(SleepDebtLevel.improve);
+    case BodyClockLevel.normal:
+    case BodyClockLevel.notJudgeable:
+      return sleepDebtCardColors(SleepDebtLevel.enough);
+  }
+}
+
+/// N213：見出しのアイコン（色だけに頼らず形でも区別する）
+IconData bodyClockIcon(BodyClockLevel level) {
+  switch (level) {
+    case BodyClockLevel.disrupted:
+      return Icons.warning;
+    case BodyClockLevel.slightlyDisrupted:
+      return Icons.warning_amber;
+    case BodyClockLevel.normal:
+      return Icons.check_circle_outline;
+    case BodyClockLevel.notJudgeable:
+      return Icons.help_outline;
+  }
 }
 
 /// N202：医師への相談のすすめの文言（病名は出さない）
@@ -1243,9 +1276,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               AppDimensions.paddingSmall,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.cardBgWarning,
+                              color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).background,  // N213：段階ごとの色
                               border: Border.all(
-                                color: AppColors.borderWarning,
+                                color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).border,
                                 width: AppDimensions.borderWidthThin,
                               ),
                               borderRadius: BorderRadius.circular(
@@ -1274,7 +1307,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   sleepProvider.sjlEvaluation,
                                   style: AppTextStyles.labelStyle.copyWith(
                                     fontSize: 11,
-                                    color: AppColors.textMuted,
+                                    color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).text,  // N213：背景との差 4.5:1 以上
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -1337,9 +1370,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         AppDimensions.paddingSmall,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.cardBgAlert,
+                        color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).background,  // N213：段階ごとの色
                         border: Border.all(
-                          color: AppColors.borderDefault,
+                          color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).border,
                           width: AppDimensions.borderWidthThin,
                         ),
                         borderRadius: BorderRadius.circular(
@@ -1349,12 +1382,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'あなたの体内時計:',
-                            style: AppTextStyles.subtitleLabelStyle.copyWith(
-                              color: AppColors.darkWarning,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          // N213：アイコンと段階の言葉でも区別する（色だけに頼らない）
+                          Row(
+                            children: [
+                              Icon(
+                                bodyClockIcon(bodyClockLevel(sleepProvider.sjl)),
+                                size: 18,
+                                color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).text,
+                              ),
+                              const SizedBox(width: 6.0),
+                              Flexible(
+                                child: Text(
+                                  'あなたの体内時計: ${bodyClockLevelLabel(bodyClockLevel(sleepProvider.sjl))}',
+                                  style: AppTextStyles.subtitleLabelStyle.copyWith(
+                                    color: bodyClockCardColors(bodyClockLevel(sleepProvider.sjl)).text,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 6.0),
                           Text(
